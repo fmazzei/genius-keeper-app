@@ -59,8 +59,9 @@ const despues = (await db.doc('inventario_comercial/R1').get()).data();
 ok(despues.unidades === 228 && despues._mov.tipo === 'reversa' && despues._mov.revierte === 'picking',
     `deshacer estampa una reversa del picking (${despues._mov.tipo}/${despues._mov.revierte})`);
 const asientos = M.asientosDeCambio({ coleccion: 'inventario_comercial', docId: 'R1', before: antes, after: despues, fechaHoy: '2026-10-06' });
-ok(asientos.length === 1 && asientos[0].categoria === 'venta' && asientos[0].ubicacion === 'frimaca' && asientos[0].cantidad === 84,
-    'el libro la anota como devolución de la venta, sin tocar tránsito');
+ok(asientos.length === 2 && asientos[0].categoria === 'traslado' && asientos[0].ubicacion === 'frimaca' && asientos[0].cantidad === 84
+    && asientos[1].ubicacion === 'ruta' && asientos[1].cantidad === -84 && !asientos.some(a => a.ubicacion === 'transito'),
+    'el libro devuelve el picking de la ruta a ACC, sin tocar tránsito');
 
 const [creada] = await MCP.aplicarOperaciones([{ accion: 'crear', ruta: 'inventario_comercial/N1',
     datos: { unidades: 6, unit: 'ud', costoUnitarioUsd: 10, _mov: { id: 'aj1', tipo: 'correccion', at: '2026-10-06T12:00:00Z' } } }], {});

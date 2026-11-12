@@ -4,8 +4,16 @@
 //
 // Perímetro: la cava de la planta (`kroma_inventory_pt`), lo que va en camino a
 // Caracas (tránsito) y Frimaca (`inventario_comercial`). Todo es de Lacteoca
-// hasta que sale: venta, despacho a otra ciudad, picking en Frimaca, muestra,
+// hasta que sale: venta (la factura), despacho a otra ciudad, consumo interno,
 // merma o reposición.
+//
+// BODEGA CARACAS (2026-11): para costear y vender, tránsito, ACC (Frimaca) y
+// "ruta" son UNA sola bodega. La recepción en ACC sigue para la logística, pero
+// no hace falta para vender. El picking ya no es venta: mueve el producto de
+// ACC a "ruta" (sale del depósito, todavía no está facturado). La venta es la
+// factura, y sale del saldo de la bodega por lote. La ruta puede quedar
+// negativa un tiempo (se facturó antes de declarar el picking); lo que cuenta
+// para el inventario es el saldo de la bodega entera.
 //
 // CÓMO SE LLEVA EL LIBRO. Kroma entra con UNA cuenta compartida por empresa, así
 // que la base de datos no puede distinguir al operario del máster: un libro que
@@ -67,7 +75,7 @@ const CATEGORIAS = [
     { key: "traslado", label: "Traslados" },
     { key: "venta", label: "Ventas y despachos" },
     { key: "reposicion", label: "Reposiciones" },
-    { key: "muestra", label: "Muestras y regalos" },
+    { key: "consumo_interno", label: "Consumo interno" },
     { key: "merma", label: "Mermas" },
     { key: "ajuste", label: "Ajustes y conteos" },
     { key: "revaluacion", label: "Revaluación de costo" },
@@ -78,20 +86,38 @@ const TIPO_CAT = {
     envasado: "transformacion",
     devolucion: "devolucion",
     traslado: "traslado", despacho_caracas: "traslado", recepcion: "traslado",
-    venta: "venta", despacho_ciudad: "venta", picking: "venta",
+    venta: "venta", despacho_ciudad: "venta",
+    // Picking y picking no declarado: traslados dentro de la bodega Caracas.
+    picking: "traslado", picking_no_declarado: "traslado",
     reposicion: "reposicion",
-    muestra: "muestra", merma: "merma",
+    muestra: "consumo_interno", consumo_interno: "consumo_interno", merma: "merma",
     ajuste: "ajuste", conteo: "ajuste", correccion: "ajuste", eliminacion: "ajuste",
     asignacion_costo: "revaluacion",
     apertura: "apertura",
     sin_tipo: "sin_tipo",
 };
-// Salidas de cava con motivo (`salidasCava.js`): muestra y donación son
-// "muestra o regalo"; el resto (merma, vencido, consumo interno, otro) merma.
+// Salidas de cava con motivo (`salidasCava.js`): consumo de personal, muestras
+// y donaciones son CONSUMO INTERNO (cada uno a su cuenta en el asiento
+// mensual); el resto (merma, vencido, otro) es merma.
+const MOTIVO_CONSUMO = { consumo_interno: "personal", personal: "personal", muestra: "muestras", muestras: "muestras", donacion: "muestras" };
 function categoria(tipo, motivo) {
-    if (tipo === "salida") return (motivo === "muestra" || motivo === "donacion") ? "muestra" : "merma";
+    if (tipo === "salida") return MOTIVO_CONSUMO[motivo] ? "consumo_interno" : "merma";
     return TIPO_CAT[tipo] || "sin_tipo";
 }
+/** Tipo de consumo interno: "personal" (Otros gastos de personal) o "muestras" (Publicidad). */
+function subcategoria(tipo, motivo) {
+    if (categoria(tipo, motivo) !== "consumo_interno") return null;
+    return MOTIVO_CONSUMO[motivo] || (tipo === "muestra" ? "muestras" : "personal");
+}
+
+// ── Bodegas ─────────────────────────────────────────────────────────────────
+// planta = cava de Barinas. caracas = tránsito + ACC (frimaca) + ruta.
+const BODEGA = { planta: "planta", transito: "caracas", frimaca: "caracas", ruta: "caracas" };
+const bodegaDe = (ubicacion) => BODEGA[ubicacion] || ubicacion;
+// La ruta no es una partida física: es lo que salió de ACC por picking menos lo
+// facturado, por lote. Un registro por lote y presentación.
+const COL_RUTA = "caracas_ruta";
+const docRuta = (x) => `${x.logId || x.lote || "sin-lote"}|${x.catalogId || (x.unidad === "kg" ? "granel" : "")}`;
 
 // ── Estado de una partida ───────────────────────────────────────────────────
 
@@ -193,11 +219,23 @@ function asientosDeCambio({ coleccion, docId, before, after, fechaHoy }) {
             const valor = costoNuevo ? r6(p.cantidad * costoNuevo) : 0;
             const kg = r6(p.cantidad * kgPorUnidad);
             const efectivo = revierte || p.tipo;
+            const sub = subcategoria(efectivo, p.motivo);
             out.push({
                 ...comun, tipo: p.tipo, motivo: p.motivo, ref: p.ref, ...(revierte ? { revierte } : {}),
                 ubicacion: ubicacionDe(coleccion), categoria: categoria(efectivo, p.motivo),
+                ...(sub ? { subcategoria: sub } : {}),
                 cantidad: p.cantidad, kg, costoUnitario: costoNuevo, valorCosto: valor, sinCosto: !costoNuevo,
             });
+            // Picking en ACC: el producto pasa a "ruta", sigue en la bodega
+            // Caracas y conserva su valor. La venta la pone la factura.
+            if (coleccion === COL_FRIMACA && (efectivo === "picking" || efectivo === "picking_no_declarado")) {
+                out.push({
+                    ...comun, tipo: p.tipo, motivo: p.motivo, ref: p.ref, ...(revierte ? { revierte } : {}),
+                    coleccion: COL_RUTA, docId: docRuta(comun), ubicacion: "ruta",
+                    categoria: "traslado", cantidad: -p.cantidad, kg: -kg,
+                    costoUnitario: costoNuevo, valorCosto: costoNuevo ? -valor : 0, sinCosto: !costoNuevo,
+                });
+            }
             // Contrapartida en TRÁNSITO: lo que sale de la planta hacia Caracas
             // entra al camión; lo que entra a Frimaca sale del camión. El valor
             // del inventario no cambia en un traslado. Deshacer uno de esos dos
@@ -285,7 +323,7 @@ function saldos(asientos, fecha, precioKg = {}) {
         if (fecha && a.fecha > fecha) continue;
         const k = `${a.ubicacion}|${claveProducto(a)}`;
         const s = m.get(k) || {
-            ubicacion: a.ubicacion, productoId: a.productoId, productoNombre: a.productoNombre,
+            ubicacion: a.ubicacion, bodega: bodegaDe(a.ubicacion), productoId: a.productoId, productoNombre: a.productoNombre,
             catalogId: a.unidad === "kg" ? null : (a.catalogId || null), pesoPorUnidad: a.pesoPorUnidad || null,
             presentacion: etiquetaPres(a), unidad: a.unidad, cantidad: 0, kg: 0, valorCosto: 0,
         };
@@ -365,6 +403,7 @@ function controlIdentidad(asientos, fecha) {
 function controlCuadre(asientos, partidas) {
     const libro = new Map();
     for (const a of asientos) {
+        if (a.coleccion === COL_RUTA) continue;   // la ruta no es una partida física
         const k = `${a.coleccion}/${a.docId}`;
         const x = libro.get(k) || { cantidad: 0, valorCosto: 0, productoNombre: a.productoNombre, lote: a.lote, presentacion: a.presentacion, ubicacion: a.ubicacion };
         x.cantidad = r6(x.cantidad + (a.cantidad || 0)); x.valorCosto = r6(x.valorCosto + (a.valorCosto || 0));
@@ -436,12 +475,36 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
         u.valorCosto = r6(u.valorCosto + s.valorCosto); u.valorPlanta = r6(u.valorPlanta + s.valorPlanta); u.kg = r6(u.kg + s.kg);
     });
     const total = Object.values(porUbic).reduce((t, u) => ({ valorCosto: t.valorCosto + u.valorCosto, valorPlanta: t.valorPlanta + u.valorPlanta }), { valorCosto: 0, valorPlanta: 0 });
+    const porBodega = {};
+    Object.entries(porUbic).forEach(([u, v]) => {
+        const b = porBodega[bodegaDe(u)] || (porBodega[bodegaDe(u)] = { valorCosto: 0, valorPlanta: 0, kg: 0, detalle: {} });
+        b.valorCosto = r6(b.valorCosto + v.valorCosto); b.valorPlanta = r6(b.valorPlanta + v.valorPlanta); b.kg = r6(b.kg + v.kg);
+        if (u !== bodegaDe(u)) b.detalle[u] = { valorCosto: r2(v.valorCosto), kg: r2(v.kg) };
+    });
+    // Saldo por bodega y producto: el de la bodega Caracas es el que vale para
+    // vender (tránsito + ACC + ruta).
+    const porBodegaProducto = new Map();
+    sal.forEach(s => {
+        const k = `${s.bodega}|${claveProducto(s)}`;
+        const x = porBodegaProducto.get(k) || { bodega: s.bodega, productoNombre: s.productoNombre, presentacion: s.presentacion, unidad: s.unidad, cantidad: 0, valorCosto: 0 };
+        x.presentacion = mejorNombre(x.presentacion, s.presentacion);
+        x.cantidad = r6(x.cantidad + s.cantidad); x.valorCosto = r6(x.valorCosto + s.valorCosto);
+        porBodegaProducto.set(k, x);
+    });
+    const ruta = sal.filter(s => s.ubicacion === "ruta" && !casiCero(s.cantidad))
+        .map(s => ({ productoNombre: s.productoNombre, presentacion: s.presentacion, unidad: s.unidad, cantidad: r6(s.cantidad), valorCosto: r2(s.valorCosto) }));
 
     const identidad = controlIdentidad(hasta, fecha);
     const cuadre = partidasHoy ? controlCuadre(hasta, partidasHoy) : null;
     const costo = controlLotes(lotes, fecha);
     const delDia = hasta.filter(a => a.fecha === fecha);
-    const negativos = sal.filter(s => s.cantidad < -0.0005);
+    // Negativos: una partida física (planta, tránsito, ACC) o la bodega entera.
+    // La ruta sola puede ser negativa (se facturó antes del picking).
+    const negativos = [
+        ...sal.filter(s => s.ubicacion !== "ruta" && s.cantidad < -0.0005),
+        ...[...porBodegaProducto.values()].filter(x => x.bodega === "caracas" && x.cantidad < -0.0005)
+            .map(x => ({ ...x, ubicacion: "caracas" })),
+    ];
     const sinTipo = delDia.filter(a => a.categoria === "sin_tipo");
     const sinCosto = delDia.filter(a => a.sinCosto && !casiCero(a.cantidad));
     const sinLote = delDia.filter(a => !a.lote && !casiCero(a.cantidad));
@@ -476,7 +539,11 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
     return {
         fecha,
         totales: { valorCosto: r2(total.valorCosto), valorPlanta: r2(total.valorPlanta),
-            porUbicacion: Object.fromEntries(Object.entries(porUbic).map(([k, v]) => [k, { valorCosto: r2(v.valorCosto), valorPlanta: r2(v.valorPlanta), kg: r2(v.kg) }])) },
+            porUbicacion: Object.fromEntries(Object.entries(porUbic).map(([k, v]) => [k, { valorCosto: r2(v.valorCosto), valorPlanta: r2(v.valorPlanta), kg: r2(v.kg) }])),
+            porBodega: Object.fromEntries(Object.entries(porBodega).map(([k, v]) => [k, { valorCosto: r2(v.valorCosto), valorPlanta: r2(v.valorPlanta), kg: r2(v.kg), detalle: v.detalle }])) },
+        // Ruta: lo que salió de ACC por picking menos lo facturado. Positivo =
+        // entregado sin factura todavía; negativo = facturado sin picking.
+        ruta,
         saldos: sal.filter(s => !casiCero(s.cantidad) || !casiCero(s.valorCosto))
             .map(s => ({ ...s, valorCosto: r2(s.valorCosto), valorPlanta: r2(s.valorPlanta), kg: r2(s.kg) }))
             .sort((a, b) => a.ubicacion.localeCompare(b.ubicacion) || a.productoNombre.localeCompare(b.productoNombre, "es")),
@@ -504,6 +571,85 @@ function asignarFIFO(lotes, cantidad) {
         resta = r6(resta - toma);
     }
     return { asignado: out, faltante: r6(Math.max(0, resta)) };
+}
+
+/**
+ * Saldo de la bodega Caracas por LOTE y presentación hasta `fecha` inclusive
+ * (tránsito + ACC + ruta). Es de donde salen las ventas por factura. Puro.
+ */
+function lotesCaracas(asientos, fecha) {
+    const m = new Map();
+    for (const a of asientos) {
+        if (fecha && a.fecha > fecha) continue;
+        if (bodegaDe(a.ubicacion) !== "caracas") continue;
+        const k = `${a.logId || a.lote || "sin-lote"}|${clavePres(a)}`;
+        const x = m.get(k) || {
+            clave: k, productoId: a.productoId, productoNombre: a.productoNombre, catalogId: a.unidad === "kg" ? null : (a.catalogId || null),
+            presentacion: etiquetaPres(a), unidad: a.unidad, pesoPorUnidad: a.pesoPorUnidad || null,
+            logId: a.logId || null, lote: a.lote || "", fechaVencimiento: a.fechaVencimiento || null,
+            cantidad: 0, kg: 0, valorCosto: 0, porUbicacion: {},
+        };
+        x.presentacion = mejorNombre(x.presentacion, etiquetaPres(a));
+        if (!x.fechaVencimiento && a.fechaVencimiento) x.fechaVencimiento = a.fechaVencimiento;
+        x.cantidad = r6(x.cantidad + (a.cantidad || 0));
+        x.kg = r6(x.kg + (a.kg || 0));
+        x.valorCosto = r6(x.valorCosto + (a.valorCosto || 0));
+        x.porUbicacion[a.ubicacion] = r6((x.porUbicacion[a.ubicacion] || 0) + (a.cantidad || 0));
+        m.set(k, x);
+    }
+    return [...m.values()].map(x => ({ ...x, costoUnitario: x.cantidad > 0 ? r6(x.valorCosto / x.cantidad) : null }));
+}
+
+/**
+ * Asigna una salida a los lotes que vencen ANTES (FEFO). Nunca deja un lote en
+ * negativo: lo que no alcanza queda como faltante. Puro.
+ *   lotes = [{ clave, cantidad, costoUnitario, fechaVencimiento }]
+ */
+function asignarFEFO(lotes, cantidad) {
+    const orden = [...lotes].filter(l => (l.cantidad || 0) > 1e-9)
+        .sort((a, b) => String(a.fechaVencimiento || "9999").localeCompare(String(b.fechaVencimiento || "9999"))
+            || String(a.clave || "").localeCompare(String(b.clave || "")));
+    let resta = r6(cantidad); const out = [];
+    for (const l of orden) {
+        if (resta <= 1e-9) break;
+        const toma = r6(Math.min(l.cantidad, resta));
+        out.push({ clave: l.clave, lote: l.lote, logId: l.logId, cantidad: toma, costoUnitario: l.costoUnitario, valorCosto: r6(toma * (l.costoUnitario || 0)) });
+        resta = r6(resta - toma);
+    }
+    return { asignado: out, faltante: r6(Math.max(0, resta)) };
+}
+
+const claveRutaProducto = (a) => `${a.catalogId || a.productoId || ""}|${a.unidad}`;
+const TIPOS_CONTEO = new Set(["conteo", "correccion", "ajuste"]);
+
+/**
+ * Un conteo o corrección que BAJA el stock de ACC, cuando ese producto tiene la
+ * ruta en negativo (se facturó sin declarar el picking), no es merma: es el
+ * picking que nadie anotó. Esa parte se convierte en traslado ACC → ruta; solo
+ * lo que sobra queda como ajuste. Puro.
+ *   rutaPorProducto: { "catalogId|unidad": saldo de la ruta } (se descuenta)
+ */
+function netearConRuta(asientos, rutaPorProducto) {
+    const disp = { ...rutaPorProducto };
+    const out = [];
+    for (const a of asientos) {
+        const k = claveRutaProducto(a);
+        const neg = -(disp[k] || 0);
+        if (a.coleccion !== COL_FRIMACA || a.categoria !== "ajuste" || !TIPOS_CONTEO.has(a.tipo) || !(a.cantidad < 0) || !(neg > 1e-9)) {
+            out.push(a); continue;
+        }
+        const toma = r6(Math.min(-a.cantidad, neg));
+        disp[k] = r6((disp[k] || 0) + toma);
+        const kgU = a.cantidad ? a.kg / a.cantidad : 0;
+        const parte = (q) => ({ cantidad: r6(q), kg: r6(q * kgU), valorCosto: a.costoUnitario ? r6(q * a.costoUnitario) : 0 });
+        const motivo = `Salió de ACC sin picking declarado; ya estaba facturado (${fmt(toma)} ${a.unidad})${a.motivo ? ` · ${a.motivo}` : ""}`;
+        const pick = { ...a, ...parte(-toma), tipo: "picking_no_declarado", categoria: "traslado", motivo, tipoOriginal: a.tipo };
+        out.push(pick);
+        out.push({ ...pick, coleccion: COL_RUTA, docId: docRuta(a), ubicacion: "ruta", ...parte(toma) });
+        const resto = r6(a.cantidad + toma);
+        if (!casiCero(resto)) out.push({ ...a, ...parte(resto) });
+    }
+    return out;
 }
 
 // ── Lectura y escritura ─────────────────────────────────────────────────────
@@ -547,12 +693,26 @@ async function escribirAsientos(asientos, prefijoId) {
     await batch.commit();
 }
 
+/** Saldo de la ruta por producto (catalogId|unidad) de los productos de `asientos`. */
+async function saldoRuta(asientos) {
+    const out = {};
+    const cats = [...new Set(asientos.map(a => a.catalogId).filter(Boolean))];
+    for (const c of cats) {
+        const snap = await db().collection(COL_LIBRO).where("ubicacion", "==", "ruta").where("catalogId", "==", c).get();
+        snap.forEach(d => { const a = d.data(); const k = claveRutaProducto(a); out[k] = r6((out[k] || 0) + (Number(a.cantidad) || 0)); });
+    }
+    return out;
+}
+
 async function procesarCambioPartida(coleccion, change, context) {
     const cfg = await leerConfig();
     if (!cfg.abierto) return;
     const before = change.before.exists ? change.before.data() : null;
     const after = change.after.exists ? change.after.data() : null;
-    const asientos = asientosDeCambio({ coleccion, docId: context.params.id, before, after, fechaHoy: fechaCaracas() });
+    let asientos = asientosDeCambio({ coleccion, docId: context.params.id, before, after, fechaHoy: fechaCaracas() });
+    if (coleccion === COL_FRIMACA && asientos.some(a => a.categoria === "ajuste" && TIPOS_CONTEO.has(a.tipo) && a.cantidad < 0)) {
+        asientos = netearConRuta(asientos, await saldoRuta(asientos));
+    }
     if (cfg.inicio) asientos.forEach(a => { if (a.fecha < cfg.inicio) a.fecha = cfg.inicio; });
     // Id determinista por evento: una reentrega del mismo evento no duplica.
     await escribirAsientos(asientos, `ev_${context.eventId}`);
@@ -968,7 +1128,8 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
 
 exports._internos = {
     estadoDe, asientosDeCambio, asientosDeRecepcion, saldos, controlIdentidad, controlCuadre, controlLotes,
-    armarReporte, asignarFIFO, categoria, fechaCaracas, diaAnterior, r2, r6, CATEGORIAS,
+    armarReporte, asignarFIFO, asignarFEFO, lotesCaracas, netearConRuta, categoria, subcategoria, bodegaDe, docRuta,
+    fechaCaracas, diaAnterior, r2, r6, CATEGORIAS,
     procesarCambioPartida, generarReporte, abrir, contar, escribirAsientos,
     pesoDePresentacion, completarLineaDespacho, repararAperturaTransito,
 };

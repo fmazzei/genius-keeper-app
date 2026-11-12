@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-bodega-caracas",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Bodega Caracas y consumo interno",
+    resumen: "El inventario valorado junta lo que va en camino, lo de ACC y lo entregado sin factura en una sola bodega Caracas. El picking ya no es venta: la venta ser\xE1 la factura. El autoconsumo y las muestras salen como consumo interno, cada uno a su cuenta."
+  },
+  {
     id: "2026-11-12-presentacion-con-tamano",
     fecha: "2026-11-12",
     roles: ["master"],

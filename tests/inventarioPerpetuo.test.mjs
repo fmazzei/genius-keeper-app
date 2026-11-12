@@ -56,8 +56,8 @@ const m1 = cambiar(PT, 'B', partida({ lote: 'B', logId: 'logB', unidades: 48, co
 const m2 = cambiar(PT, 'B', partida({ lote: 'B', logId: 'logB', unidades: 45, costoUnitarioUsd: 2.4074, ...mov('salida', { motivo: 'muestra' }) }), '2026-10-07');
 const m3 = cambiar(PT, 'B', partida({ lote: 'B', logId: 'logB', unidades: 47, costoUnitarioUsd: 2.4074, ...mov('devolucion') }), '2026-10-07');
 const m4 = cambiar(PT, 'B', partida({ lote: 'B', logId: 'logB', unidades: 46, costoUnitarioUsd: 2.4074, ...mov('conteo', { motivo: 'Conteo físico' }) }), '2026-10-07');
-ok(m1[0].categoria === 'merma' && m2[0].categoria === 'muestra' && m3[0].categoria === 'devolucion' && m4[0].categoria === 'ajuste',
-    'merma · muestra · devolución · ajuste por conteo, cada uno en su categoría');
+ok(m1[0].categoria === 'merma' && m2[0].categoria === 'consumo_interno' && m2[0].subcategoria === 'muestras' && m3[0].categoria === 'devolucion' && m4[0].categoria === 'ajuste',
+    'merma · muestra (consumo interno) · devolución · ajuste por conteo, cada uno en su categoría');
 ok(valorDe(m3) === M.r2(2 * 2.4074) && valorDe(m4) === M.r2(-2.4074), `devolución entra (+${valorDe(m3)}), conteo ajusta (${valorDe(m4)})`);
 
 // ── Caso 4: corrección de una fecha pasada → se recalcula ese día ───────────
@@ -92,9 +92,11 @@ ok(M.r2(camion.reduce((s, a) => s + a.cantidad, 0)) === 0 && M.r2(camion.reduce(
     'el camión queda en cero: +15 al salir, −14 al recibir, −1 de merma');
 ok(rc.some(a => a.ubicacion === 'frimaca' && a.cantidad === 14) && mermaRec[0].categoria === 'merma' && valorDe(mermaRec) === -2, 'Frimaca +14; el faltante es merma (−2)');
 
-// Picking = salida de Frimaca.
+// Picking (desde 2026-11): sale de ACC a la ruta; sigue en la bodega Caracas.
 const pk = cambiar(FR, 'F1', { ...docs[`${FR}/F1`], unidades: 4, ...mov('picking', { ref: { posId: 'pdv1' } }) }, '2026-10-09');
-ok(pk[0].categoria === 'venta' && valorDe(pk) === -20, 'picking en Frimaca: sale a su costo (−20)');
+ok(pk.length === 2 && pk.every(a => a.categoria === 'traslado') && pk[0].ubicacion === 'frimaca' && pk[0].valorCosto === -20
+    && pk[1].ubicacion === 'ruta' && pk[1].valorCosto === 20 && valorDe(pk) === 0,
+    'picking en ACC: −20 en ACC, +20 en ruta; el valor de la bodega Caracas no cambia');
 
 // Cambio SIN marca: entra igual, como "sin tipo", y el reporte lo lista.
 const st = cambiar(PT, 'B', { ...docs[`${PT}/B`], unidades: 40, _mov: docs[`${PT}/B`]._mov }, '2026-10-09');
@@ -137,8 +139,9 @@ const antesPk = { ...partida({ unidad: 'ud', unit: 'ud', unidades: 228, costoUni
 const trasPk = { ...antesPk, unidades: 144, _mov: { id: 'pk1', tipo: 'picking', at: '2026-10-06T12:00:00Z' } };
 const rev = M.asientosDeCambio({ coleccion: FR, docId: 'R', before: trasPk, fechaHoy: '2026-10-06',
     after: { ...antesPk, _mov: { id: 'mcp_x', tipo: 'reversa', revierte: 'picking', at: '2026-10-06T13:00:00Z' } } });
-ok(rev.length === 1 && rev[0].ubicacion === 'frimaca' && rev[0].categoria === 'venta' && rev[0].cantidad === 84,
-    'deshacer un picking = reversa de la venta, solo en Frimaca (sin tocar tránsito)');
+ok(rev.length === 2 && rev[0].ubicacion === 'frimaca' && rev[0].categoria === 'traslado' && rev[0].cantidad === 84
+    && rev[1].ubicacion === 'ruta' && rev[1].cantidad === -84 && !rev.some(a => a.ubicacion === 'transito'),
+    'deshacer un picking: vuelve de la ruta a ACC (sin tocar tránsito)');
 const vieja = M.asientosDeCambio({ coleccion: FR, docId: 'R', before: trasPk, after: antesPk, fechaHoy: '2026-10-06' });
 ok(vieja.length === 1 && vieja[0].categoria === 'sin_tipo' && !vieja.some(a => a.ubicacion === 'transito'),
     'una marca vieja restaurada NO repite la recepción: queda "sin tipo" y no toca tránsito');
@@ -169,6 +172,64 @@ ok(M.pesoDePresentacion('250 g') === 0.25 && M.pesoDePresentacion('Bolsa 1 Kg') 
     ok(id.length === 3 && id.every(f => f.cuadra), 'la identidad del día agrupa igual y cuadra');
     const soloTexto = M.saldos([a({ catalogId: null, pesoPorUnidad: 1, presentacion: 'Lacteoca Chèvre Original', cantidad: 6 })], '2026-11-10');
     ok(soloTexto[0].presentacion === 'Lacteoca Chèvre Original · 1 kg', 'sin catálogo, el nombre se completa con el peso');
+}
+
+// ── Sección 2: bodega Caracas (2026-11) ────────────────────────────────────
+{
+    const base = { empresaId: 'lacteoca', productoId: 'chevre', productoNombre: 'Chèvre', presentacion: 'Chèvre · 250 g', catalogId: 'ojsxyuc',
+        unidad: 'ud', pesoPorUnidad: 0.25, fecha: '2026-11-08', tipo: 'x' };
+    const a = (o) => ({ ...base, kg: (o.cantidad || 0) * 0.25, valorCosto: (o.cantidad || 0) * (o.costoUnitario || 0), ...o });
+    // ACC: lote V (vence 25-nov) 144 ud a 3,70; camión: lote N (vence 4-feb) 180 ud a 3,63; planta: 50.
+    const L = [
+        a({ coleccion: 'inventario_comercial', docId: 'acc1', ubicacion: 'frimaca', categoria: 'apertura', logId: 'V', lote: 'V', fechaVencimiento: '2026-11-25', cantidad: 144, costoUnitario: 3.70 }),
+        a({ coleccion: 'kroma_despachos', docId: 'D2', ubicacion: 'transito', categoria: 'traslado', logId: 'N', lote: 'N', fechaVencimiento: '2027-02-04', cantidad: 180, costoUnitario: 3.63 }),
+        a({ coleccion: 'kroma_inventory_pt', docId: 'p1', ubicacion: 'planta', categoria: 'produccion', logId: 'P', lote: 'P', fechaVencimiento: '2027-03-01', cantidad: 50, costoUnitario: 3.5 }),
+    ];
+    const lc = M.lotesCaracas(L, '2026-11-12');
+    ok(lc.length === 2 && lc.every(l => l.clave) && !lc.some(l => l.lote === 'P'), 'la bodega Caracas junta camión y ACC, sin la planta');
+    const f1 = M.asignarFEFO(lc, 200);
+    ok(f1.asignado[0].lote === 'V' && f1.asignado[0].cantidad === 144 && f1.asignado[1].lote === 'N' && f1.asignado[1].cantidad === 56 && f1.faltante === 0,
+        'FEFO: primero lo que vence antes (144 de ACC), el resto del camión sin esperar la recepción (56)');
+    const f2 = M.asignarFEFO(lc, 400);
+    ok(f2.faltante === 76 && f2.asignado.reduce((s, x) => s + x.cantidad, 0) === 324, 'si no alcanza, nada queda negativo: faltan 76');
+    ok(M.r2(f1.asignado[1].valorCosto) === M.r2(56 * 3.63), 'cada parte sale al costo de su lote');
+
+    // Ruta negativa (facturado antes del picking) no es un negativo; la bodega sí.
+    const venta = a({ coleccion: 'caracas_ruta', docId: 'V|ojsxyuc', ubicacion: 'ruta', categoria: 'venta', logId: 'V', lote: 'V', cantidad: -100, costoUnitario: 3.70, fecha: '2026-11-10' });
+    const repC = M.armarReporte({ fecha: '2026-11-10', asientos: [...L, venta] });
+    ok(repC.controles[3].detalle.negativos.length === 0 && repC.ruta[0].cantidad === -100,
+        'la ruta en −100 (facturado sin picking) se informa, pero no es stock negativo');
+    ok(repC.totales.porBodega.caracas.valorCosto === M.r2(144 * 3.70 + 180 * 3.63 - 100 * 3.70) && repC.totales.porBodega.planta.valorCosto === 175
+        && repC.totales.porBodega.caracas.detalle.ruta.valorCosto === -370, 'totales por bodega: Planta y Caracas (con el detalle en camino, ACC y ruta)');
+    const repN = M.armarReporte({ fecha: '2026-11-10', asientos: [...L, { ...venta, cantidad: -400, kg: -100, valorCosto: -1480 }] });
+    ok(repN.controles[3].estado === 'diferencia' && repN.controles[3].detalle.negativos.some(x => x.ubicacion === 'caracas'),
+        'si la bodega Caracas entera queda negativa, el control 4 lo marca');
+    const cu = M.controlCuadre([...L, venta], [
+        { coleccion: 'inventario_comercial', docId: 'acc1', cantidad: 144, valorCosto: 144 * 3.70 },
+        { coleccion: 'kroma_despachos', docId: 'D2', cantidad: 180, valorCosto: 180 * 3.63 },
+        { coleccion: 'kroma_inventory_pt', docId: 'p1', cantidad: 50, valorCosto: 175 }]);
+    ok(cu.diferencias.length === 0, 'el cuadre contra partidas no exige una partida física para la ruta');
+
+    // Conteo en ACC que baja 120 con la ruta en −100: 100 son picking no declarado, 20 ajuste.
+    const conteo = a({ coleccion: 'inventario_comercial', docId: 'acc1', ubicacion: 'frimaca', categoria: 'ajuste', tipo: 'conteo', logId: 'V', lote: 'V', cantidad: -120, costoUnitario: 3.70, fecha: '2026-11-12' });
+    const net = M.netearConRuta([conteo], { 'ojsxyuc|ud': -100 });
+    const pnd = net.filter(x => x.tipo === 'picking_no_declarado');
+    ok(pnd.length === 2 && pnd.find(x => x.ubicacion === 'frimaca').cantidad === -100 && pnd.find(x => x.ubicacion === 'ruta').cantidad === 100
+        && net.find(x => x.categoria === 'ajuste').cantidad === -20 && M.r2(net.filter(x => x.ubicacion === 'frimaca').reduce((s, x) => s + x.cantidad, 0)) === -120,
+        'conteo en ACC: lo ya facturado pasa a la ruta (100), solo el resto es ajuste (−20)');
+    ok(M.netearConRuta([conteo], { 'ojsxyuc|ud': 5 }).length === 1, 'sin ruta negativa, el conteo queda como ajuste');
+
+    // Consumo interno en dos tipos.
+    ok(M.categoria('salida', 'consumo_interno') === 'consumo_interno' && M.subcategoria('salida', 'consumo_interno') === 'personal'
+        && M.subcategoria('salida', 'muestra') === 'muestras' && M.subcategoria('salida', 'donacion') === 'muestras'
+        && M.categoria('salida', 'vencido') === 'merma', 'consumo de personal y muestras son consumo interno; vencido es merma');
+    const C = require('./handlers/inventarioCuentas.js');
+    ok(C.cuentaDeAsiento({ categoria: 'consumo_interno', subcategoria: 'personal' }) === '3576378000007389858'
+        && C.cuentaDeAsiento({ categoria: 'consumo_interno', subcategoria: 'muestras' }) === '3576378000007389918'
+        && C.cuentaDeAsiento({ categoria: 'venta' }) === '3576378000000034003' && C.cuentaDeAsiento({ categoria: 'traslado' }) === null,
+        'cada categoría va a su cuenta; el traslado no genera línea');
+    let aborta = false; try { C.verificarCuentas([{ account_id: '3576378000007389634' }, { account_id: '999' }]); } catch { aborta = true; }
+    ok(aborta, 'una línea con una cuenta fuera de la lista aborta');
 }
 
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');
