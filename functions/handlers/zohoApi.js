@@ -502,6 +502,28 @@ async function deleteJournal({ accessToken, organizationId, dataCenter, journalI
     return true;
 }
 
+/**
+ * Manda un asiento en borrador a aprobación (POST /journals/{id}/submit).
+ * Si la organización no tiene aprobaciones activas, Zoho responde con un código
+ * de error: quien llama lo trata como "sin aprobaciones" y el asiento queda en borrador.
+ */
+async function submitJournal({ accessToken, organizationId, dataCenter, journalId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.post(`${api}/books/v3/journals/${journalId}/submit`, {}, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000,
+    });
+    const d = exigirOk(res, 'mandar el asiento a aprobación');
+    return { ok: true, mensaje: d.message || null };
+}
+
+/** Dirección del asiento en la web de Zoho Books (para el correo de aprobación). */
+function urlAsientoWeb({ dataCenter, organizationId, journalId }) {
+    const dc = String(dataCenter || 'com').toLowerCase();
+    const dominio = dc === 'ca' ? 'books.zohocloud.ca' : `books.zoho.${DC[dc] ? dc : 'com'}`;
+    return `https://${dominio}/app/${organizationId}#/journals/${journalId}`;
+}
+
 // ── Facturas y notas de crédito desde una fecha (inventario, inventarioFacturas.js) ──
 // Scope: ZohoBooks.invoices.READ (facturas) y ZohoBooks.creditnotes.READ (notas).
 
@@ -567,6 +589,33 @@ async function getBillDetail({ accessToken, organizationId, dataCenter, billId }
     return exigirOk(res, 'leer la factura de proveedor').bill || null;
 }
 
+/** Gastos con fecha en [desde, hasta] (todas las páginas). */
+async function listExpensesRango({ accessToken, organizationId, dataCenter, desde, hasta, maxPages = 10 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/expenses`, {
+            params: { organization_id: organizationId, date_start: desde, date_end: hasta, page, per_page: 200 },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+        });
+        const d = exigirOk(res, 'leer los gastos');
+        const lista = Array.isArray(d.expenses) ? d.expenses : [];
+        all.push(...lista.filter(e => String(e.date || '') >= desde && String(e.date || '') <= hasta));
+        if (d.page_context?.has_more_page !== true || !lista.length) return all;
+    }
+    throw new Error(`Hay más de ${maxPages * 200} gastos entre ${desde} y ${hasta}: el listado quedó incompleto.`);
+}
+
+/** Detalle de un gasto (trae la cuenta y, si es detallado, sus líneas). */
+async function getExpense({ accessToken, organizationId, dataCenter, expenseId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/expenses/${expenseId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 20000,
+    });
+    return exigirOk(res, 'leer el gasto').expense || null;
+}
+
 /** Diarios con fecha en [desde, hasta] (todas las páginas). */
 async function listJournalsRango({ accessToken, organizationId, dataCenter, desde, hasta, maxPages = 10 }) {
     const { api } = dcUrls(dataCenter);
@@ -594,6 +643,6 @@ async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, cr
 }
 
 module.exports = {
-    listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail, listBillsRango, getBillDetail, listJournalsRango,
-    listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal,
+    listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail, listBillsRango, getBillDetail, listJournalsRango, listExpensesRango, getExpense,
+    listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal, submitJournal, urlAsientoWeb,
     categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };

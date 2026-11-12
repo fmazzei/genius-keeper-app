@@ -27,6 +27,20 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-asiento-correo-aprobacion",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "El asiento mensual avisa por correo",
+    resumen: "Cuando el asiento de inventario quede en Zoho como borrador, Kroma escribe al correo de aprobaci\xF3n (con copia a quien pongas) con las l\xEDneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. Hay un bot\xF3n \xABCorreo de prueba\xBB en Inventario valorado \u2192 Zoho."
+  },
+  {
+    id: "2026-11-12-asiento-mensual",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Asiento mensual de inventario a Zoho",
+    resumen: "Inventario valorado \u2192 Zoho: un solo asiento por mes, en borrador, con lo producido, lo vendido, las mermas, la mano de obra y los materiales. Arranca en simulaci\xF3n; se crea en Zoho cuando lo actives."
+  },
+  {
     id: "2026-11-12-bobina-ajuste-peso",
     fecha: "2026-11-12",
     roles: ["master"],

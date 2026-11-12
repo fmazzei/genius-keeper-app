@@ -21,6 +21,20 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-asiento-correo-aprobacion',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'El asiento mensual avisa por correo',
+        resumen: 'Cuando el asiento de inventario quede en Zoho como borrador, Kroma escribe al correo de aprobación (con copia a quien pongas) con las líneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. Hay un botón «Correo de prueba» en Inventario valorado → Zoho.',
+    },
+    {
+        id: '2026-11-12-asiento-mensual',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'Asiento mensual de inventario a Zoho',
+        resumen: 'Inventario valorado → Zoho: un solo asiento por mes, en borrador, con lo producido, lo vendido, las mermas, la mano de obra y los materiales. Arranca en simulación; se crea en Zoho cuando lo actives.',
+    },
+    {
         id: '2026-11-12-bobina-ajuste-peso',
         fecha: '2026-11-12',
         roles: ['master'],

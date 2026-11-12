@@ -93,7 +93,7 @@ export default function InventarioValoradoPage() {
                     {tab === 'facturas' && <FacturasZoho puedeOperar={puedeOperar} perfil={perfil} />}
                     {tab === 'manoObra' && <ManoDeObra esMaster={kromaRole === 'master'} perfil={perfil} />}
                     {tab === 'materiales' && <Materiales puedeOperar={puedeOperar} esMaster={kromaRole === 'master'} perfil={perfil} />}
-                    {tab === 'zoho' && <ZohoAsientos puedeOperar={puedeOperar} perfil={perfil} />}
+                    {tab === 'zoho' && <ZohoAsientos perfil={perfil} esMaster={kromaRole === 'master'} />}
                 </>
             )}
         </div>
@@ -587,157 +587,166 @@ function Conteo({ puedeOperar, perfil }) {
     );
 }
 
-// ── Zoho: asiento diario de la variación del inventario ────────────────────
+// ── Zoho: asiento MENSUAL en borrador (sección 7) ─────────────────────────
 //
-// Arranca en SIMULACIÓN (calcula el asiento y no envía nada). Las cuentas se
-// eligen del plan de cuentas de Zoho; el envío real se activa aquí.
+// Un asiento por mes (KROMA-INV-AAAA-MM, fecha del último día) que se crea en
+// Zoho como BORRADOR para que administración lo apruebe. Arranca en
+// simulación; el máster pasa a real, crea o regenera el borrador.
 
-const llamarZoho = (accion, data = {}) => httpsCallable(functions, 'inventarioZoho')({ accion, ...data }).then(r => r.data);
-const ESTADO_ZOHO = {
+const ESTADO_MES = {
     simulado: ['Simulado', 'text-sky-300 bg-sky-500/10 border-sky-500/30'],
-    enviado: ['Enviado', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
+    abortaria: ['No se crearía', 'text-amber-300 bg-amber-500/10 border-amber-500/30'],
+    abortado: ['No se creó', 'text-red-300 bg-red-500/10 border-red-500/30'],
+    creado: ['Borrador en Zoho', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
     sin_cambios: ['Ya estaba en Zoho', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
-    sin_variacion: ['Sin variación', 'text-slate-300 bg-slate-700/40 border-slate-600'],
-    pendiente: ['Pendiente', 'text-amber-300 bg-amber-500/10 border-amber-500/30'],
+    difiere: ['Cambió: regenerar', 'text-amber-300 bg-amber-500/10 border-amber-500/30'],
+    ya_publicado: ['Aprobado o en aprobación', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
     error: ['Error', 'text-red-300 bg-red-500/10 border-red-500/30'],
 };
+const mesAnteriorDe = (m) => { const [y, mm] = m.split('-').map(Number); return mm === 1 ? `${y - 1}-12` : `${y}-${String(mm - 1).padStart(2, '0')}`; };
 
-function ZohoAsientos({ puedeOperar, perfil }) {
+function ZohoAsientos({ perfil, esMaster }) {
     const [est, setEst] = useState(null);
-    const [cuentas, setCuentas] = useState(null);
-    const [sel, setSel] = useState({ inv: '', contra: '' });
+    const [mes, setMes] = useState(mesAnteriorDe(mesActual()));
+    const [res, setRes] = useState(null);
+    const [correo, setCorreo] = useState('');
+    const [copia, setCopia] = useState('');
     const [ocupado, setOcupado] = useState('');
     const [error, setError] = useState('');
     const [aviso, setAviso] = useState('');
-    const [abierto, setAbierto] = useState(null);
-
     const cargar = async () => {
-        try {
-            const r = await llamarZoho('estado');
-            setEst(r);
-            setSel({ inv: r.zoho?.cuentaInventarioId || '', contra: r.zoho?.contrapartidaId || '' });
-        } catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({ zoho: {}, dias: [] }); }
+        try { const r = await llamar('asientoMensualEstado', { perfil }); setEst(r); setCorreo(r.mensual?.correoAprobacion || ''); setCopia(r.mensual?.correoCopia || ''); }
+        catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({ meses: [] }); }
     };
     useEffect(() => { cargar(); }, []);
-
     const hacer = async (que, fn) => {
         setOcupado(que); setError(''); setAviso('');
-        try { await fn(); await cargar(); } catch (e) { setError(e?.message || 'No se pudo completar.'); }
-        finally { setOcupado(''); }
+        try { await fn(); } catch (e) { setError(e?.message || 'No se pudo completar.'); } finally { setOcupado(''); }
     };
-    const verCuentas = () => hacer('cuentas', async () => { setCuentas((await llamarZoho('cuentas')).cuentas || []); });
-    const guardarCuentas = () => hacer('guardar', async () => {
-        await llamarZoho('configurar', { cuentaInventarioId: sel.inv, contrapartidaId: sel.contra, perfil });
-        setAviso('Cuentas validadas en Zoho y guardadas. Los asientos simulados se recalculan en la próxima sincronización.');
-    });
-    const cambiarModo = (modo) => {
-        if (modo === 'real' && !window.confirm('A partir de ahora Kroma CREA asientos de diario en Zoho todos los días. ¿Activar el envío real?')) return;
-        hacer('modo', async () => { await llamarZoho('configurar', { modo, perfil }); });
+    const simular = () => hacer('sim', async () => setRes(await llamar('asientoMensual', { mes, modo: 'simular', perfil })));
+    const crear = (regenerar) => {
+        if (!window.confirm(regenerar ? `Se borra el borrador de ${mes} en Zoho y se crea otro con los datos de hoy. ¿Seguir?` : `Se crea en Zoho el asiento de ${mes} en BORRADOR, para que administración lo apruebe. ¿Seguir?`)) return;
+        hacer('crear', async () => { const r = await llamar('asientoMensual', { mes, modo: 'ejecutar', regenerar, perfil }); setRes(r); setAviso(r.mensaje || ''); await cargar(); });
     };
-    const sincronizar = () => hacer('sync', async () => {
-        const r = await llamarZoho('sincronizar');
-        setAviso(r.dias?.length ? `${r.dias.length} día(s) revisados en modo ${r.modo === 'real' ? 'real' : 'simulación'}.` : (r.nota || 'No había días pendientes.'));
-    });
+    const probarCorreo = () => {
+        const a = window.prompt('¿A qué correo mando la prueba?', correo || '');
+        if (!a) return;
+        hacer('correo', async () => { await llamar('asientoMensualCorreoPrueba', { mes, a, perfil }); setAviso(`Correo de prueba enviado a ${a}.`); });
+    };
+    const guardarConfig = (patch) => hacer('cfg', async () => { await llamar('asientoMensualConfig', { ...patch, perfil }); setAviso('Configuración guardada.'); await cargar(); });
 
     if (!est) return <Cargando />;
-    const z = est.zoho || {};
-    const real = z.modo === 'real';
-    const nombreCuenta = (c) => c ? `${c.codigo ? `${c.codigo} · ` : ''}${c.nombre}` : '—';
-    const opciones = cuentas || [z.cuentas?.inventario, z.cuentas?.contrapartida].filter(Boolean);
-
+    const zm = est.mensual || {};
+    const r = res || (est.meses || []).find(x => x.mes === mes);
+    const [etq, cls] = ESTADO_MES[r?.estado] || ['—', 'text-slate-400 border-slate-700'];
     return (
         <div className="space-y-4">
-            <div className={`rounded-2xl border p-4 ${real ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-sky-500/40 bg-sky-500/5'}`}>
-                <p className={`text-sm font-semibold ${real ? 'text-emerald-200' : 'text-sky-200'}`}>
-                    {real ? 'Envío real activo: un asiento por día en Zoho' : 'Modo simulación: se calcula el asiento de cada día y no se envía nada'}
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                    Variación del valor a costo del producto terminado (cierre del día − cierre anterior). Referencia KROMA-INV-AAAA-MM-DD.
-                    El de cada día se envía con el cierre de las 23:55; "Sincronizar" revisa los días ya cerrados.
-                </p>
-                {z.ultimaCorrida && <p className="text-[11px] text-slate-500 mt-1">Última corrida: {new Date(z.ultimaCorrida).toLocaleString('es-VE')}</p>}
-                {z.base && <p className="text-[11px] text-slate-500 mt-1">Diferencia base Zoho − Kroma al {z.base.fecha}: {usd(z.base.valor)} (Zoho {usd(z.base.saldoZoho)} · Kroma {usd(z.base.valorKroma)})</p>}
-            </div>
-
-            {error && <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">{error}</p>}
-            {aviso && <p className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">{aviso}</p>}
-
-            <div className="rounded-2xl border border-slate-700 bg-slate-900 p-4 space-y-3">
-                <p className="text-sm font-semibold text-white">Cuentas del asiento</p>
-                <p className="text-xs text-slate-400">Variación positiva: débito a inventario y crédito a la contrapartida. Negativa: al revés.</p>
-                {[['inv', 'Cuenta de inventario', z.cuentas?.inventario], ['contra', 'Contrapartida', z.cuentas?.contrapartida]].map(([k, label, actual]) => (
-                    <div key={k}>
-                        <p className="text-xs text-slate-400 mb-1">{label}: <span className="text-slate-200">{nombreCuenta(actual)}</span></p>
-                        {puedeOperar && cuentas && (
-                            <select value={sel[k]} onChange={e => setSel(s => ({ ...s, [k]: e.target.value }))}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white">
-                                <option value="">Elegir…</option>
-                                {opciones.map(c => <option key={c.accountId} value={c.accountId}>{nombreCuenta(c)}</option>)}
-                            </select>
-                        )}
-                    </div>
-                ))}
-                {puedeOperar && (
-                    <div className="flex flex-wrap gap-2">
-                        {!cuentas
-                            ? <Boton onClick={verCuentas} ocupado={ocupado === 'cuentas'}>Elegir cuentas de Zoho</Boton>
-                            : <Boton onClick={guardarCuentas} ocupado={ocupado === 'guardar'} disabled={!sel.inv || !sel.contra || sel.inv === sel.contra}>Guardar cuentas</Boton>}
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-2">
+                <p className="text-sm font-semibold text-slate-100">Asiento mensual a Zoho</p>
+                <p className="text-xs text-slate-400">Un asiento por mes, con fecha del último día y referencia KROMA-INV-AAAA-MM, en borrador para que administración lo apruebe. Se arma solo del día 1 al 3 del mes siguiente, después del cierre de la mano de obra. No se crea si falla un control diario del mes.</p>
+                <p className="text-xs">Modo: <span className={zm.modo === 'real' ? 'text-emerald-300' : 'text-sky-300'}>{zm.modo === 'real' ? 'real (crea el borrador en Zoho)' : 'simulación (no envía nada)'}</span>{zm.ultimoError ? <span className="text-red-300"> · último error: {zm.ultimoError}</span> : null}</p>
+                {esMaster && (
+                    <div className="flex flex-wrap items-end gap-2 pt-1">
+                        <label className="text-xs text-slate-400">Correo de aprobación
+                            <input value={correo} onChange={e => setCorreo(e.target.value)} type="email" className="mt-1 block w-64 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" placeholder="administracion@…" />
+                        </label>
+                        <label className="text-xs text-slate-400">Con copia a (separados por coma)
+                            <input value={copia} onChange={e => setCopia(e.target.value)} type="text" className="mt-1 block w-64 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" placeholder="opcional" />
+                        </label>
+                        <Boton onClick={() => guardarConfig({ correoAprobacion: correo, correoCopia: copia })} ocupado={ocupado === 'cfg'}>Guardar correos</Boton>
+                        <Boton tono={zm.modo === 'real' ? undefined : 'verde'} onClick={() => {
+                            const real = zm.modo !== 'real';
+                            if (real && !window.confirm('Desde ahora el cierre crea el asiento en Zoho como borrador. ¿Activar?')) return;
+                            guardarConfig({ modo: real ? 'real' : 'simulacion' });
+                        }} ocupado={ocupado === 'cfg'}>{zm.modo === 'real' ? 'Volver a simulación' : 'Activar modo real'}</Boton>
+                        <Boton onClick={() => {
+                            const prender = zm.enviarAprobacion !== true;
+                            if (prender && !window.confirm('Solo actívalo si las aprobaciones de asientos ya están activas en Zoho. ¿Seguir?')) return;
+                            guardarConfig({ enviarAprobacion: prender });
+                        }} ocupado={ocupado === 'cfg'}>
+                            {zm.enviarAprobacion === true ? 'Mandar a aprobación en Zoho: sí' : 'Mandar a aprobación en Zoho: no'}</Boton>
                     </div>
                 )}
+                <p className="text-xs text-slate-500">Al crearlo queda en borrador (se manda a aprobación en Zoho solo si lo activas, cuando las aprobaciones de asientos estén encendidas allá) y Kroma escribe al correo de aprobación, con copia a quien pongas, con las líneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. En simulación no se manda nada.</p>
             </div>
 
-            {puedeOperar && (
-                <div className="flex flex-wrap gap-2">
-                    <Boton onClick={sincronizar} ocupado={ocupado === 'sync'}>Sincronizar días cerrados</Boton>
-                    {real
-                        ? <Boton onClick={() => cambiarModo('simulacion')} ocupado={ocupado === 'modo'} tono="gris">Volver a simulación</Boton>
-                        : <Boton onClick={() => cambiarModo('real')} ocupado={ocupado === 'modo'} disabled={!z.cuentas?.inventario || !z.cuentas?.contrapartida} tono="verde">Activar envío real</Boton>}
+            <div className="flex flex-wrap items-center gap-2">
+                <input type="month" value={mes} onChange={e => { setMes(e.target.value); setRes(null); }} className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" style={{ colorScheme: 'dark' }} />
+                <Boton onClick={simular} ocupado={ocupado === 'sim'}>Simular</Boton>
+                {esMaster && <Boton tono="verde" onClick={() => crear(false)} ocupado={ocupado === 'crear'}>Crear borrador en Zoho</Boton>}
+                {esMaster && r?.estado === 'difiere' && <Boton onClick={() => crear(true)} ocupado={ocupado === 'crear'}>Regenerar</Boton>}
+                {esMaster && r && <Boton onClick={probarCorreo} ocupado={ocupado === 'correo'}>Correo de prueba</Boton>}
+            </div>
+
+            {r && (
+                <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-100">{r.referencia}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>{etq}</span>
+                        {r.journalId && <span className="text-xs text-slate-400">asiento {r.journalId}</span>}
+                    </div>
+                    {r.mensaje && <p className="text-xs text-slate-300">{r.mensaje}</p>}
+                    {(r.aprobacion || r.correo || r.correoAborto) && (
+                        <div className="text-xs space-y-0.5">
+                            {r.aprobacion && <p className={r.aprobacion.estado === 'enviado' ? 'text-emerald-300' : 'text-slate-400'}>Aprobación en Zoho: {r.aprobacion.mensaje}</p>}
+                            {[r.correo, r.correoAborto].filter(Boolean).map((c, i) => (
+                                <p key={i} className={c.estado === 'enviado' ? 'text-emerald-300' : c.estado === 'error' ? 'text-red-300' : 'text-amber-300'}>
+                                    Correo: {c.estado === 'enviado' ? `enviado a ${c.a}${c.cc ? ` (copia: ${c.cc})` : ''}` : c.mensaje || c.estado}</p>
+                            ))}
+                            {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="text-sky-300 underline">Abrir el asiento en Zoho</a>}
+                        </div>
+                    )}
+                    {(r.errores || []).length > 0 && <div className="text-xs text-red-300 space-y-1">{r.errores.map((e, i) => <p key={i}>• {e}</p>)}</div>}
+                    {(r.controlesFallidos || []).length > 0 && <div className="text-xs text-red-300">{r.controlesFallidos.map((c, i) => <p key={i}>{c.fecha}: control {c.n} ({c.nombre}){c.nota ? ` · ${c.nota}` : ''}</p>)}</div>}
+                    {(r.avisos || []).length > 0 && <div className="text-xs text-amber-200 space-y-1">{r.avisos.map((e, i) => <p key={i}>• {e}</p>)}</div>}
+                    <div className="overflow-x-auto rounded-xl border border-slate-700">
+                        <table className="w-full text-xs">
+                            <thead className="bg-slate-900/60 text-slate-400"><tr><th className="text-left p-2">Concepto</th><th className="text-right p-2">Débito</th><th className="text-right p-2">Crédito</th></tr></thead>
+                            <tbody>
+                                {(r.lineas || []).map((l, i) => (
+                                    <tr key={i} className="border-t border-slate-800">
+                                        <td className="p-2 text-slate-200">{l.description}</td>
+                                        <td className="p-2 text-right text-slate-100">{l.debit_or_credit === 'debit' ? usd(l.amount) : ''}</td>
+                                        <td className="p-2 text-right text-slate-100">{l.debit_or_credit === 'credit' ? usd(l.amount) : ''}</td>
+                                    </tr>
+                                ))}
+                                <tr className="border-t border-slate-700 bg-slate-900/40 font-semibold"><td className="p-2 text-slate-100">Total</td><td className="p-2 text-right text-white">{usd(r.totales?.debe)}</td><td className="p-2 text-right text-white">{usd(r.totales?.haber)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    {r.control && (
+                        <div className="grid sm:grid-cols-2 gap-2 text-xs">
+                            {[['pt', 'Producto terminado'], ['mp', 'Materia prima']].filter(([k]) => r.control[k]).map(([k, t]) => {
+                                const x = r.control[k];
+                                return (
+                                    <div key={k} className="rounded-xl border border-slate-700 bg-slate-900/40 p-3">
+                                        <p className="text-slate-300 font-medium">{t}</p>
+                                        <p className="text-slate-400">Zoho hoy {usd(x.zohoAntes)} → con este asiento {usd(x.zohoDespues)}</p>
+                                        <p className="text-slate-400">Kroma a fin de mes {usd(x.kroma)}</p>
+                                        <p className={Math.abs(x.diferencia) < 0.01 ? 'text-emerald-300' : 'text-amber-300'}>{Math.abs(x.diferencia) < 0.01 ? 'Cuadra' : `Diferencia ${usd(x.diferencia)}`}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
 
-            <div className="rounded-2xl border border-slate-700 bg-slate-900 overflow-hidden">
-                <p className="text-sm font-semibold text-white px-4 pt-3 pb-2">Registro por día</p>
-                {!est.dias?.length ? <p className="text-sm text-slate-400 px-4 pb-4">Todavía no hay días sincronizados.</p> : (
-                    <div className="divide-y divide-slate-800">
-                        {est.dias.map(d => {
-                            const [lbl, cls] = ESTADO_ZOHO[d.estado] || [d.estado, 'text-slate-300 border-slate-600'];
-                            return (
-                                <button key={d.fecha} onClick={() => setAbierto(abierto === d.fecha ? null : d.fecha)} className="w-full text-left px-4 py-3">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm text-white font-medium">{d.fecha}</span>
-                                        <span className={`text-[11px] px-2 py-0.5 rounded-full border ${cls}`}>{lbl}</span>
-                                        <span className="ml-auto text-sm text-slate-200 tabular-nums">
-                                            {d.variacion != null ? `${d.variacion > 0 ? '+' : d.variacion < 0 ? '−' : ''}${usd(Math.abs(d.variacion))}` : '—'}
-                                        </span>
-                                    </div>
-                                    {d.mensaje && <p className={`text-xs mt-1 ${d.estado === 'error' ? 'text-red-300' : 'text-slate-400'}`}>{d.mensaje}</p>}
-                                    {abierto === d.fecha && (
-                                        <div className="mt-2 text-xs text-slate-400 space-y-1">
-                                            <p>Cierre {usd(d.cierre)} · anterior {usd(d.cierreAnterior)}{d.journalId ? ` · asiento Zoho ${d.journalId}` : ''}</p>
-                                            {d.control?.nota && <p className="text-amber-300">{d.control.nota}</p>}
-                                            {d.payload && <pre className="whitespace-pre-wrap break-all bg-slate-950 border border-slate-800 rounded-lg p-2 text-[11px]">{JSON.stringify(d.payload, null, 1)}</pre>}
-                                            {d.respuesta && <pre className="whitespace-pre-wrap break-all bg-slate-950 border border-slate-800 rounded-lg p-2 text-[11px]">{JSON.stringify(d.respuesta, null, 1)}</pre>}
-                                            {!!d.intentos?.length && <p>Intentos: {d.intentos.map(i => `${i.etiqueta} ${i.ok ? 'ok' : `falló${i.status ? ` (${i.status})` : ''}`}`).join(' · ')}</p>}
-                                        </div>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
+            {(est.meses || []).length > 0 && (
+                <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3">
+                    <p className="text-sm font-semibold text-slate-100 mb-2">Meses</p>
+                    {(est.meses || []).map(m => {
+                        const [e2, c2] = ESTADO_MES[m.estado] || ['—', 'text-slate-400 border-slate-700'];
+                        return <button key={m.mes} onClick={() => { setMes(m.mes); setRes(null); }} className="w-full flex items-center justify-between py-1.5 text-xs text-left">
+                            <span className="text-slate-200">{m.mes} · {m.referencia}</span><span className={`px-2 py-0.5 rounded-full border ${c2}`}>{e2}</span></button>;
+                    })}
+                </div>
+            )}
+            {aviso && <p className="text-sm text-emerald-300">{aviso}</p>}
+            {error && <p className="text-sm text-red-300">{error}</p>}
         </div>
     );
 }
-
-// ── Facturas de Zoho → salida de la bodega Caracas ─────────────────────────
-
-const EST_FAC = {
-    descontada: ['Descontada', 'text-emerald-300'], pendiente: ['Pendiente: falta existencia', 'text-amber-300'],
-    sin_mapear: ['Artículo sin presentación', 'text-amber-300'], revisar: ['Por revisar', 'text-amber-300'],
-    excluida: ['No se descuenta', 'text-slate-400'], anulada: ['Anulada', 'text-slate-400'], ignorada: ['Borrador', 'text-slate-500'],
-    no_aplica: ['No es reposición', 'text-slate-500'],
-};
 
 // ── Materiales (sección 5): libro valorado de insumos, empaques y consumibles ──
 const CAT_MAT = { cultivos: 'Cultivos', coagulantes: 'Coagulantes', sales: 'Sales y conservantes', empaques: 'Empaques',
