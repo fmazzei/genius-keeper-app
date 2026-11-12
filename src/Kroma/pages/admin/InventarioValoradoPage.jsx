@@ -726,6 +726,7 @@ const EST_FAC = {
     descontada: ['Descontada', 'text-emerald-300'], pendiente: ['Pendiente: falta existencia', 'text-amber-300'],
     sin_mapear: ['Artículo sin presentación', 'text-amber-300'], revisar: ['Por revisar', 'text-amber-300'],
     excluida: ['No se descuenta', 'text-slate-400'], anulada: ['Anulada', 'text-slate-400'], ignorada: ['Borrador', 'text-slate-500'],
+    no_aplica: ['No es reposición', 'text-slate-500'],
 };
 
 function FacturasZoho({ puedeOperar, perfil }) {
@@ -804,9 +805,10 @@ function FacturasZoho({ puedeOperar, perfil }) {
                     <p className="text-slate-300">
                         {sim.resumen.facturas} facturas · {sim.resumen.descontadas} se descuentan · {sim.resumen.pendientes} pendientes · {sim.resumen.sinMapear} sin presentación · {sim.resumen.revisar} por revisar · {sim.resumen.excluidas} no se descuentan.
                         Ventas {fx(-sim.resumen.ventasUnidades, 0)} ud a costo {usd(-sim.resumen.ventasCosto)}; reposiciones {fx(-sim.resumen.reposicionUnidades, 0)} ud a costo {usd(-sim.resumen.reposicionCosto)}.
+                        {sim.resumen.reposicionesGK > 0 && <> Reposiciones declaradas en GK: {sim.resumen.reposicionesGK} ({fx(-sim.resumen.reposicionesGKUnidades, 0)} ud a costo {usd(-sim.resumen.reposicionesGKCosto)}).</>}
                     </p>
                     {(sim.migrados || []).length > 0 && <p className="text-slate-400">Despachos enlazados por el número escrito en las notas: {sim.migrados.map(m => m.facturaNumero).join(', ')}.</p>}
-                    <ListaFacturas filas={sim.facturas.map(x => ({ ...x, movs: x.movimientos }))} />
+                    <ListaFacturas filas={[...sim.facturas, ...(sim.reposiciones || [])].map(x => ({ ...x, movs: x.movimientos }))} />
                 </div>
             )}
 

@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-reposiciones-inventario",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Reposiciones de Caracas en el inventario",
+    resumen: "Lo que el mercaderista repone en un punto de venta (devoluci\xF3n con reposici\xF3n en GK) sale de la bodega Caracas como reposici\xF3n, no como venta, junto con las facturas de cada noche."
+  },
+  {
     id: "2026-11-12-facturas-inventario",
     fecha: "2026-11-12",
     roles: ["master"],

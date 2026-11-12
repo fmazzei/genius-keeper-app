@@ -152,6 +152,29 @@ ok(dev.length >= 1 && M.r2(dev.reduce((s, a) => s + a.cantidad, 0)) === 2 && dev
 await F.procesarFacturas({ zohoCtx: ZCTX });
 ok((await libro()).filter(a => a.tipo === 'nota_credito').length === dev.length, 'la nota no se aplica dos veces');
 
+// 6b) Sección 4: reposiciones declaradas en GK (devoluciones con resolución reposición).
+await db.doc('devoluciones/dA').set({ fecha: '2026-10-25', posId: 'p1', posName: 'Manzanares', resolucion: 'reposicion', unidadesRepuestas: 12,
+    unidades: 12, lotes: [{ expiryDate: '2026-11-21', unidades: 12, motivo: 'por_vencer' }], visitaReportId: 'v1' });
+await db.doc('devoluciones/dB').set({ fecha: '2026-10-10', posName: 'Vieja', resolucion: 'reposicion', unidadesRepuestas: 5 });
+await db.doc('devoluciones/dC').set({ fecha: '2026-10-28', posName: 'Sin resolver', resolucion: 'pendiente', unidadesRepuestas: 0 });
+const r6b = await F.procesarFacturas({ zohoCtx: ZCTX });
+const repA = (await libro()).filter(a => a.tipo === 'reposicion_gk');
+ok(repA.length === 1 && repA[0].lote === 'LN' && repA[0].cantidad === -4 && repA[0].categoria === 'reposicion' && repA[0].fecha === '2026-10-25'
+    && repA[0].ref?.devolucionId === 'dA' && (await est('dev_dA')).estado === 'pendiente' && (await est('dev_dA')).faltantes[R.CAT_250] === 8,
+    'reposición de GK: sale como reposición con su fecha; con lo que había ese día (4) y 8 pendientes, sin dejar negativos');
+ok(!(await est('dev_dB')) && !(await est('dev_dC')) && r6b.resumen.reposicionesGK === 1,
+    'no se toman la reposición anterior al 16-oct ni la devolución sin resolver');
+await F.procesarFacturas({ zohoCtx: ZCTX });
+ok((await est('dev_dA')).estado === 'descontada' && M.r2((await libro()).filter(a => a.tipo === 'reposicion_gk').reduce((s, a) => s + a.cantidad, 0)) === -12,
+    'la siguiente corrida saca las 8 pendientes de lo que hay hoy');
+const nRep = (await libro()).length;
+await F.procesarFacturas({ zohoCtx: ZCTX });
+ok((await libro()).length === nRep, 'la reposición no se repite');
+await db.doc('devoluciones/dA').update({ resolucion: 'nota_credito' });
+await F.procesarFacturas({ zohoCtx: ZCTX });
+const netoRep = (await libro()).filter(a => a.ref?.devolucionId === 'dA' || a.revierte === 'reposicion_gk').reduce((s, a) => s + a.cantidad, 0);
+ok((await est('dev_dA')).estado === 'no_aplica' && M.r2(netoRep) === 0, 'si en GK deja de ser reposición, se devuelve a la bodega');
+
 // 7) Reporte: control 7 con las facturas pendientes; control 8 con el lote por vencer.
 const pend = await F.pendientesHasta(HOY);
 const rep = M.armarReporte({ fecha: HOY, asientos: (await libro()), facturas: pend });

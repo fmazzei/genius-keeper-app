@@ -211,7 +211,28 @@ const sumaPorCatalogo = (asientos) => {
 /** ¿La nota de crédito es de una reposición? (referencia o notas que dicen "repos"). */
 const esNotaReposicion = (cn) => /repos/i.test(`${cn?.reference_number || ""} ${cn?.notes || ""}`);
 
+/**
+ * Reposición declarada en GK (`devoluciones`, sección 4): el mercaderista le
+ * repuso al punto de venta producto de la ruta de Caracas. Las unidades
+ * repuestas salen de la bodega Caracas como `reposicion`. Lo que se retiró del
+ * anaquel no vuelve a la bodega (ya había salido con su factura).
+ *   → { aplica, unidades, firma, motivo }
+ */
+function reposicionDeDevolucion(d, desde) {
+    const fecha = String(d?.fecha || "");
+    const uds = Number(d?.unidadesRepuestas) || 0;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { aplica: false, motivo: "Devolución sin fecha" };
+    if (fecha < desde) return { aplica: false, motivo: `Anterior al ${desde}` };
+    if (d.resolucion !== "reposicion") return { aplica: false, motivo: `Resolución: ${d.resolucion || "sin resolver"}` };
+    if (!(uds > 0)) return { aplica: false, motivo: "Sin unidades repuestas" };
+    if (d.facturaReposicion) return { aplica: false, motivo: `La reposición va con la factura ${d.facturaReposicion}` };
+    const motivos = [...new Set((d.lotes || []).map(l => l.motivo).filter(Boolean))].join(", ");
+    return { aplica: true, unidades: uds, firma: `reposicion|${uds}|${fecha}`,
+        motivo: `Reposición en ${d.posName || "punto de venta"}${motivos ? ` (${motivos.replace(/_/g, " ")})` : ""}` };
+}
+
 module.exports = {
+    reposicionDeDevolucion,
     COL_RUTA, DESDE_INICIAL, MAPEO_INICIAL, CAT_250, CAT_1KG, CIUDADES_CARACAS,
     mapeoEfectivo, numeroFacturaDeTexto, esDeCaracas, clasificarFactura, lineasDeFactura, firmaFactura,
     lotesDisponibles, planDescuento, asientosDeAsignacion, asientosReversa, asignadoDeDevolucion,
