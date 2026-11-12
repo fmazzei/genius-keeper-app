@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-bobina-ajuste-peso',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'Ajustar un rollo por su peso',
+        resumen: 'Inventario valorado → Materiales: la bobina abre marcada «pendiente de ajuste». Con el peso del rollo empezado y el de uno nuevo, «Ajustar» calcula los metros que quedan y corrige su valor.',
+    },
+    {
         id: '2026-11-12-mano-de-obra-lote',
         fecha: '2026-11-12',
         roles: ['master'],

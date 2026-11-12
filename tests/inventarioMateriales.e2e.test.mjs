@@ -28,12 +28,14 @@ const mats = {
     tina: { nombre: 'Tina', categoria: 'empaques', unidad: 'und', cantidadPresentacion: '912', costoUSD: 284.79,
         asignaciones: [{ productoId: 'chevre', presentacionId: 'p250', tipoConsumo: 'unitario', cantidadPorUnidad: 1 }] },
     guantes: { nombre: 'Guantes', categoria: 'consumibles', unidad: 'und', cantidadPresentacion: '1', costoUSD: 0.1538 },
+    bobina: { nombre: 'Bobina', categoria: 'empaques', unidad: 'm', cantidadPresentacion: '400', costoUSD: '180' },
 };
 const invs = {
     cuajo: { unidadBase: 'ml', presentacionTipo: '500ml', cantidadPorUnidad: '500', stockCerrado: 1, stockEnUso: 405 },
     codex: { unidadBase: 'g', presentacionTipo: 'Sobre', cantidadPorUnidad: '19', stockCerrado: 9, stockEnUso: 7.12 },
     tina: { unidadBase: 'und', presentacionTipo: 'granel', cantidadPorUnidad: 0, stockCerrado: 0, stockEnUso: 300 },
     guantes: { unidadBase: 'par', presentacionTipo: 'granel', cantidadPorUnidad: 0, stockCerrado: 0, stockEnUso: 55 },
+    bobina: { unidadBase: 'm', presentacionTipo: 'Bobina', cantidadPorUnidad: '400', stockCerrado: 1, stockEnUso: 224, pendienteAjuste: { motivo: 'empezada', desde: '2026-11-12' } },
 };
 for (const [id, m] of Object.entries(mats)) await db.doc(`kroma_materials/${id}`).set({ ...m, empresaId: E, active: true });
 for (const [id, i] of Object.entries(invs)) await db.doc(`kroma_inventory_materials/${id}`).set({ ...i, empresaId: E, materialId: id, materialNombre: mats[id].nombre, categoria: mats[id].categoria, active: true });
@@ -79,7 +81,7 @@ ok(sim.lineas.find(l => l.materialId === 'codex').origenCosto === 'compras' && s
 const ab = await M.abrirMateriales({ simular: false, quien: 'prueba' });
 const cfg = (await db.doc('kroma_inv_config/lacteoca').get()).data();
 ok(ab.abierto && cfg.materiales.abierto && cfg.materiales.planillasDesde === '2026-11-01' && cfg.abierto === true, 'apertura: abre sin tocar la config del producto terminado');
-ok((await libro()).length === 4 && cerca((await saldo('cuajo')).valor, 905 * 12 / 500), 'apertura: un movimiento y un saldo por material');
+ok((await libro()).length === 5 && cerca((await saldo('cuajo')).valor, 905 * 12 / 500), 'apertura: un movimiento y un saldo por material');
 ok((await M.abrirMateriales({ simular: false })).yaAbierto, 'no se abre dos veces');
 
 // 3) Compra de 3 sobres a $66 (con su marca).
@@ -153,6 +155,19 @@ const g = await M.guardarCostos({ fletePorViaje: { gil: '100', mas: '25,50' } })
 ok(g.leche.fletePorViaje.gil === 100 && g.leche.fletePorViaje.mas === 25.5 && g.leche.fletePorLitro === undefined, 'tarifas por viaje guardadas (acepta coma) y se quita el flete por litro');
 let err = null; try { await M.guardarCostos({ fletePorViaje: { gil: '-5' } }); } catch (e) { err = e; }
 ok(!!err, 'una tarifa negativa se rechaza');
+
+// 12) Bobina empezada: abre marcada y se corrige por peso.
+ok((await saldo('bobina')).pendienteAjuste?.motivo === 'empezada' && cerca((await saldo('bobina')).valor, 280.8), 'bobina: abre con $280,80 marcada pendiente de ajuste');
+const sp = await M.ajustarPorPeso({ materialId: 'bobina', pesoActual: 3.5, pesoNuevo: 8.5, tara: 0.5, simular: true });
+ok(sp.simulacion && sp.medido === 150 && sp.despues.cantidad === 374 && cerca(sp.valorDiferencia, -112.5) && (await inv('bobina')).stockCerrado === 1,
+    'ajuste por peso simulado: el rollo de 400 m tiene 150 m; 624 → 374 m, −$112,50, sin escribir');
+const antesB = await inv('bobina');
+await M.ajustarPorPeso({ materialId: 'bobina', pesoActual: 3.5, pesoNuevo: 8.5, tara: 0.5, simular: false, quien: 'prueba' });
+const despB = await inv('bobina');
+ok(despB.stockCerrado === 0 && despB.stockEnUso === 374 && !despB.pendienteAjuste && despB._mov?.tipo === 'conteo', 'ajuste por peso: 0 cerrados + 374 m en uso, marca de conteo, sin pendiente');
+await dispararDesde('bobina', antesB);
+const sB = await saldo('bobina');
+ok(cerca(sB.valor, 168.3) && !sB.pendienteAjuste, `libro: la bobina queda en ${sB.valor} (374 m × $0,45) y sin pendiente`);
 
 if (fallas) { console.log(`\n${fallas} fallaron`); process.exit(1); }
 console.log('\nTodas en verde');

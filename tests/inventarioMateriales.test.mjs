@@ -104,5 +104,23 @@ ok(d1.length === 2 && d1.find(x => x.materialId === 'cuajo').cantidad === 10 && 
     'corrección: solo la diferencia (10 ml más de cuajo, se devuelven 120 tinas)');
 ok(R.diferenciaConsumo(c1, c1).length === 0, 'sin cambios no hay diferencia');
 
+
+// Conteo del 11-nov: material sin costo a propósito y bobina pendiente de ajuste por peso.
+{
+    const ap = R.aperturaMateriales({
+        inventarios: [
+            { id: 'rec', materialId: 'rec', materialNombre: 'Recipientes de muestra', categoria: 'consumibles', unidadBase: 'und', cantidadPorUnidad: 0, stockCerrado: 0, stockEnUso: 16 },
+            { id: 'bob', materialId: 'bob', materialNombre: 'Bobina', categoria: 'empaques', unidadBase: 'm', cantidadPorUnidad: '400', stockCerrado: 1, stockEnUso: 224, pendienteAjuste: { motivo: 'empezada' } },
+        ],
+        materiales: { rec: { costoUSD: 0, cantidadPresentacion: '1', unidad: 'und', costoCero: true }, bob: { costoUSD: '180', cantidadPresentacion: '400', unidad: 'm' } },
+    });
+    const rec = ap.find(l => l.materialId === 'rec'), bob = ap.find(l => l.materialId === 'bob');
+    ok(rec.costoUnitario === 0 && rec.valor === 0 && !rec.aviso && rec.origenCosto === 'costo_cero', 'costo cero a propósito: vale 0 y no queda "sin costo"');
+    ok(Math.abs(bob.valor - 280.8) < 1e-6 && bob.pendienteAjuste?.motivo === 'empezada', 'bobina: abre con su valor de hoy ($280,80) y marcada pendiente');
+    ok(R.precioMaestro({ costoUSD: 0, cantidadPresentacion: 1, unidad: 'und' }, 'und').precio === null, 'sin la marca, costo 0 sigue siendo "sin costo"');
+    ok(R.cantidadPorPeso({ contenidoRollo: 400, pesoActual: 3.2, pesoNuevo: 8 }) === 160, 'rollo de 400 m que pesa 3,2 de 8 kg: quedan 160 m');
+    ok(R.cantidadPorPeso({ contenidoRollo: 400, pesoActual: 3.5, pesoNuevo: 8.5, tara: 0.5 }) === 150, 'con tara del tubo (0,5): 3 de 8 = 150 m');
+    ok(R.cantidadPorPeso({ contenidoRollo: 400, pesoActual: 9, pesoNuevo: 8 }) === null && R.cantidadPorPeso({ contenidoRollo: 400, pesoActual: 1, pesoNuevo: 0 }) === null, 'pesos imposibles: no calcula');
+}
 if (fallas) { console.log(`\n${fallas} fallaron`); process.exit(1); }
 console.log('\nTodas en verde');

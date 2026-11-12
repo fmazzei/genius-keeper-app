@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-bobina-ajuste-peso",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Ajustar un rollo por su peso",
+    resumen: "Inventario valorado \u2192 Materiales: la bobina abre marcada \xABpendiente de ajuste\xBB. Con el peso del rollo empezado y el de uno nuevo, \xABAjustar\xBB calcula los metros que quedan y corrige su valor."
+  },
+  {
     id: "2026-11-12-mano-de-obra-lote",
     fecha: "2026-11-12",
     roles: ["master"],

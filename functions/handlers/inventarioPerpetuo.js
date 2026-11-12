@@ -804,6 +804,9 @@ exports.inventarioComando = functions.runWith({ timeoutSeconds: 540, memory: "1G
                 const mes = /^\d{4}-\d{2}$/.test(c.mes || "") ? c.mes : fechaCaracas().slice(0, 7);
                 resultado = await require("./manoDeObra").aplicarManoDeObra({ mes, modo: c.cierre ? "cierre" : "provisional", simular: c.modo !== "ejecutar", forzar: !!c.forzar, quien: c.quien || "comando" });
                 if (c.modo === "ejecutar") resultado = { ...resultado, recalculo: await recalcularPendientes() };
+            } else if (c.accion === "ajustePeso") {
+                resultado = await require("./inventarioMateriales")._materiales.ajustarPorPeso({ materialId: c.materialId, pesoActual: c.pesoActual,
+                    pesoNuevo: c.pesoNuevo, tara: c.tara, reemplaza: c.reemplaza, simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
             } else if (c.accion === "materiales") {
                 resultado = await require("./inventarioMateriales")._materiales.abrirMateriales({ simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
             } else if (c.accion === "recalcular") {
@@ -1315,6 +1318,13 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
             const simular = request.data?.modo !== "ejecutar";
             if (!simular) exigirMaster(m, usuario);
             return JSON.parse(JSON.stringify(await require("./inventarioMateriales")._materiales.abrirMateriales({ simular, quien: usuario.perfilNombre || usuario.cuenta })));
+        }
+        if (accion === "materialAjustePeso") {
+            const d = request.data || {};
+            const simular = d.modo !== "ejecutar";
+            if (!simular) exigirMaster(m, usuario);
+            return JSON.parse(JSON.stringify(await require("./inventarioMateriales")._materiales.ajustarPorPeso({ materialId: d.materialId,
+                pesoActual: d.pesoActual, pesoNuevo: d.pesoNuevo, tara: d.tara, reemplaza: d.reemplaza, simular, quien: usuario.perfilNombre || usuario.cuenta })));
         }
         if (accion === "materialesEstado") {
             const cfg = await leerConfig();

@@ -742,7 +742,7 @@ const EST_FAC = {
 // ── Materiales (sección 5): libro valorado de insumos, empaques y consumibles ──
 const CAT_MAT = { cultivos: 'Cultivos', coagulantes: 'Coagulantes', sales: 'Sales y conservantes', empaques: 'Empaques',
     consumibles: 'Consumibles', detergentes: 'Detergentes', reactivos: 'Reactivos', otros: 'Otros', leche: 'Leche' };
-const ORIGEN_MAT = { compras: 'Promedio de compras', promedio: 'Promedio de compras', compra: 'Promedio de compras', maestro: 'Costo del maestro' };
+const ORIGEN_MAT = { compras: 'Promedio de compras', promedio: 'Promedio de compras', compra: 'Promedio de compras', maestro: 'Costo del maestro', costo_cero: 'Sin costo (a propósito)' };
 const cantMat = (n, u) => `${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 3 })} ${u || ''}`;
 const precioMat = (n) => n == null ? '—' : `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 6 })}`;
 
@@ -751,6 +751,7 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
     const [sim, setSim] = useState(null);
     const [movs, setMovs] = useState([]);
     const [fletes, setFletes] = useState({});
+    const [ajuste, setAjuste] = useState(null);
     const [ocupado, setOcupado] = useState('');
     const [error, setError] = useState('');
     const [aviso, setAviso] = useState('');
@@ -821,6 +822,7 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
                         {esMaster && sim && <Boton tono="verde" onClick={abrir} ocupado={ocupado === 'abrir'}>Abrir el libro</Boton>}
                     </div>
                     {sim && <TablaMateriales filas={sim.lineas} total={sim.resumen?.valor} />}
+                    {sim?.resumen?.pendientesAjuste?.length > 0 && <p className="text-xs text-amber-200 mt-2">Pendiente de ajuste por peso: {sim.resumen.pendientesAjuste.map(p => `${p.materialNombre} (${usd(p.valor)})`).join(', ')}. Abre con el valor de hoy y se corrige al pesar el rollo.</p>}
                 </div>
             ) : (
                 <>
@@ -829,7 +831,8 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
                         <Tile label="Materiales a costo" valor={usd(total)} fuerte />
                         {Object.entries(porCat).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => <Tile key={k} label={CAT_MAT[k] || k} valor={usd(v)} />)}
                     </div>
-                    <TablaMateriales filas={saldos} total={total} />
+                    <TablaMateriales filas={saldos} total={total} onAjustar={esMaster ? setAjuste : null} />
+                    {ajuste && <AjustePeso material={ajuste} perfil={perfil} onCerrar={() => setAjuste(null)} onListo={async (msg) => { setAjuste(null); setAviso(msg); await cargar(); }} />}
                     <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3">
                         <p className="text-sm font-semibold text-slate-100 mb-2">Últimos movimientos</p>
                         {!movs.length ? <p className="text-xs text-slate-500">Sin movimientos desde la apertura.</p> : (
@@ -846,6 +849,51 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
             )}
             {aviso && <p className="text-sm text-emerald-300">{aviso}</p>}
             {error && <p className="text-sm text-red-300">{error}</p>}
+        </div>
+    );
+}
+
+// Ajuste por proporción de peso de un rollo empezado que se cargó como nuevo.
+function AjustePeso({ material, perfil, onCerrar, onListo }) {
+    const [f, setF] = useState({ pesoActual: '', pesoNuevo: '', tara: '', reemplaza: 'cerrado' });
+    const [sim, setSim] = useState(null);
+    const [ocupado, setOcupado] = useState('');
+    const [error, setError] = useState('');
+    const num = (v) => Number(String(v).replace(',', '.'));
+    const datos = () => ({ materialId: material.materialId, pesoActual: num(f.pesoActual), pesoNuevo: num(f.pesoNuevo), tara: num(f.tara) || 0, reemplaza: f.reemplaza, perfil });
+    const correr = async (modo) => {
+        setOcupado(modo); setError('');
+        try {
+            const r = await llamar('materialAjustePeso', { ...datos(), modo });
+            if (modo === 'ejecutar') onListo(`${material.materialNombre}: ${cantMat(r.despues?.cantidad, r.unidadBase)} tras el ajuste por peso.`);
+            else setSim(r);
+        } catch (e) { setError(e?.message || 'No se pudo calcular.'); }
+        finally { setOcupado(''); }
+    };
+    const campo = (k, label) => (
+        <label className="block text-xs text-slate-400">{label}
+            <input value={f[k]} onChange={e => { setF(x => ({ ...x, [k]: e.target.value })); setSim(null); }} inputMode="decimal" type="text"
+                className="mt-1 w-28 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" placeholder="0" />
+        </label>
+    );
+    return (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-3">
+            <p className="text-sm font-semibold text-amber-100">Ajuste por peso · {material.materialNombre}</p>
+            <p className="text-xs text-slate-400">Pesa el rollo empezado y un rollo nuevo, en la misma unidad (g o kg). Si pesas con el tubo, pon el peso del tubo vacío como tara. Lo que queda = contenido del rollo nuevo × peso actual ÷ peso nuevo.</p>
+            <div className="flex flex-wrap gap-3">{campo('pesoActual', 'Rollo empezado')}{campo('pesoNuevo', 'Rollo nuevo')}{campo('tara', 'Tara (tubo)')}</div>
+            <div className="flex flex-wrap gap-2 text-xs">
+                {[['cerrado', 'El rollo pesado es el que se cargó como nuevo'], ['en_uso', 'El rollo pesado es el que está en uso']].map(([k, t]) => (
+                    <button key={k} onClick={() => { setF(x => ({ ...x, reemplaza: k })); setSim(null); }}
+                        className={`rounded-full border px-3 py-1 ${f.reemplaza === k ? 'border-amber-400 text-amber-100' : 'border-slate-700 text-slate-400'}`}>{t}</button>
+                ))}
+            </div>
+            {sim && <p className="text-sm text-slate-200">Quedan {cantMat(sim.medido, sim.unidadBase)} en ese rollo. Existencia: {cantMat(sim.antes?.cantidad, sim.unidadBase)} → {cantMat(sim.despues?.cantidad, sim.unidadBase)}{sim.valorDiferencia != null ? ` · ${usd(sim.valorDiferencia)}` : ''}.</p>}
+            {error && <p className="text-sm text-red-300">{error}</p>}
+            <div className="flex flex-wrap gap-2">
+                <Boton onClick={() => correr('simular')} ocupado={ocupado === 'simular'}>Calcular</Boton>
+                {sim && <Boton tono="verde" onClick={() => correr('ejecutar')} ocupado={ocupado === 'ejecutar'}>Aplicar el ajuste</Boton>}
+                <Boton onClick={onCerrar}>Cancelar</Boton>
+            </div>
         </div>
     );
 }
@@ -935,7 +983,7 @@ function ManoDeObra({ esMaster, perfil }) {
     );
 }
 
-function TablaMateriales({ filas, total }) {
+function TablaMateriales({ filas, total, onAjustar }) {
     return (
         <div className="mt-3 overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-xs">
@@ -945,7 +993,9 @@ function TablaMateriales({ filas, total }) {
                 <tbody>
                     {(filas || []).map(x => (
                         <tr key={x.materialId} className="border-t border-slate-800">
-                            <td className="p-2 text-slate-100">{x.materialNombre}<span className="block text-slate-500">{CAT_MAT[x.categoriaMaterial] || x.categoriaMaterial}</span></td>
+                            <td className="p-2 text-slate-100">{x.materialNombre}<span className="block text-slate-500">{CAT_MAT[x.categoriaMaterial] || x.categoriaMaterial}</span>
+                                {x.pendienteAjuste && <span className="mt-1 inline-block rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200" title={x.pendienteAjuste.motivo || ''}>Pendiente de ajuste por peso</span>}
+                                {x.pendienteAjuste && onAjustar && <button onClick={() => onAjustar(x)} className="ml-2 text-[11px] text-sky-300 underline">Ajustar</button>}</td>
                             <td className="p-2 text-right text-slate-300 whitespace-nowrap">{cantMat(x.cantidad, x.unidadBase)}</td>
                             <td className="p-2 text-right text-slate-300 whitespace-nowrap">{precioMat(x.costoUnitario)}</td>
                             <td className="p-2 text-right text-slate-100 whitespace-nowrap">{usd(x.valor)}</td>

@@ -51,6 +51,8 @@ function cantidadBase(inv) {
  * → { precio | null, aviso | null }
  */
 function precioMaestro(mat, unidadBase) {
+    // Material sin costo a propósito (p. ej. recipientes de muestra): vale 0, no es "sin costo".
+    if (mat?.costoCero === true) return { precio: 0, aviso: null };
     const costo = Number(mat?.costoUSD), cant = Number(mat?.cantidadPresentacion);
     if (!(costo > 0) || !(cant > 0)) return { precio: null, aviso: "El maestro no tiene costo" };
     const f = factor(unidadBase, mat.unidad || unidadBase);
@@ -148,11 +150,24 @@ function aperturaMateriales({ inventarios, materiales, conCompras = new Set() })
             materialId: inv.materialId || inv.id, materialNombre: inv.materialNombre || mat?.nombre || "",
             categoriaMaterial: inv.categoria || mat?.categoria || "otros", unidadBase,
             cantidad: cant, costoUnitario: pm.precio, valor: pm.precio != null ? r6(cant * pm.precio) : 0,
-            origenCosto: pm.precio == null ? null : (conCompras.has(inv.materialId || inv.id) ? "compras" : "maestro"),
-            aviso: pm.aviso || (cant > 0 ? null : null),
+            origenCosto: pm.precio == null ? null : mat?.costoCero === true ? "costo_cero" : (conCompras.has(inv.materialId || inv.id) ? "compras" : "maestro"),
+            aviso: pm.aviso || null,
+            ...(inv.pendienteAjuste ? { pendienteAjuste: inv.pendienteAjuste } : {}),
         });
     }
     return out.sort((a, b) => String(a.categoriaMaterial).localeCompare(b.categoriaMaterial) || a.materialNombre.localeCompare(b.materialNombre));
+}
+
+/**
+ * Corrección por proporción de peso (bobina empezada que se cargó como nueva):
+ * cantidad real = contenido de un rollo nuevo × peso actual ÷ peso de un rollo nuevo.
+ * Pesos en la misma unidad (g o kg). Devuelve la cantidad base que queda.
+ */
+function cantidadPorPeso({ contenidoRollo, pesoActual, pesoNuevo, tara = 0 }) {
+    const c = Number(contenidoRollo), a = Number(pesoActual) - Number(tara || 0), n = Number(pesoNuevo) - Number(tara || 0);
+    if (!(c > 0) || !(a >= 0) || !(n > 0)) return null;
+    if (a > n) return null;
+    return r6(c * a / n);
 }
 
 /** Saldo por material a una fecha, desde los movimientos del libro. */
@@ -229,5 +244,5 @@ function diferenciaConsumo(nuevo = [], anterior = []) {
 
 module.exports = {
     normU, factor, cantidadBase, precioMaestro, categoriaMov, marcaFresca, movimientoDeCambio,
-    aperturaMateriales, saldosMateriales, flujosMateriales, controlMateriales, consumoPlanilla, diferenciaConsumo,
+    aperturaMateriales, cantidadPorPeso, saldosMateriales, flujosMateriales, controlMateriales, consumoPlanilla, diferenciaConsumo,
 };

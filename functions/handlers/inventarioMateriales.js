@@ -62,6 +62,7 @@ async function procesarCambioMaterial(change, context) {
             unidadBase: a.unidadBase, cantidad: a.saldoCantidad, valor: a.saldoValor,
             costoUnitario: a.saldoCantidad > 1e-9 ? r6(a.saldoValor / a.saldoCantidad) : (saldoSnap.data()?.costoUnitario ?? a.costoUnitario),
             origenCosto: a.origenCosto === "compra" ? "compras" : (saldoSnap.data()?.origenCosto || a.origenCosto),
+            pendienteAjuste: after?.pendienteAjuste || admin.firestore.FieldValue.delete(),
             actualizadoAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
         return a;
@@ -202,6 +203,7 @@ async function abrirMateriales({ simular = true, quien = null } = {}) {
         fecha: hoy, materiales: lineas.length, valor: r2(lineas.reduce((s, l) => s + l.valor, 0)),
         porCategoria: lineas.reduce((o, l) => { o[l.categoriaMaterial] = r2((o[l.categoriaMaterial] || 0) + l.valor); return o; }, {}),
         sinCosto: lineas.filter(l => l.costoUnitario == null && l.cantidad > 0).map(l => ({ materialNombre: l.materialNombre, aviso: l.aviso })),
+        pendientesAjuste: lineas.filter(l => l.pendienteAjuste).map(l => ({ materialNombre: l.materialNombre, valor: r2(l.valor), motivo: l.pendienteAjuste.motivo || null })),
     };
     if (simular) return { simulacion: true, yaAbierto: !!mc.abierto, resumen, lineas };
     if (mc.abierto) return { yaAbierto: true, resumen: null, inicio: mc.inicio };
@@ -212,11 +214,13 @@ async function abrirMateriales({ simular = true, quien = null } = {}) {
             unidadBase: l.unidadBase, fecha: hoy, tipo: "apertura", categoria: "apertura", cantidad: l.cantidad,
             costoUnitario: l.costoUnitario, valor: l.valor, saldoCantidad: l.cantidad, saldoValor: l.valor,
             origenCosto: l.origenCosto, sinCosto: l.costoUnitario == null && l.cantidad > 0, ...(l.aviso ? { avisoCosto: l.aviso } : {}),
+            ...(l.pendienteAjuste ? { pendienteAjuste: l.pendienteAjuste } : {}),
             usuario: { id: "servidor", nombre: quien || "Apertura" }, creadoAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         batch.set(db().doc(`${COL_SALDOS}/${l.materialId}`), {
             empresaId: EMPRESA, materialId: l.materialId, materialNombre: l.materialNombre, categoriaMaterial: l.categoriaMaterial,
             unidadBase: l.unidadBase, cantidad: l.cantidad, valor: l.valor, costoUnitario: l.costoUnitario, origenCosto: l.origenCosto,
+            ...(l.pendienteAjuste ? { pendienteAjuste: l.pendienteAjuste } : {}),
             actualizadoAt: admin.firestore.FieldValue.serverTimestamp(),
         });
     });
@@ -224,6 +228,43 @@ async function abrirMateriales({ simular = true, quien = null } = {}) {
         abiertoPor: quien || null, abiertoAt: new Date().toISOString(), valorApertura: resumen.valor } }, { merge: true });
     await batch.commit();
     return { abierto: true, resumen };
+}
+
+/**
+ * Ajuste por proporción de peso de un rollo (bobina) que se cargó como nuevo
+ * pero ya estaba empezado. `reemplaza`: "cerrado" (uno de los rollos cerrados es
+ * el que se pesó) o "en_uso" (el rollo abierto). Se escribe como CONTEO: el libro
+ * lo valora al promedio y quita la marca de pendiente.
+ */
+async function ajustarPorPeso({ materialId, pesoActual, pesoNuevo, tara = 0, reemplaza = "cerrado", simular = true, quien = null }) {
+    const ref = db().doc(`${COL_INV}/${materialId}`);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error("No existe ese material en el inventario");
+    const inv = snap.data();
+    const contenido = Number(inv.cantidadPorUnidad) || 0;
+    const medido = R.cantidadPorPeso({ contenidoRollo: contenido, pesoActual, pesoNuevo, tara });
+    if (medido == null) throw new Error("Pesos no válidos: el actual no puede pasar al de un rollo nuevo, y los dos deben ser mayores que la tara");
+    const antes = { stockCerrado: Number(inv.stockCerrado) || 0, stockEnUso: Number(inv.stockEnUso) || 0 };
+    const despues = { ...antes };
+    if (reemplaza === "en_uso") despues.stockEnUso = medido;
+    else {
+        if (antes.stockCerrado < 1) throw new Error("No hay rollo cerrado que corregir");
+        despues.stockCerrado = antes.stockCerrado - 1;
+        despues.stockEnUso = r6(antes.stockEnUso + medido);
+    }
+    const cantAntes = R.cantidadBase({ ...inv, ...antes }), cantDespues = R.cantidadBase({ ...inv, ...despues });
+    const saldo = (await db().doc(`${COL_SALDOS}/${materialId}`).get()).data() || null;
+    const cu = saldo && saldo.cantidad > 1e-9 ? saldo.valor / saldo.cantidad : null;
+    const resumen = { materialId, materialNombre: inv.materialNombre, unidadBase: inv.unidadBase, contenidoRollo: contenido,
+        pesoActual: Number(pesoActual), pesoNuevo: Number(pesoNuevo), tara: Number(tara) || 0, medido, reemplaza,
+        antes: { ...antes, cantidad: cantAntes }, despues: { ...despues, cantidad: cantDespues },
+        diferencia: r6(cantDespues - cantAntes), valorDiferencia: cu != null ? r2((cantDespues - cantAntes) * cu) : null };
+    if (simular) return { simulacion: true, ...resumen };
+    await ref.update({ ...despues, pendienteAjuste: admin.firestore.FieldValue.delete(), updatedAt: new Date().toISOString(),
+        _mov: { id: `peso-${materialId}-${Date.now()}`, tipo: "conteo", at: new Date().toISOString(),
+            motivo: `Ajuste por peso: ${pesoActual} de ${pesoNuevo} (tara ${tara || 0}) = ${medido} ${inv.unidadBase}`,
+            usuario: { id: "servidor", nombre: quien || "Ajuste por peso" } } });
+    return { aplicado: true, ...resumen };
 }
 
 /** Saldos y movimientos para el reporte diario. */
@@ -275,4 +316,4 @@ async function guardarCostos(data = {}) {
     return { ok: true, leche: (await leerConfig()).leche };
 }
 
-exports._materiales = { proveedoresLeche, procesarCambioMaterial, procesarPlanilla, abrirMateriales, datosReporte, guardarCostos, dosisDeFicha, empaquesDePlanilla, consumoObjetivo, aplicarAInventario };
+exports._materiales = { ajustarPorPeso, proveedoresLeche, procesarCambioMaterial, procesarPlanilla, abrirMateriales, datosReporte, guardarCostos, dosisDeFicha, empaquesDePlanilla, consumoObjetivo, aplicarAInventario };
