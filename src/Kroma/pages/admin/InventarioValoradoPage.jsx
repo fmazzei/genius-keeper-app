@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/Firebase/config.js';
-import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send, Receipt, Clock, Boxes } from 'lucide-react';
+import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send, Receipt, Clock, Boxes, HardHat } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
 import CampoFecha, { hoyInput } from '../../Components/CampoFecha.jsx';
 import { indexById, indexPackagingAssignments, packagingCostForItem, costoBasePorKgTeorico } from '@/Kroma/costeoLote.js';
@@ -34,7 +34,7 @@ const ORIGEN = { produccion: 'De su producción', calculado: 'Calculado desde su
 const CAT_LABEL = {
     apertura: 'Apertura', produccion: 'Producción', transformacion: 'Envasado', devolucion: 'Devoluciones',
     traslado: 'Traslados', venta: 'Ventas y despachos', reposicion: 'Reposiciones', muestra: 'Muestras', consumo_interno: 'Consumo interno',
-    merma: 'Mermas', ajuste: 'Ajustes', revaluacion: 'Revaluación', sin_tipo: 'Sin tipo',
+    merma: 'Mermas', ajuste: 'Ajustes', revaluacion: 'Revaluación', mano_de_obra: 'Mano de obra', sin_tipo: 'Sin tipo',
 };
 const llamar = (accion, data = {}) => httpsCallable(functions, 'inventarioPerpetuo')({ accion, ...data }).then(r => r.data);
 
@@ -79,7 +79,7 @@ export default function InventarioValoradoPage() {
                 <>
                     <p className="text-xs text-slate-500 mb-3">Abierto desde el {config.inicio}. El libro lo escribe el servidor y no se edita desde la app.</p>
                     <div className="flex gap-1.5 mb-4 overflow-x-auto">
-                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['facturas', 'Facturas', Receipt], ['materiales', 'Materiales', Boxes], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
+                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['facturas', 'Facturas', Receipt], ['materiales', 'Materiales', Boxes], ['manoObra', 'Mano de obra', HardHat], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
                             <button key={k} onClick={() => setTab(k)}
                                 className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border ${tab === k ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-200' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                                 <I size={14} />{l}
@@ -91,6 +91,7 @@ export default function InventarioValoradoPage() {
                     {tab === 'libro' && <Libro />}
                     {tab === 'conteo' && <Conteo puedeOperar={puedeOperar} perfil={perfil} />}
                     {tab === 'facturas' && <FacturasZoho puedeOperar={puedeOperar} perfil={perfil} />}
+                    {tab === 'manoObra' && <ManoDeObra esMaster={kromaRole === 'master'} perfil={perfil} />}
                     {tab === 'materiales' && <Materiales puedeOperar={puedeOperar} esMaster={kromaRole === 'master'} perfil={perfil} />}
                     {tab === 'zoho' && <ZohoAsientos puedeOperar={puedeOperar} perfil={perfil} />}
                 </>
@@ -749,7 +750,7 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
     const [est, setEst] = useState(null);
     const [sim, setSim] = useState(null);
     const [movs, setMovs] = useState([]);
-    const [flete, setFlete] = useState('');
+    const [fletes, setFletes] = useState({});
     const [ocupado, setOcupado] = useState('');
     const [error, setError] = useState('');
     const [aviso, setAviso] = useState('');
@@ -758,7 +759,7 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
         try {
             const r = await llamar('materialesEstado', { perfil });
             setEst(r);
-            setFlete(r.leche?.fletePorLitro != null ? String(r.leche.fletePorLitro) : '');
+            setFletes(Object.fromEntries(Object.entries(r.leche?.fletePorViaje || {}).map(([k, v]) => [k, String(v)])));
             if (r.materiales?.abierto) {
                 const s = await getDocs(query(collection(db, 'kroma_mat_libro'), where('empresaId', '==', EMPRESA)));
                 setMovs(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.categoria !== 'apertura')
@@ -778,8 +779,8 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
         hacer('abrir', async () => { const r = await llamar('materialesAbrir', { modo: 'ejecutar', perfil }); setSim(null); setAviso(r.yaAbierto ? 'Ya estaba abierto.' : `Abierto: ${usd(r.resumen?.valor)}.`); await cargar(); });
     };
     const guardarFlete = () => hacer('flete', async () => {
-        const r = await llamar('costosConfig', { fletePorLitro: flete, perfil });
-        setAviso(`Flete guardado: $${fx(r.leche?.fletePorLitro, 4)} por litro.`); await cargar();
+        await llamar('costosConfig', { fletePorViaje: fletes, perfil });
+        setAviso('Tarifas de flete guardadas.'); await cargar();
     });
 
     if (!est) return <Cargando />;
@@ -791,14 +792,23 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
     return (
         <div className="space-y-4">
             <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
-                <p className="text-sm font-semibold text-slate-100">Flete de la leche</p>
-                <p className="text-xs text-slate-400 mt-1">Se suma al costo de la leche de cada lote producido desde el {est.leche?.fleteDesde || '2026-11-01'}. Referencia: 100 USD por unos 402 L el 03/11 ≈ $0,25 por litro.</p>
-                <div className="flex flex-wrap items-center gap-2 mt-3">
-                    <span className="text-sm text-slate-300">$ por litro</span>
-                    <input value={flete} onChange={e => setFlete(e.target.value)} disabled={!esMaster} inputMode="decimal" type="text"
-                        className="w-28 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60" placeholder="0,25" />
-                    {esMaster && <Boton tono="verde" onClick={guardarFlete} ocupado={ocupado === 'flete'}>Guardar</Boton>}
-                    {!esMaster && <span className="text-xs text-slate-500">Lo cambia el máster.</span>}
+                <p className="text-sm font-semibold text-slate-100">Flete de la leche (por viaje)</p>
+                <p className="text-xs text-slate-400 mt-1">Tarifa fija por viaje según el origen, sin importar los litros. Cada recepción guarda el flete de su viaje y cada lote carga la parte de las recepciones que usó. Aplica a lotes desde el {est.leche?.fleteDesde || '2026-11-01'}.</p>
+                <div className="space-y-2 mt-3">
+                    {(est.proveedoresLeche || []).map(p => (
+                        <div key={p.id} className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm text-slate-300 w-40">{p.nombre}</span>
+                            <span className="text-sm text-slate-400">$</span>
+                            <input value={fletes[p.id] ?? ''} onChange={e => setFletes(f => ({ ...f, [p.id]: e.target.value }))} disabled={!esMaster} inputMode="decimal" type="text"
+                                className="w-24 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60" placeholder="0" />
+                            <span className="text-xs text-slate-500">por viaje</span>
+                        </div>
+                    ))}
+                    {!(est.proveedoresLeche || []).length && <p className="text-xs text-slate-500">No hay productores de leche en el maestro.</p>}
+                </div>
+                <div className="mt-3">
+                    {esMaster ? <Boton tono="verde" onClick={guardarFlete} ocupado={ocupado === 'flete'}>Guardar tarifas</Boton>
+                        : <span className="text-xs text-slate-500">Las cambia el máster.</span>}
                 </div>
             </div>
 
@@ -834,6 +844,91 @@ function Materiales({ puedeOperar, esMaster, perfil }) {
                     </div>
                 </>
             )}
+            {aviso && <p className="text-sm text-emerald-300">{aviso}</p>}
+            {error && <p className="text-sm text-red-300">{error}</p>}
+        </div>
+    );
+}
+
+// ── Mano de obra de planta (sección 6) ──
+const ETAPA = { produccion: 'Producción', empaque: 'Empaque', sinEtapa: 'Sin etapa (gasto del mes)' };
+const mesActual = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas' }).format(new Date()).slice(0, 7);
+
+function ManoDeObra({ esMaster, perfil }) {
+    const [est, setEst] = useState(null);
+    const [personas, setPersonas] = useState([]);
+    const [mes, setMes] = useState(mesActual());
+    const [sim, setSim] = useState(null);
+    const [ocupado, setOcupado] = useState('');
+    const [error, setError] = useState('');
+    const [aviso, setAviso] = useState('');
+    const cargar = async () => {
+        try { const r = await llamar('manoObraEstado', { perfil }); setEst(r); setPersonas(r.config?.personas || []); }
+        catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({ meses: [] }); }
+    };
+    useEffect(() => { cargar(); }, []);
+    const hacer = async (que, fn) => {
+        setOcupado(que); setError(''); setAviso('');
+        try { await fn(); } catch (e) { setError(e?.message || 'No se pudo completar.'); } finally { setOcupado(''); }
+    };
+    const simular = (cierre) => hacer(cierre ? 'simC' : 'simP', async () => setSim(await llamar('manoObra', { mes, cierre, modo: 'simular', perfil })));
+    const aplicar = (cierre) => {
+        if (!window.confirm(cierre ? `Se cierra la mano de obra de ${mes} con lo registrado en Zoho y queda congelada. ¿Seguir?` : `Se aplica la mano de obra provisional de ${mes}. ¿Seguir?`)) return;
+        hacer('apl', async () => { const r = await llamar('manoObra', { mes, cierre, modo: 'ejecutar', perfil }); setSim(null); setAviso(r.congelado && !r.aplicado ? r.motivo : `Aplicado: ${usd((r.aplicado?.produccion || 0) + (r.aplicado?.empaque || 0))}.`); await cargar(); });
+    };
+    const guardarPersonas = () => hacer('pers', async () => { await llamar('manoObraConfig', { personas, perfil }); setAviso('Personas guardadas.'); await cargar(); });
+
+    if (!est) return <Cargando />;
+    const r = sim || (est.meses || []).find(x => x.id === mes);
+    return (
+        <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
+                <p className="text-sm font-semibold text-slate-100">Quién está en qué etapa</p>
+                <p className="text-xs text-slate-400 mt-1">Los montos salen de lo registrado en Zoho en las cuentas de nómina de planta (facturas de proveedor y diarios), por persona. Producción se reparte entre los kg producidos del mes; empaque, entre los kg envasados. Durante el mes se usa la tasa del mes anterior; desde el día {est.config?.diaCierre || 3} del mes siguiente se cierra con lo real.</p>
+                <div className="space-y-2 mt-3">
+                    {personas.map((p, i) => (
+                        <div key={i} className="flex flex-wrap items-center gap-2">
+                            <input value={p.nombre} disabled={!esMaster} onChange={e => setPersonas(ps => ps.map((x, j) => j === i ? { ...x, nombre: e.target.value } : x))}
+                                className="w-44 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60" />
+                            <input value={p.contactId || ''} disabled={!esMaster} placeholder="Contacto de Zoho" onChange={e => setPersonas(ps => ps.map((x, j) => j === i ? { ...x, contactId: e.target.value } : x))}
+                                className="w-48 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 disabled:opacity-60" />
+                            <select value={p.etapa} disabled={!esMaster} onChange={e => setPersonas(ps => ps.map((x, j) => j === i ? { ...x, etapa: e.target.value } : x))}
+                                className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60">
+                                <option value="produccion">Producción</option><option value="empaque">Empaque</option>
+                            </select>
+                            {esMaster && <button onClick={() => setPersonas(ps => ps.filter((_, j) => j !== i))} className="text-xs text-red-300">Quitar</button>}
+                        </div>
+                    ))}
+                </div>
+                {esMaster && <div className="flex flex-wrap gap-2 mt-3">
+                    <Boton onClick={() => setPersonas(ps => [...ps, { nombre: '', contactId: '', etapa: 'produccion' }])}>Agregar persona</Boton>
+                    <Boton tono="verde" onClick={guardarPersonas} ocupado={ocupado === 'pers'}>Guardar</Boton>
+                </div>}
+            </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-slate-300">Mes</span>
+                    <input type="month" value={mes} onChange={e => { setMes(e.target.value); setSim(null); }} style={{ colorScheme: 'dark' }}
+                        className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" />
+                    <Boton onClick={() => simular(false)} ocupado={ocupado === 'simP'}>Simular provisional</Boton>
+                    <Boton onClick={() => simular(true)} ocupado={ocupado === 'simC'}>Simular cierre</Boton>
+                    {esMaster && sim && <Boton tono="verde" onClick={() => aplicar(sim.modo === 'cierre')} ocupado={ocupado === 'apl'}>{sim.modo === 'cierre' ? 'Cerrar el mes' : 'Aplicar provisional'}</Boton>}
+                </div>
+                {!r ? <p className="text-xs text-slate-500 mt-3">Sin cálculo para {mes} todavía.</p> : (
+                    <div className="mt-3 space-y-2 text-xs text-slate-300">
+                        <p className="text-slate-100 font-semibold">{sim ? 'Simulación' : r.congelado ? 'Cerrado' : 'Provisional'} · {r.modo === 'cierre' ? 'lo registrado en Zoho' : `tasa de ${r.tasas?.referencia?.origen || 'el mes anterior'}`}</p>
+                        {['produccion', 'empaque'].map(e => (
+                            <p key={e}>{ETAPA[e]}: {usd(r.aplicado?.[e])} aplicado sobre {fx(r.kg?.[e])} kg ({usd(r.tasas?.[e])}/kg){r.noAplicado?.[e] ? ` · ${usd(r.noAplicado[e])} queda como gasto` : ''}</p>
+                        ))}
+                        {r.noAplicado?.sinEtapa ? <p className="text-amber-300">Sin etapa (gasto del mes): {usd(r.noAplicado.sinEtapa)}</p> : null}
+                        {r.montos && ['produccion', 'empaque', 'sinEtapa'].map(e => Object.keys(r.montos[e]?.porPersona || {}).length ? (
+                            <p key={`p${e}`} className="text-slate-400">{ETAPA[e]}: {Object.entries(r.montos[e].porPersona).map(([n, v]) => `${n} ${usd(v)}`).join(' · ')}</p>
+                        ) : null)}
+                        {sim?.grupos?.length ? <p className="text-slate-400">Movimientos en el libro: {sim.movimientos} · {usd(sim.valorMovimientos)}</p> : null}
+                    </div>
+                )}
+            </div>
             {aviso && <p className="text-sm text-emerald-300">{aviso}</p>}
             {error && <p className="text-sm text-red-300">{error}</p>}
         </div>

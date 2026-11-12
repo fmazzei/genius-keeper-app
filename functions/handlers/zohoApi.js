@@ -539,6 +539,51 @@ async function listCreditNotesDesde({ accessToken, organizationId, dataCenter, d
     throw new Error(`Hay más de ${maxPages * 200} notas de crédito desde ${dateStart}: el listado quedó incompleto.`);
 }
 
+// ── Mano de obra (sección 6): facturas de proveedor y diarios de un rango ──
+
+/** Facturas de proveedor con fecha en [desde, hasta] (todas las páginas). */
+async function listBillsRango({ accessToken, organizationId, dataCenter, desde, hasta, maxPages = 10 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/bills`, {
+            params: { organization_id: organizationId, date_start: desde, date_end: hasta, filter_by: 'Status.All', page, per_page: 200 },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+        });
+        const d = exigirOk(res, 'leer las facturas de proveedor');
+        const lista = Array.isArray(d.bills) ? d.bills : [];
+        all.push(...lista.filter(b => String(b.date || '') >= desde && String(b.date || '') <= hasta));
+        if (d.page_context?.has_more_page !== true || !lista.length) return all;
+    }
+    throw new Error(`Hay más de ${maxPages * 200} facturas de proveedor entre ${desde} y ${hasta}: el listado quedó incompleto.`);
+}
+
+async function getBillDetail({ accessToken, organizationId, dataCenter, billId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/bills/${billId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 20000,
+    });
+    return exigirOk(res, 'leer la factura de proveedor').bill || null;
+}
+
+/** Diarios con fecha en [desde, hasta] (todas las páginas). */
+async function listJournalsRango({ accessToken, organizationId, dataCenter, desde, hasta, maxPages = 10 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/journals`, {
+            params: { organization_id: organizationId, date_start: desde, date_end: hasta, page, per_page: 200 },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+        });
+        const d = exigirOk(res, 'leer los diarios');
+        const lista = Array.isArray(d.journals) ? d.journals : [];
+        all.push(...lista.filter(j => String(j.journal_date || j.date || '') >= desde && String(j.journal_date || j.date || '') <= hasta));
+        if (d.page_context?.has_more_page !== true || !lista.length) return all;
+    }
+    throw new Error(`Hay más de ${maxPages * 200} diarios entre ${desde} y ${hasta}: el listado quedó incompleto.`);
+}
+
 async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, creditnoteId }) {
     const { api } = dcUrls(dataCenter);
     const res = await axios.get(`${api}/books/v3/creditnotes/${creditnoteId}`, {
@@ -549,6 +594,6 @@ async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, cr
 }
 
 module.exports = {
-    listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail,
+    listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail, listBillsRango, getBillDetail, listJournalsRango,
     listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal,
     categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };

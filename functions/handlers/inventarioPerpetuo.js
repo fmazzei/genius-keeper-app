@@ -79,6 +79,7 @@ const CATEGORIAS = [
     { key: "merma", label: "Mermas" },
     { key: "ajuste", label: "Ajustes y conteos" },
     { key: "revaluacion", label: "Revaluación de costo" },
+    { key: "mano_de_obra", label: "Mano de obra" },
     { key: "sin_tipo", label: "Sin tipo (revisar)" },
 ];
 const TIPO_CAT = {
@@ -192,7 +193,9 @@ function asientosDeCambio({ coleccion, docId, before, after, fechaHoy }) {
     const costoNuevo = a?.costo ?? b?.costo ?? null;
 
     // Revaluación: el costo cambió sobre lo que YA había.
-    if (b && a && cb > 0 && b.costo !== a.costo) {
+    // La mano de obra (sección 6) escribe sus propios asientos: el cambio de
+    // costo de la partida no se anota otra vez como revaluación.
+    if (b && a && cb > 0 && b.costo !== a.costo && mov?.tipo !== "mano_de_obra") {
         out.push({
             ...comun, ubicacion: ubicacionDe(coleccion),
             tipo: mov?.tipo === "asignacion_costo" ? "asignacion_costo" : (mov ? mov.tipo : "asignacion_costo"),
@@ -797,6 +800,10 @@ exports.inventarioComando = functions.runWith({ timeoutSeconds: 540, memory: "1G
                 const f = await require("./inventarioFacturas").procesarFacturas({ simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
                 const rec = c.modo === "ejecutar" ? await recalcularPendientes() : null;
                 resultado = { facturas: f, recalculo: rec };
+            } else if (c.accion === "manoObra") {
+                const mes = /^\d{4}-\d{2}$/.test(c.mes || "") ? c.mes : fechaCaracas().slice(0, 7);
+                resultado = await require("./manoDeObra").aplicarManoDeObra({ mes, modo: c.cierre ? "cierre" : "provisional", simular: c.modo !== "ejecutar", forzar: !!c.forzar, quien: c.quien || "comando" });
+                if (c.modo === "ejecutar") resultado = { ...resultado, recalculo: await recalcularPendientes() };
             } else if (c.accion === "materiales") {
                 resultado = await require("./inventarioMateriales")._materiales.abrirMateriales({ simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
             } else if (c.accion === "recalcular") {
@@ -844,8 +851,8 @@ exports.inventarioCostoLote = functions.firestore.document("kroma_production_log
         costoBasePorKg: r6(c.costoBasePorKg),
         empaquePorPresentacion: c.empaquePorPresentacion || {},
         litros: r6(c.litros), litrosRecepciones: c.litrosRecepciones != null ? r6(c.litrosRecepciones) : null,
-        // Reservado para la etapa siguiente; no se calcula todavía.
-        manoDeObra: null, indirectos: null,
+        // La mano de obra la pone el servidor (sección 6): un costeo nuevo no la borra.
+        ...(prev.exists ? {} : { manoDeObra: null, indirectos: null }),
         congeladoAt: admin.firestore.FieldValue.serverTimestamp(),
         ...(prev.exists ? { historial: admin.firestore.FieldValue.arrayUnion({ ...prev.data(), historial: null, congeladoAt: null, reemplazadoEn: new Date().toISOString() }) } : {}),
     }, { merge: true });
@@ -1036,6 +1043,12 @@ exports.inventarioCierreDiario = onSchedule({
     try { await require("./inventarioFacturas").procesarFacturas({ quien: "cierre diario" }); } catch (e) {
         console.error("inventarioFacturas", e);
         await db().doc(DOC_CONFIG).set({ facturas: { ultimoError: String(e?.message || e).slice(0, 300), ultimoErrorAt: new Date().toISOString() } }, { merge: true }).catch(() => {});
+    }
+    // Mano de obra de planta (sección 6): provisional del mes en curso y, desde
+    // el día de cierre, el cierre del mes anterior con lo registrado en Zoho.
+    try { await require("./manoDeObra").corridaNocturna(); } catch (e) {
+        console.error("manoDeObra", e);
+        await db().doc(DOC_CONFIG).set({ manoDeObra: { ultimoError: String(e?.message || e).slice(0, 300), ultimoErrorAt: new Date().toISOString() } }, { merge: true }).catch(() => {});
     }
     await recalcularPendientes();
     try { await avisarLotesPorVencer(); } catch (e) { console.error("avisarLotesPorVencer", e); }
@@ -1306,8 +1319,30 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
         if (accion === "materialesEstado") {
             const cfg = await leerConfig();
             const snap = await db().collection("kroma_mat_saldos").where("empresaId", "==", EMPRESA).get();
-            return JSON.parse(JSON.stringify({ materiales: cfg.materiales || null, leche: cfg.leche || null,
+            const proveedores = await require("./inventarioMateriales")._materiales.proveedoresLeche().catch(() => []);
+            return JSON.parse(JSON.stringify({ materiales: cfg.materiales || null, leche: cfg.leche || null, proveedoresLeche: proveedores,
                 saldos: snap.docs.map(d => d.data()).sort((a, b) => String(a.categoriaMaterial).localeCompare(b.categoriaMaterial) || String(a.materialNombre).localeCompare(b.materialNombre)) }));
+        }
+        if (accion === "manoObra") {
+            // Simular: cualquiera que opere el inventario. Aplicar o cerrar: solo el máster.
+            const simular = request.data?.modo !== "ejecutar";
+            if (!simular) exigirMaster(m, usuario);
+            const mes = /^\d{4}-\d{2}$/.test(request.data?.mes || "") ? request.data.mes : fechaCaracas().slice(0, 7);
+            const r = await require("./manoDeObra").aplicarManoDeObra({ mes, modo: request.data?.cierre ? "cierre" : "provisional",
+                simular, forzar: !!request.data?.forzar && !simular, quien: usuario.perfilNombre || usuario.cuenta });
+            if (!simular) await recalcularPendientes();
+            return JSON.parse(JSON.stringify(r));
+        }
+        if (accion === "manoObraEstado") {
+            const MO = require("./manoDeObra");
+            const cfg = await leerConfig();
+            const snap = await db().collection("kroma_inv_mano_obra").where("empresaId", "==", EMPRESA).get();
+            return JSON.parse(JSON.stringify({ config: { ...(cfg.manoDeObra || {}), personas: MO.personasDe(cfg) },
+                meses: snap.docs.map(d => ({ id: d.id, ...d.data(), lineasZoho: undefined, grupos: undefined })).sort((a, b) => b.id.localeCompare(a.id)) }));
+        }
+        if (accion === "manoObraConfig") {
+            exigirMaster(m, usuario);
+            return await require("./manoDeObra").guardarConfig(request.data || {});
         }
         if (accion === "costosConfig") {
             exigirMaster(m, usuario);
@@ -1329,6 +1364,6 @@ exports._internos = {
     estadoDe, asientosDeCambio, asientosDeRecepcion, saldos, controlIdentidad, controlCuadre, controlLotes,
     armarReporte, asignarFIFO, asignarFEFO, lotesCaracas, netearConRuta, categoria, subcategoria, bodegaDe, docRuta,
     fechaCaracas, diaAnterior, r2, r6, CATEGORIAS,
-    procesarCambioPartida, generarReporte, abrir, contar, escribirAsientos,
+    procesarCambioPartida, generarReporte, abrir, contar, escribirAsientos, recalcularPendientes, leerAsientos,
     pesoDePresentacion, completarLineaDespacho, repararAperturaTransito, lotesPorVencer, diasEntre, avisarLotesPorVencer,
 };

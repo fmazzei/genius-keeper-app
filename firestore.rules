@@ -742,6 +742,10 @@ service cloud.firestore {
       allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow write: if false;
     }
+    match /kroma_inv_mano_obra/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
     match /kroma_mat_saldos/{id} {
       allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow write: if false;

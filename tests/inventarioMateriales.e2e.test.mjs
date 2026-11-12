@@ -148,11 +148,11 @@ const sumaSaldos = (await db.collection('kroma_mat_saldos').get()).docs.reduce((
 ok(rep && cerca(rep.valor, sumaSaldos, 0.01), `reporte: valor de materiales ${rep?.valor} = suma de saldos ${sumaSaldos.toFixed(2)}`);
 ok(Object.keys(rep.porCategoria).includes('empaques'), 'reporte: valor por categoría');
 
-// 11) Flete por litro en la configuración.
-const g = await M.guardarCostos({ fletePorLitro: '0,25' });
-ok(g.leche.fletePorLitro === 0.25, 'flete por litro guardado (acepta coma)');
-let err = null; try { await M.guardarCostos({ fletePorLitro: '30' }); } catch (e) { err = e; }
-ok(!!err, 'un flete absurdo se rechaza');
+// 11) Flete por viaje según el origen.
+const g = await M.guardarCostos({ fletePorViaje: { gil: '100', mas: '25,50' } });
+ok(g.leche.fletePorViaje.gil === 100 && g.leche.fletePorViaje.mas === 25.5 && g.leche.fletePorLitro === undefined, 'tarifas por viaje guardadas (acepta coma) y se quita el flete por litro');
+let err = null; try { await M.guardarCostos({ fletePorViaje: { gil: '-5' } }); } catch (e) { err = e; }
+ok(!!err, 'una tarifa negativa se rechaza');
 
 if (fallas) { console.log(`\n${fallas} fallaron`); process.exit(1); }
 console.log('\nTodas en verde');

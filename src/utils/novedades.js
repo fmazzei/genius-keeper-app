@@ -21,11 +21,18 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-mano-de-obra-lote',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'Mano de obra en el costo del queso',
+        resumen: 'Inventario valorado → Mano de obra: lo pagado a la gente de planta en Zoho se reparte entre los kg producidos y envasados del mes. Durante el mes con la tasa del mes anterior; al cierre, con lo real.',
+    },
+    {
         id: '2026-11-12-materiales-valorados',
         fecha: '2026-11-12',
         roles: ['master'],
         titulo: 'Insumos y empaques con su valor',
-        resumen: 'Inventario valorado → Materiales: cada compra, consumo y corrección de insumos, empaques y consumibles queda con su valor (promedio de compras). Ahí se fija también el flete de la leche por litro, que se suma al costo de cada lote.',
+        resumen: 'Inventario valorado → Materiales: cada compra, consumo y corrección de insumos, empaques y consumibles queda con su valor (promedio de compras). Ahí se fija también el flete de la leche por viaje según el productor, que se suma al costo de cada lote.',
     },
     {
         id: '2026-11-12-reposiciones-inventario',

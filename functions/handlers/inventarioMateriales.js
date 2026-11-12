@@ -240,13 +240,30 @@ async function datosReporte(fecha) {
 }
 
 // ── Configuración de costos (flete de la leche) ─────────────────────────────
+// Tarifa FIJA POR VIAJE según el origen: { proveedorId → USD }. Cada recepción
+// guarda el flete de su viaje y el lote reparte el de las recepciones que usó.
+
+/** Productores de leche (los del maestro con categoría leche), con su nombre. */
+async function proveedoresLeche() {
+    const mats = await db().collection("kroma_materials").where("empresaId", "==", EMPRESA).where("categoria", "==", "leche").get();
+    const ids = [...new Set(mats.docs.map(d => d.data()).filter(m => m.active !== false && m.proveedorId).map(m => m.proveedorId))];
+    const snaps = await Promise.all(ids.map(id => db().doc(`kroma_suppliers/${id}`).get()));
+    return ids.map((id, i) => ({ id, nombre: snaps[i].data()?.nombreComercial || snaps[i].data()?.nombre || id }));
+}
 
 async function guardarCostos(data = {}) {
     const cambios = {};
-    if (data.fletePorLitro != null) {
-        const n = Number(String(data.fletePorLitro).replace(",", "."));
-        if (!(n >= 0) || n > 5) throw new Error("El flete por litro debe estar entre 0 y 5 USD.");
-        cambios["leche.fletePorLitro"] = r6(n);
+    if (data.fletePorViaje != null) {
+        if (typeof data.fletePorViaje !== "object") throw new Error("Tarifas inválidas.");
+        const t = {};
+        for (const [id, v] of Object.entries(data.fletePorViaje)) {
+            if (v === "" || v == null) continue;
+            const n = Number(String(v).replace(",", "."));
+            if (!(n >= 0) || n > 2000) throw new Error("Cada flete por viaje debe estar entre 0 y 2.000 USD.");
+            t[id] = r2(n);
+        }
+        cambios["leche.fletePorViaje"] = t;
+        cambios["leche.fletePorLitro"] = admin.firestore.FieldValue.delete();
     }
     if (data.fleteDesde != null) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(data.fleteDesde)) throw new Error("Fecha inválida.");
@@ -258,4 +275,4 @@ async function guardarCostos(data = {}) {
     return { ok: true, leche: (await leerConfig()).leche };
 }
 
-exports._materiales = { procesarCambioMaterial, procesarPlanilla, abrirMateriales, datosReporte, guardarCostos, dosisDeFicha, empaquesDePlanilla, consumoObjetivo, aplicarAInventario };
+exports._materiales = { proveedoresLeche, procesarCambioMaterial, procesarPlanilla, abrirMateriales, datosReporte, guardarCostos, dosisDeFicha, empaquesDePlanilla, consumoObjetivo, aplicarAInventario };

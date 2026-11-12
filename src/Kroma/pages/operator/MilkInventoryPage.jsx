@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, query, where, serverTimestamp } from 'firebase/firestore';
-import { precioLecheDeProveedor } from '@/Kroma/costeoLote.js';
+import { precioLecheDeProveedor, fleteDeRecepcion } from '@/Kroma/costeoLote.js';
+import { leerConfigLeche } from '@/Kroma/configCostos.js';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import { esLecheEnTanque } from '@/Kroma/estadoPlanta.js';
@@ -761,12 +762,15 @@ export default function MilkInventoryPage({ onNavigate }) {
             const prov         = suppliers.find(s => s.id === proveedorId);
             const fechaDate    = new Date(fecha);
             const costoUsdLitro = milkPriceFor(proveedorId);
+            // Flete del VIAJE según el origen (tarifa fija, no por litro).
+            const fleteUsd = fleteDeRecepcion({ proveedorId, fecha: fechaDate }, await leerConfigLeche());
 
             if (editingRec) {
                 await updateDoc(doc(db, 'kroma_milk_reception', editingRec.id), {
                     proveedorId, proveedorNombre: supplierName(prov),
                     litros, fecha: fechaDate, parametros: { ...params }, enrutamiento,
                     costoUsdLitro: costoUsdLitro ?? editingRec.costoUsdLitro ?? null,
+                    fleteUsd,
                     updatedAt: serverTimestamp(), updatedBy: kromaUser?.id || '',
                 });
                 setAllReceptions(prev => prev.map(r =>
@@ -779,6 +783,7 @@ export default function MilkInventoryPage({ onNavigate }) {
                     proveedorId, proveedorNombre: supplierName(prov),
                     litros, fecha: fechaDate, parametros: { ...params }, enrutamiento,
                     costoUsdLitro,
+                    fleteUsd,
                     empresaId: kromaUser?.empresaId || 'lacteoca',
                     operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
                     status: 'pendiente', active: true, createdAt: serverTimestamp(),

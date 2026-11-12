@@ -14,8 +14,8 @@ import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProducci
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import { unidadesDeConsumo, unidadInicial, pasoDe, convertirConsumo, leerCantidad, etiquetaUnidad } from '@/Kroma/consumoUnidades.js';
 import { usePasoSostenido } from '@/Kroma/pasoSostenido.js';
-import { costoBasePorKgTeorico, precioLecheDeProveedor, componenteFlete } from '@/Kroma/costeoLote.js';
-import { leerConfigLeche } from '@/Kroma/configCostos.js';
+import { costoBasePorKgTeorico, precioLecheDeProveedor, componenteFlete, fleteDeRecepcion } from '@/Kroma/costeoLote.js';
+import { leerConfigLeche, leerRecepciones } from '@/Kroma/configCostos.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta } from '@/Kroma/eliminarProduccion.js';
 import CargaPlanillaSheet from './CargaPlanillaSheet.jsx';
@@ -594,17 +594,17 @@ function packagingCostForPresentacion(productoId, presentacionId, unidades, mate
 // glass-jar SKU's cost bleed into a plastic-bag SKU's units (a "desviación").
 // Packaging is priced per-SKU instead, at the moment it's actually consumed —
 // see costoEmpaqueUnitario — so every unit carries exactly its own cost.
-function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap, leche = null) {
+function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap, leche = null, recepciones = {}) {
     const costoLeche   = realCostoLeche(log.recepciones, materialsMap);
     const costoInsumos = realCostoInsumos(bloquesData, materialsMap);
-    const costoBase    = costoLeche + (componenteFlete(log, leche)?.monto || 0) + costoInsumos;
+    const costoBase    = costoLeche + (componenteFlete(log, leche, recepciones)?.monto || 0) + costoInsumos;
     return totalKgProducido > 0 ? costoBase / totalKgProducido : null;
 }
 // La TABLA DE COMPONENTES del costo del lote (inventario perpetuo): leche por
 // recepción, cada insumo consumido y el empaque por presentación. El servidor
 // la congela en kroma_inv_costos_lote (con historial). Mano de obra e
 // indirectos quedan reservados (null) hasta la etapa que los agregue.
-function desgloseCostoReal(log, bloquesData, totalKgProducido, materialsMap, presentaciones = [], leche = null) {
+function desgloseCostoReal(log, bloquesData, totalKgProducido, materialsMap, presentaciones = [], leche = null, recepciones = {}) {
     const componentes = [];
     (log.recepciones || []).forEach(r => {
         let precio = parseFloat(r.costoUsdLitro);
@@ -613,7 +613,7 @@ function desgloseCostoReal(log, bloquesData, totalKgProducido, materialsMap, pre
         componentes.push({ tipo: 'leche', proveedorId: r.proveedorId || null, nombre: r.proveedorNombre || 'Leche',
             cantidad: r.litros || 0, unidad: 'l', costoUnitario: +(precio || 0).toFixed(6), monto: +((precio || 0) * (r.litros || 0)).toFixed(6), origenPrecio });
     });
-    const flete = componenteFlete(log, leche);
+    const flete = componenteFlete(log, leche, recepciones);
     if (flete) componentes.push(flete);
     Object.values(bloquesData || {}).forEach(b => {
         (b.consumosCosteo || []).forEach(c => {
@@ -2530,6 +2530,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 parametros: { temperatura: quickMilk.temperatura, pH: quickMilk.pH },
                 enrutamiento: 'produccion',
                 costoUsdLitro: milkPriceFor(quickMilk.proveedorId, materialsMap),
+                fleteUsd: fleteDeRecepcion({ proveedorId: quickMilk.proveedorId, fecha: new Date() }, await leerConfigLeche()),
                 empresaId: kromaUser?.empresaId || 'lacteoca',
                 operarioId: kromaUser?.id || '',
                 operarioNombre: kromaUser?.name || '',
@@ -2821,14 +2822,15 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         // ni desviaciones — alimentando "Costo Teórico vs Real" y margen bruto
         // por SKU en Módulo 2.
         const leche = await leerConfigLeche();
-        const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, leche);
+        const recepcionesLote = await leerRecepciones(log.recepcionIds || (log.recepciones || []).map(r => r.recepcionId));
+        const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, leche, recepcionesLote);
         const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(6) } : {};
         // Inventario perpetuo: cada partida nace marcada como producción de
         // este lote, y el costo del lote se guarda con sus componentes.
         const marcaProd = () => marcaMov('produccion', { ref: { logId }, usuario: kromaUser });
         try {
             await updateDoc(doc(db, 'kroma_production_logs', logId), {
-                costeo: desgloseCostoReal(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, presentacionesCreadas, leche),
+                costeo: desgloseCostoReal(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, presentacionesCreadas, leche, recepcionesLote),
             });
         } catch (e) { console.error('costeo del lote:', e); }
 
@@ -2979,7 +2981,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             // la leche); sin costeo, se recalcula como antes.
             const costoBasePorKg = Number(log.costeo?.costoBasePorKg) > 0 ? Number(log.costeo.costoBasePorKg)
                 : log.origen === 'planilla_papel' ? costoBasePorKgTeorico(log, materialsMap)
-                : calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap, await leerConfigLeche());
+                : calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap, await leerConfigLeche(),
+                    await leerRecepciones(log.recepcionIds || (log.recepciones || []).map(r => r.recepcionId)));
             const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(6) } : {};
             const refEnv = { logId: log.id, envasado: fechaEnvasado || null };
 

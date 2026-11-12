@@ -19,3 +19,22 @@ export async function leerConfigLeche() {
     } catch { cache = cache || {}; }
     return cache;
 }
+
+/** Recepciones de leche por id (para repartir el flete de cada viaje). Nunca lanza. */
+export async function leerRecepciones(ids = []) {
+    const out = {};
+    await Promise.all([...new Set((ids || []).filter(Boolean))].map(async id => {
+        try {
+            const s = await getDoc(doc(db, 'kroma_milk_reception', id));
+            if (s.exists()) out[id] = { id, ...s.data() };
+        } catch { /* sin la recepción se usa la tarifa de su origen */ }
+    }));
+    return out;
+}
+
+/** Flete del viaje de una recepción nueva, según la tarifa de su origen ({} si no hay). */
+export async function fleteNuevaRecepcion(proveedorId) {
+    const leche = await leerConfigLeche();
+    const t = Number(leche?.fletePorViaje?.[proveedorId]);
+    return t >= 0 && leche?.fletePorViaje && proveedorId in leche.fletePorViaje ? { fleteUsd: t } : {};
+}
