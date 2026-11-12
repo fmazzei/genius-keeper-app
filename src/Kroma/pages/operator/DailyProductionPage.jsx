@@ -28,6 +28,7 @@ import {
     Share2, PenLine, Award, Trash2, RotateCcw, Bell, FileText,
 } from 'lucide-react';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { nombreConPeso } from '@/Kroma/inventarioPT.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1106,7 +1107,7 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos, catalogPresentacion
                 ...reg,
                 presentaciones: [...presentaciones, {
                     catalogId: sku.id,
-                    nombre: sku.nombre,
+                    nombre: nombreConPeso(sku.nombre, skuToKg(sku)),
                     pesoPorUnidad: skuToKg(sku),
                     unidades: 0,
                 }],
@@ -2094,7 +2095,7 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
         if (already) {
             setPresentaciones(prev => prev.filter(p => p.catalogId !== sku.id));
         } else {
-            setPresentaciones(prev => [...prev, { catalogId: sku.id, nombre: sku.nombre, pesoPorUnidad: skuToKg(sku), unidades: 0 }]);
+            setPresentaciones(prev => [...prev, { catalogId: sku.id, nombre: nombreConPeso(sku.nombre, skuToKg(sku)), pesoPorUnidad: skuToKg(sku), unidades: 0 }]);
         }
     }
 
@@ -2832,7 +2833,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                     ...marcaProd(),
                     tipo:           'empacado',
                     catalogId:      pr.catalogId || null,
-                    presentacion:   pr.nombre || 'Sin nombre',
+                    presentacion:   nombreConPeso(pr.nombre, pr.pesoPorUnidad),
                     pesoPorUnidad:  pr.pesoPorUnidad || 0,
                     unidades:       pr.unidades,
                     totalKg:        +((pr.pesoPorUnidad || 0) * pr.unidades).toFixed(3),
@@ -2879,7 +2880,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             destinoId:       null,
             destinoNombre:   'Por asignar almacén',
             productoNombre:  log.productoNombre,
-            presentacion:    pr.nombre || 'Sin nombre',
+            presentacion:    nombreConPeso(pr.nombre, pr.pesoPorUnidad),
             lote:            log.lote || logId,
             fechaVencimiento: empaqReg.fechaVencimiento || null,
             cantidad:        pr.unidades,
@@ -2983,7 +2984,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 batch.set(doc(collection(db, 'kroma_inventory_pt')), {
                     ...base, tipo: 'empacado', catalogId: p.catalogId || null,
                     ...marcaMov('envasado', { motivo: 'Envasado de queso a granel', ref: refEnv, usuario: kromaUser }),
-                    presentacion: p.nombre, pesoPorUnidad: p.pesoPorUnidad,
+                    presentacion: nombreConPeso(p.nombre, p.pesoPorUnidad), pesoPorUnidad: p.pesoPorUnidad,
                     unidades: p.unidades,
                     totalKg: +((p.pesoPorUnidad || 0) * p.unidades).toFixed(3),
                     fechaEnvasado: fechaEnvasado || null,
@@ -2993,7 +2994,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 });
                 mov({
                     tipo: 'envasado', origenNombre: 'Sin envasar', destinoNombre: 'Envasado',
-                    presentacion: p.nombre, fechaVencimiento: fechaVencimiento || null,
+                    presentacion: nombreConPeso(p.nombre, p.pesoPorUnidad), fechaVencimiento: fechaVencimiento || null,
                     cantidad: p.unidades, unidad: 'unidades',
                 });
             }

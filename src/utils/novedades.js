@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-presentacion-con-tamano',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'Envasados con su tamaño',
+        resumen: 'Al envasar, cada partida se guarda como «… · 250 g» o «… · 1 kg». El inventario valorado ya no mezcla las bolsas de 1 kg con las de 250 g. Se corrigieron los envasados del 5, 10 y 11 de noviembre.',
+    },
+    {
         id: '2026-11-12-inventario-caracas-admin',
         fecha: '2026-11-12',
         roles: ['administrador', 'master'],

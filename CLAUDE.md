@@ -3136,6 +3136,24 @@ Perímetro: cava de planta (`kroma_inventory_pt`) + en camino a Caracas (tránsi
   - El caso del 6-oct ya estaba compensado a mano (`ev_manual-20261006-reversa-picking-0_0`) y no se reprocesa.
 - Pruebas: `tests/inventarioReparar.e2e.test.mjs` (9) y 4 casos nuevos en `tests/inventarioPerpetuo.test.mjs`.
 
+## Inventario completo y cierre mensual a Zoho (2026-11, en construcción por secciones)
+
+Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara cada mes un asiento en **borrador** en Zoho que la administradora aprueba. Se hace por secciones, y cada una se verifica con datos reales antes de pasar a la siguiente.
+
+**Decisiones del dueño (12-nov):**
+- Las facturas de Caracas se procesan desde el **16-oct**, el día siguiente al conteo de ACC. Lo anterior no se toca. Se recalcula el 31/10 y con esa cifra se corrige el asiento `ARRANQUE-KROMA-2026-10` (sigue en borrador).
+- La venta es solo la factura. El picking y la reposición de GK pasan a ser movimientos dentro de la bodega Caracas.
+- Las planillas descuentan insumos solo desde el **1-nov**.
+- El 12 Pack (3 kg) son 12 de 250 g; los demás artículos inactivos generan alerta; `…261001` lo desactivan en Zoho.
+- Las 6 bolsas de 1 kg vencidas el 25-oct en ACC se dan de baja como merma con fecha del día en que se haga.
+- Por confirmar con planta: el empaque de la bolsa de 1 kg, la presentación del cloruro y de la sal, la unidad de los guantes y el stock de etiquetas.
+
+**Sección 1 — la presentación con su tamaño ✅ (12-nov):**
+- El envasado («Finalizar empaque» y el cierre de producción) guardaba el nombre del SKU del catálogo, que es igual al del producto, y no su tamaño. Ahora `nombreConPeso(nombre, pesoKg)` (`src/Kroma/inventarioPT.js`) arma «Lacteoca Chèvre Original · 250 g». No repite el peso si ya viene en el nombre. Se usa en `DailyProductionPage` (al elegir el SKU y en las cuatro escrituras) y en la entrada manual de Almacenes.
+- El libro valorado agrupa por **id de catálogo**, no por texto (`clavePres` / `claveProducto` en `inventarioPerpetuo.js`). El granel va en una sola fila por producto. El nombre que se muestra lleva siempre el tamaño (`etiquetaPres`).
+- Datos corregidos por el conector (un lote reversible, solo el nombre): 5 partidas (yRngLz…, UQ8DoS…, FQj4qw…, eBmiO5… del 11-nov y la de 1 kg sxJ3eE…), 10 asientos del libro, 9 movimientos de almacén y 3 despachos (e9y7Mm…, mRpTAR…, CS8Huj…). Cambiar solo el nombre no genera asiento. `recalcularDesde: 2026-11-05` para que el cierre rehaga esos reportes.
+- Prueba: `node tests/inventarioPerpetuo.test.mjs` (+4: el mismo SKU con dos textos es una fila, 250 g no se mezcla con 1 kg, la identidad cuadra) y la e2e del libro en verde.
+
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
 
 `functions/handlers/inventarioZoho.js` + pestaña **Zoho** en Kroma → Inventario valorado. Un asiento por día con la VARIACIÓN del valor a costo del producto terminado:
