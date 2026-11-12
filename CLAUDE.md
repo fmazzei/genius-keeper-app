@@ -3267,12 +3267,24 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - **Arreglo** (rama `claude/inventario-zoho-s9`): facturas de proveedor, gastos y diarios se leen cada uno por su cuenta. Si uno falla, se dice cuál y qué permiso falta: en simulación es un aviso y en real el asiento no se crea.
 - Lo más probable es que falte `ZohoBooks.expenses.READ` (no estaba en la lista de permisos). En noviembre el único gasto suelto son los fermentos A&M ($144), que RECLAS ya pasó a MP, así que el resultado del mes no cambia.
 
+**Conteo físico de Caracas del 12-nov (registrado el 12-nov, aprobado por Francisco):** 432 unidades de 250 g. Son 360 en ACC (180 del lote 12-sep y 180 del 18-sep, vencen 04/02/27) y 72 del lote 05-sep (vence 03/01/27) en manos de vendedores. Las dos bolsas de 3 kg vencidas se dejaron fuera (no están en el catálogo).
+- **Despachos:** el del 21-oct fue de 180 del lote 05-sep (156 a Caracas y 24 a Barquisimeto, INV-001802). Ese día no existía producto con vencimiento 04/02/27: los lotes 12-sep y 18-sep se envasaron el 5 y el 9 de noviembre. Los dos despachos de 180 con ese vencimiento son el del 8-nov y el del 11-nov.
+- **Recepciones:** los tres despachos (21-oct, 8-nov y 11-nov) se declararon recibidos con fecha 12-nov, cada uno con su acta en `recepciones_frimaca` y su movimiento.
+- **Conteo:** las 372 unidades que ya no estaban en ACC pasaron a la ruta: 300 como `picking_no_declarado` (ya facturadas) y 72 como `picking` (en manos de vendedores).
+- **Ajuste:** sobraban 25 unidades del lote 05-sep. Se registró un ajuste positivo de **+25 ud, $92,68**, en la ruta, `tipo ajuste`, contra Ajustes de inventario (`kroma_inv_libro/ev_manual-20261112-conteo-acc-sobrante_0`).
+  - Origen más probable: el conteo del 15-oct dejó ese lote en 60, con dos correcciones, aunque habían llegado 84 el 8-oct.
+  - Las facturas INV-001792 e INV-001796 (24 ud, de antes del 16-oct) se entregaron después de ese conteo. Si estaban en ACC ese día, el sobrante real fue de 49.
+- **Lote de referencia `AJUSTE-ACC-06OCT`:** se agregó también a las 12 unidades sin lote del ajuste del 6-oct (partida y asientos) y a la entrada de las 6 bolsas de 1 kg. Así el control 4 no las marca como salida sin lote y la baja de las bolsas las saca del aviso de vencimientos.
+- **Resultado:** Caracas queda en 432 ud, $1.529,29 (ACC $1.262,37, ruta $266,92; tránsito en cero).
+  - Los reportes del 16-oct al 12-nov se recalcularon; el 31/10 (cierre $3.581,54) y el 12-nov quedan sin diferencias.
+  - En el asiento simulado de noviembre entra como «Ajustes y conteos de producto terminado» +92,68.
+  - Desde el 30-oct no hay visitas del mercaderista ni facturas de Caracas.
+
 **Sección 9 — plan de simulación del 1 al 3 de diciembre (12-nov):**
 - **Antes del 30-nov** (pendientes):
   - renovar la conexión de Zoho sumando `ZohoBooks.expenses.READ` (lo que diga el aviso de la simulación);
   - publicar el ARRANQUE-KROMA-2026-10 cuando Francisco lo confirme (sin eso, el control de PT queda en 1.933,82);
   - planta: empaque de la bolsa de 1 kg y ajuste por peso de la bobina (lunes 16-nov);
-  - conteo físico de ACC (la ruta de Caracas está en −325 ud);
   - cerrar o envasar el lote del 11-nov;
   - que Francisco ponga su correo en «Con copia a»;
   - decidir el precio de Masparrito en el maestro.
