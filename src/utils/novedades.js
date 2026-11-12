@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-facturas-inventario',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'Las facturas de Zoho descuentan el inventario',
+        resumen: 'En Inventario valorado → Facturas se simula y se activa el descuento de la bodega Caracas con cada factura, primero lo que vence antes. Lo que no alcanza queda pendiente y a la vista. El reporte diario avisa los lotes a 15 días o menos de vencer.',
+    },
+    {
         id: '2026-11-12-bodega-caracas',
         fecha: '2026-11-12',
         roles: ['master'],

@@ -145,6 +145,12 @@ await env.withSecurityRulesDisabled(async (c) => setDoc(doc(c.firestore(), 'krom
 let lee = false;
 try { await getDoc(doc(planta, 'kroma_inv_libro', 'y')); lee = true; } catch { lee = false; }
 ok(lee, 'Kroma sí puede leer el libro');
+let negado3 = false;
+try { await setDoc(doc(planta, 'kroma_inv_facturas', 'x'), { empresaId: 'lacteoca', estado: 'descontada' }); } catch { negado3 = true; }
+await env.withSecurityRulesDisabled(async (c) => setDoc(doc(c.firestore(), 'kroma_inv_facturas', 'f1'), { empresaId: 'lacteoca', estado: 'pendiente' }));
+let lee2 = false;
+try { await getDoc(doc(planta, 'kroma_inv_facturas', 'f1')); lee2 = true; } catch { lee2 = false; }
+ok(negado3 && lee2, 'el estado de las facturas lo lee Kroma y solo lo escribe el servidor');
 
 void admin;
 await env.cleanup();
