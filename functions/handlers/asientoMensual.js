@@ -101,16 +101,32 @@ async function saldosZoho(ctx, api = zoho) {
 
 /** Lo registrado como gasto en el mes en cada cuenta de costo (facturas, gastos y diarios publicados). */
 async function gastoDelMesZoho(ctx, desde, hasta, api = zoho) {
+    // Cada fuente se lee por su cuenta: si una falla (p. ej. un permiso que falta
+    // en el token de Zoho), las demás siguen y se dice cuál faltó.
+    const fallas = [];
+    const leer = async (nombre, permiso, fn) => {
+        try { return await fn(); } catch (e) {
+            const msg = String(e?.message || e);
+            fallas.push({ fuente: nombre, permiso: /401|403|57|permis|authori/i.test(msg) ? permiso : null, mensaje: msg.slice(0, 200) });
+            return null;
+        }
+    };
     const [bills, expenses, journals] = await Promise.all([
-        api.listBillsRango({ ...ctx, desde, hasta }),
-        api.listExpensesRango({ ...ctx, desde, hasta }),
-        api.listJournalsRango({ ...ctx, desde, hasta }),
+        leer("facturas de proveedor", "ZohoBooks.bills.READ", () => api.listBillsRango({ ...ctx, desde, hasta })),
+        leer("gastos", "ZohoBooks.expenses.READ", () => api.listExpensesRango({ ...ctx, desde, hasta })),
+        leer("diarios", "ZohoBooks.accountants.READ", () => api.listJournalsRango({ ...ctx, desde, hasta })),
     ]);
     const detB = [], detE = [], detJ = [];
-    for (const b of bills.filter(b => !["void", "draft"].includes(String(b.status || "").toLowerCase()))) detB.push(await api.getBillDetail({ ...ctx, billId: b.bill_id }));
-    for (const e of expenses) detE.push(await api.getExpense({ ...ctx, expenseId: e.expense_id }));
-    for (const j of journals.filter(j => !R.esReferenciaKroma(j.reference_number) && String(j.status || "").toLowerCase() !== "draft")) detJ.push(await api.getJournal({ ...ctx, journalId: j.journal_id }));
-    return R.gastoDelMes({ bills: detB, expenses: detE, journals: detJ });
+    if (bills) await leer("facturas de proveedor", "ZohoBooks.bills.READ", async () => {
+        for (const b of bills.filter(b => !["void", "draft"].includes(String(b.status || "").toLowerCase()))) detB.push(await api.getBillDetail({ ...ctx, billId: b.bill_id }));
+    });
+    if (expenses) await leer("gastos", "ZohoBooks.expenses.READ", async () => {
+        for (const e of expenses) detE.push(await api.getExpense({ ...ctx, expenseId: e.expense_id }));
+    });
+    if (journals) await leer("diarios", "ZohoBooks.accountants.READ", async () => {
+        for (const j of journals.filter(j => !R.esReferenciaKroma(j.reference_number) && String(j.status || "").toLowerCase() !== "draft")) detJ.push(await api.getJournal({ ...ctx, journalId: j.journal_id }));
+    });
+    return { ...R.gastoDelMes({ bills: detB, expenses: detE, journals: detJ }), fallas };
 }
 
 /** Leche y flete de recepciones que todavía no pasaron a producto terminado (en tanque o en proceso). */
@@ -180,6 +196,9 @@ async function generarAsientoMensual({ mes, modo = "simular", regenerar = false,
         ctx = ctx || await contexto();
         saldos = await saldosZoho(ctx, api);
         gasto = await gastoDelMesZoho(ctx, d.desde, d.hasta, api);
+        for (const f of gasto.fallas || []) {
+            (ejecutar ? errores : avisos).push(`No se pudieron leer los ${f.fuente} del mes en Zoho${f.permiso ? ` (falta el permiso ${f.permiso} en la conexión de Zoho)` : ""}: lo registrado como gasto puede quedar incompleto. ${f.mensaje}`);
+        }
     } catch (e) { (ejecutar ? errores : avisos).push(`No se pudo leer Zoho: ${String(e?.message || e).slice(0, 200)}`); }
     const enProceso = await lecheEnProceso();
 

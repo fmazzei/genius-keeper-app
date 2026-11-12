@@ -3261,8 +3261,16 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
   - −25,00: flete de Masparrito sin factura en Zoho.
   - El flete de Randy del 4-nov (reclasificado a MP) y el del 11-nov (sigue como gasto) se compensan: no suman al cuadre.
 
+**Primera simulación en vivo (12-nov, después de publicar #14):**
+- La lectura de lo registrado como gasto en Zoho falló con 401 y todo lo producido se descargó contra MP. El cuadre salió −204,99, que es −304,98 + 100: el flete de Randy del 11-nov, que con la lectura completa va contra «Flete de leche».
+- El control de MP quedó en 0. El de PT quedó en +1.933,82: es el ARRANQUE-KROMA-2026-10, que sigue en borrador (id 3576378000008459001) y no mueve saldos hasta que se publique.
+- **Arreglo** (rama `claude/inventario-zoho-s9`): facturas de proveedor, gastos y diarios se leen cada uno por su cuenta. Si uno falla, se dice cuál y qué permiso falta: en simulación es un aviso y en real el asiento no se crea.
+- Lo más probable es que falte `ZohoBooks.expenses.READ` (no estaba en la lista de permisos). En noviembre el único gasto suelto son los fermentos A&M ($144), que RECLAS ya pasó a MP, así que el resultado del mes no cambia.
+
 **Sección 9 — plan de simulación del 1 al 3 de diciembre (12-nov):**
 - **Antes del 30-nov** (pendientes):
+  - renovar la conexión de Zoho sumando `ZohoBooks.expenses.READ` (lo que diga el aviso de la simulación);
+  - publicar el ARRANQUE-KROMA-2026-10 cuando Francisco lo confirme (sin eso, el control de PT queda en 1.933,82);
   - planta: empaque de la bolsa de 1 kg y ajuste por peso de la bobina (lunes 16-nov);
   - conteo físico de ACC (la ruta de Caracas está en −325 ud);
   - cerrar o envasar el lote del 11-nov;

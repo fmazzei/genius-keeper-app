@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-asiento-permisos-zoho',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'El asiento mensual dice qué permiso de Zoho falta',
+        resumen: 'Si Kroma no puede leer de Zoho las facturas de proveedor, los gastos o los diarios del mes, la simulación lo dice con el permiso que hay que agregar. En real, el asiento no se crea hasta que se lea todo.',
+    },
+    {
         id: '2026-11-12-asiento-correo-aprobacion',
         fecha: '2026-11-12',
         roles: ['master'],
