@@ -41,8 +41,9 @@ import { collection, doc, writeBatch, serverTimestamp, deleteField, getDocs, que
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
-import { costeoPlanilla, costoUnitarioDePartida, indexPackagingAssignments } from '@/Kroma/costeoLote.js';
+import { costeoPlanilla, costoUnitarioDePartida, indexPackagingAssignments, fleteDeRecepcion } from '@/Kroma/costeoLote.js';
 import { marcaMov } from '@/utils/movInventario.js';
+import { leerConfigLeche } from '@/Kroma/configCostos.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
 import { fechaEnPalabras } from '@/Kroma/fechas.js';
 import { partidasDePlanilla, reconciliarCava, firmaCava, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento, cambiosDeLote } from '@/Kroma/ptPlanilla.js';
@@ -285,7 +286,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 });
             }
 
-            // 1) Las recepciones de leche, ya PROCESADAS.
+            // 1) Las recepciones de leche, ya PROCESADAS. Cada una es un viaje
+            // y lleva su flete según el origen (tarifa fija por viaje).
+            const leche = await leerConfigLeche();
+            const recepcionesPorId = {};
             const recepciones = [];
             for (const e of entregas) {
                 const litros = num(e.litros);
@@ -303,6 +307,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     litros,
                     fecha: fechaDate,
                     ...(precioLecheNum > 0 && { costoUsdLitro: precioLecheNum }),
+                    fleteUsd: fleteDeRecepcion({ proveedorId: e.proveedorId || '', fecha: fechaDate }, leche),
                     parametros,
                     enrutamiento: 'tanque',
                     status: 'completada',   // NO es leche disponible: ya se procesó
@@ -313,6 +318,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // La recepción apunta a SU producción. Sin esto no hay forma de
                 // distinguir una recepción buena de una que quedó suelta.
                 batch.set(ref, sinUndefined({ ...rec, logId: logRef.id }));
+                recepcionesPorId[ref.id] = rec;
                 recepciones.push(sinUndefined({
                     recepcionId:     ref.id,
                     proveedorId:     rec.proveedorId,
@@ -420,7 +426,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             // es el costo con el que su queso entra a la cava y al libro
             // valorado: antes entraba SIN costo y había que estimarlo después.
             const empaquesPorKey = indexPackagingAssignments(Object.values(materialsMap || {}));
-            datosLog.costeo = costeoPlanilla(datosLog, materialsMap || {}, empaquesPorKey);
+            datosLog.costeo = costeoPlanilla(datosLog, materialsMap || {}, empaquesPorKey, leche, recepcionesPorId);
             const costoDe = (pt) => costoUnitarioDePartida(datosLog.costeo, pt, ficha.productoId, empaquesPorKey);
 
             if (editando) {

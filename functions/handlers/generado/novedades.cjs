@@ -27,6 +27,27 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-bobina-ajuste-peso",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Ajustar un rollo por su peso",
+    resumen: "Inventario valorado \u2192 Materiales: la bobina abre marcada \xABpendiente de ajuste\xBB. Con el peso del rollo empezado y el de uno nuevo, \xABAjustar\xBB calcula los metros que quedan y corrige su valor."
+  },
+  {
+    id: "2026-11-12-mano-de-obra-lote",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Mano de obra en el costo del queso",
+    resumen: "Inventario valorado \u2192 Mano de obra: lo pagado a la gente de planta en Zoho se reparte entre los kg producidos y envasados del mes. Durante el mes con la tasa del mes anterior; al cierre, con lo real."
+  },
+  {
+    id: "2026-11-12-materiales-valorados",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Insumos y empaques con su valor",
+    resumen: "Inventario valorado \u2192 Materiales: cada compra, consumo y correcci\xF3n de insumos, empaques y consumibles queda con su valor (promedio de compras). Ah\xED se fija tambi\xE9n el flete de la leche por viaje seg\xFAn el productor, que se suma al costo de cada lote."
+  },
+  {
     id: "2026-11-12-reposiciones-inventario",
     fecha: "2026-11-12",
     roles: ["master"],

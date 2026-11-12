@@ -14,7 +14,8 @@ import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProducci
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import { unidadesDeConsumo, unidadInicial, pasoDe, convertirConsumo, leerCantidad, etiquetaUnidad } from '@/Kroma/consumoUnidades.js';
 import { usePasoSostenido } from '@/Kroma/pasoSostenido.js';
-import { costoBasePorKgTeorico, precioLecheDeProveedor } from '@/Kroma/costeoLote.js';
+import { costoBasePorKgTeorico, precioLecheDeProveedor, componenteFlete, fleteDeRecepcion } from '@/Kroma/costeoLote.js';
+import { leerConfigLeche, leerRecepciones } from '@/Kroma/configCostos.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta } from '@/Kroma/eliminarProduccion.js';
 import CargaPlanillaSheet from './CargaPlanillaSheet.jsx';
@@ -593,17 +594,17 @@ function packagingCostForPresentacion(productoId, presentacionId, unidades, mate
 // glass-jar SKU's cost bleed into a plastic-bag SKU's units (a "desviación").
 // Packaging is priced per-SKU instead, at the moment it's actually consumed —
 // see costoEmpaqueUnitario — so every unit carries exactly its own cost.
-function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap) {
+function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap, leche = null, recepciones = {}) {
     const costoLeche   = realCostoLeche(log.recepciones, materialsMap);
     const costoInsumos = realCostoInsumos(bloquesData, materialsMap);
-    const costoBase    = costoLeche + costoInsumos;
+    const costoBase    = costoLeche + (componenteFlete(log, leche, recepciones)?.monto || 0) + costoInsumos;
     return totalKgProducido > 0 ? costoBase / totalKgProducido : null;
 }
 // La TABLA DE COMPONENTES del costo del lote (inventario perpetuo): leche por
 // recepción, cada insumo consumido y el empaque por presentación. El servidor
 // la congela en kroma_inv_costos_lote (con historial). Mano de obra e
 // indirectos quedan reservados (null) hasta la etapa que los agregue.
-function desgloseCostoReal(log, bloquesData, totalKgProducido, materialsMap, presentaciones = []) {
+function desgloseCostoReal(log, bloquesData, totalKgProducido, materialsMap, presentaciones = [], leche = null, recepciones = {}) {
     const componentes = [];
     (log.recepciones || []).forEach(r => {
         let precio = parseFloat(r.costoUsdLitro);
@@ -612,6 +613,8 @@ function desgloseCostoReal(log, bloquesData, totalKgProducido, materialsMap, pre
         componentes.push({ tipo: 'leche', proveedorId: r.proveedorId || null, nombre: r.proveedorNombre || 'Leche',
             cantidad: r.litros || 0, unidad: 'l', costoUnitario: +(precio || 0).toFixed(6), monto: +((precio || 0) * (r.litros || 0)).toFixed(6), origenPrecio });
     });
+    const flete = componenteFlete(log, leche, recepciones);
+    if (flete) componentes.push(flete);
     Object.values(bloquesData || {}).forEach(b => {
         (b.consumosCosteo || []).forEach(c => {
             if (!(c.amount > 0)) return;
@@ -2527,6 +2530,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 parametros: { temperatura: quickMilk.temperatura, pH: quickMilk.pH },
                 enrutamiento: 'produccion',
                 costoUsdLitro: milkPriceFor(quickMilk.proveedorId, materialsMap),
+                fleteUsd: fleteDeRecepcion({ proveedorId: quickMilk.proveedorId, fecha: new Date() }, await leerConfigLeche()),
                 empresaId: kromaUser?.empresaId || 'lacteoca',
                 operarioId: kromaUser?.id || '',
                 operarioNombre: kromaUser?.name || '',
@@ -2644,7 +2648,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             // Descontar PRIMERO (awaited): si falla, no se guarda el cierre como
             // si los consumibles ya se hubieran restado del inventario.
             if (usados.length > 0) {
-                await decrementInventory(usados.map(c => ({ materialId: c.materialId, nombre: c.nombre, amount: c.cantidad, unidad: c.unidad })));
+                await decrementInventory(usados.map(c => ({ materialId: c.materialId, nombre: c.nombre, amount: c.cantidad, unidad: c.unidad })),
+                    { tipo: 'consumible', log: activeLog });
             }
             await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), { jornadasConsumo });
             setActiveLog(prev => ({ ...prev, jornadasConsumo }));
@@ -2684,7 +2689,13 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     //  · cualquier otro error (permisos, red) se acumula y se relanza al final,
     //    para que el `catch` de completeBlock lo muestre y el operario sepa que
     //    algo no quedó bien reflejado en el inventario.
-    async function decrementInventory(ingredients) {
+    // `mov`: tipo de movimiento para el libro de materiales (produccion ·
+    // envasado · consumible) y el lote que lo consumió.
+    async function decrementInventory(ingredients, mov = null) {
+        const marca = () => marcaMov(mov?.tipo || 'produccion', {
+            usuario: kromaUser ? { id: kromaUser.id, nombre: kromaUser.name, role: kromaUser.role } : null,
+            ref: mov?.log ? { logId: mov.log.id || null, lote: mov.log.lote || '' } : null,
+        });
         const newAlerts = [];
         const errores = [];
         for (const { materialId, nombre, amount, unidad } of ingredients) {
@@ -2726,7 +2737,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 newEnUso   = Math.max(0, newEnUso);
                 newCerrado = Math.max(0, newCerrado);
 
-                await updateDoc(invRef, { stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp() });
+                await updateDoc(invRef, { stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp(), ...marca() });
 
                 if (faltanteBase > 0) {
                     const uni = inv.unidadBase || 'g';
@@ -2810,14 +2821,16 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         // cada unidad de PT carga exactamente su costo — sin mezclas entre SKU
         // ni desviaciones — alimentando "Costo Teórico vs Real" y margen bruto
         // por SKU en Módulo 2.
-        const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap);
+        const leche = await leerConfigLeche();
+        const recepcionesLote = await leerRecepciones(log.recepcionIds || (log.recepciones || []).map(r => r.recepcionId));
+        const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, leche, recepcionesLote);
         const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(6) } : {};
         // Inventario perpetuo: cada partida nace marcada como producción de
         // este lote, y el costo del lote se guarda con sus componentes.
         const marcaProd = () => marcaMov('produccion', { ref: { logId }, usuario: kromaUser });
         try {
             await updateDoc(doc(db, 'kroma_production_logs', logId), {
-                costeo: desgloseCostoReal(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, presentacionesCreadas),
+                costeo: desgloseCostoReal(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, presentacionesCreadas, leche, recepcionesLote),
             });
         } catch (e) { console.error('costeo del lote:', e); }
 
@@ -2920,7 +2933,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         const empaqueConsumo = mergePackagingConsumption(
             presentacionesCreadas.flatMap(pr => packagingConsumptionForPresentacion(log.productoId, pr.catalogId, pr.unidades, materialsMap))
         );
-        if (empaqueConsumo.length > 0) await decrementInventory(empaqueConsumo);
+        if (empaqueConsumo.length > 0) await decrementInventory(empaqueConsumo, { tipo: 'envasado', log: { id: logId || log.id, lote: log.lote } });
     }
 
     // Envasar (todo o parte de) el queso que quedó SIN ENVASAR en cava.
@@ -2964,9 +2977,12 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             // costo de empaque propio del SKU al precio vigente.
             // Una planilla de papel no tiene insumos reales en `bloquesData`:
             // se costea con leche + insumos de la ficha, como en gerencia.
-            const costoBasePorKg = log.origen === 'planilla_papel'
-                ? (Number(log.costeo?.costoBasePorKg) > 0 ? Number(log.costeo.costoBasePorKg) : costoBasePorKgTeorico(log, materialsMap))
-                : calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap);
+            // El $/kg congelado en el costeo del lote manda (incluye el flete de
+            // la leche); sin costeo, se recalcula como antes.
+            const costoBasePorKg = Number(log.costeo?.costoBasePorKg) > 0 ? Number(log.costeo.costoBasePorKg)
+                : log.origen === 'planilla_papel' ? costoBasePorKgTeorico(log, materialsMap)
+                : calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap, await leerConfigLeche(),
+                    await leerRecepciones(log.recepcionIds || (log.recepciones || []).map(r => r.recepcionId)));
             const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(6) } : {};
             const refEnv = { logId: log.id, envasado: fechaEnvasado || null };
 
@@ -3055,7 +3071,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 pres.flatMap(p => packagingConsumptionForPresentacion(log.productoId, p.catalogId, p.unidades, materialsMap))
             );
             if (empaqueConsumo.length > 0) {
-                try { await decrementInventory(empaqueConsumo); }
+                try { await decrementInventory(empaqueConsumo, { tipo: 'envasado', log }); }
                 catch (e) { alert(`El envasado quedó registrado, pero no se pudo descontar el empaque: ${e.message}`); }
             }
         } catch (e) { alert(e.message); }
@@ -3176,14 +3192,14 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             // silenciosa que se pidió cerrar. Ahora, si algo de esto falla, el
             // `catch` de abajo lo muestra y el bloque NUNCA se marca avanzado,
             // así el operario reintenta sin quedar en un estado a medias.
-            if (usedIngredients.length > 0) await decrementInventory(usedIngredients);
+            if (usedIngredients.length > 0) await decrementInventory(usedIngredients, { tipo: 'produccion', log: activeLog });
             if (isEmpaque && bloque.params?.aspersionMaterialId && (reg.aspersionRealG ?? 0) > 0) {
                 await decrementInventory([{
                     materialId: bloque.params.aspersionMaterialId,
                     nombre:     bloque.params.aspersionMaterialNombre || 'Conservante aspersión',
                     amount:     reg.aspersionRealG,
                     unidad:     'g',
-                }]);
+                }], { tipo: 'envasado', log: activeLog });
             }
             if (isEmpaque) await createInventoryPT(activeLog, reg, activeLog.id);
 

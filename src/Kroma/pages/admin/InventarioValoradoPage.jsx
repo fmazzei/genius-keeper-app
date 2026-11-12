@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/Firebase/config.js';
-import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send, Receipt, Clock } from 'lucide-react';
+import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send, Receipt, Clock, Boxes, HardHat } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
 import CampoFecha, { hoyInput } from '../../Components/CampoFecha.jsx';
 import { indexById, indexPackagingAssignments, packagingCostForItem, costoBasePorKgTeorico } from '@/Kroma/costeoLote.js';
@@ -34,7 +34,7 @@ const ORIGEN = { produccion: 'De su producción', calculado: 'Calculado desde su
 const CAT_LABEL = {
     apertura: 'Apertura', produccion: 'Producción', transformacion: 'Envasado', devolucion: 'Devoluciones',
     traslado: 'Traslados', venta: 'Ventas y despachos', reposicion: 'Reposiciones', muestra: 'Muestras', consumo_interno: 'Consumo interno',
-    merma: 'Mermas', ajuste: 'Ajustes', revaluacion: 'Revaluación', sin_tipo: 'Sin tipo',
+    merma: 'Mermas', ajuste: 'Ajustes', revaluacion: 'Revaluación', mano_de_obra: 'Mano de obra', sin_tipo: 'Sin tipo',
 };
 const llamar = (accion, data = {}) => httpsCallable(functions, 'inventarioPerpetuo')({ accion, ...data }).then(r => r.data);
 
@@ -79,7 +79,7 @@ export default function InventarioValoradoPage() {
                 <>
                     <p className="text-xs text-slate-500 mb-3">Abierto desde el {config.inicio}. El libro lo escribe el servidor y no se edita desde la app.</p>
                     <div className="flex gap-1.5 mb-4 overflow-x-auto">
-                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['facturas', 'Facturas', Receipt], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
+                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['facturas', 'Facturas', Receipt], ['materiales', 'Materiales', Boxes], ['manoObra', 'Mano de obra', HardHat], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
                             <button key={k} onClick={() => setTab(k)}
                                 className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border ${tab === k ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-200' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                                 <I size={14} />{l}
@@ -91,6 +91,8 @@ export default function InventarioValoradoPage() {
                     {tab === 'libro' && <Libro />}
                     {tab === 'conteo' && <Conteo puedeOperar={puedeOperar} perfil={perfil} />}
                     {tab === 'facturas' && <FacturasZoho puedeOperar={puedeOperar} perfil={perfil} />}
+                    {tab === 'manoObra' && <ManoDeObra esMaster={kromaRole === 'master'} perfil={perfil} />}
+                    {tab === 'materiales' && <Materiales puedeOperar={puedeOperar} esMaster={kromaRole === 'master'} perfil={perfil} />}
                     {tab === 'zoho' && <ZohoAsientos puedeOperar={puedeOperar} perfil={perfil} />}
                 </>
             )}
@@ -459,6 +461,14 @@ function DetalleControl({ c }) {
             <p key={i} className={l.dias < 0 ? 'text-red-300' : 'text-sky-200'}>{l.bodega === 'caracas' ? 'Caracas' : 'Planta'} · {l.presentacion} · lote {l.lote || 'sin lote'}: {cant(l.cantidad, l.unidad)} · {usd(l.valorCosto)} · {l.dias < 0 ? `venció hace ${-l.dias} d` : l.dias === 0 ? 'vence hoy' : `vence en ${l.dias} d`} ({l.fechaVencimiento})</p>
         ))}</div>;
     }
+    if (c.n === 9) {
+        const sc = d?.sinCosto || [], st = d?.sinTipo || [];
+        if (!sc.length && !st.length) return <p>{c.nota || 'Movimientos de materiales del día con tipo y costo.'}</p>;
+        return <div className="space-y-1">{c.nota && <p>{c.nota}</p>}
+            {sc.map((x, i) => <p key={`c${i}`} className="text-amber-200">Sin costo · {x.materialNombre}: {fx(x.cantidad, 2)} {x.unidadBase}{x.aviso ? ` · ${x.aviso}` : ''}</p>)}
+            {st.map((x, i) => <p key={`t${i}`} className="text-sky-200">Sin tipo · {x.materialNombre}: {fx(x.cantidad, 2)} {x.unidadBase} · {usd(x.valor)}</p>)}
+        </div>;
+    }
     if (c.n === 5) {
         if (!d?.ajustes?.length) return <p>{c.nota || 'Sin diferencias.'}</p>;
         return <div className="space-y-1">{d.ajustes.map((a, i) => <p key={i}>{a.productoNombre} {a.presentacion} · lote {a.lote || '—'}: {a.cantidad > 0 ? '+' : ''}{fx(a.cantidad, 2)} {a.unidad} · {usd(a.valorCosto)}</p>)}<p className="text-slate-100">Total {fx(d.cantidadTotal, 2)} · {usd(d.valorTotal)}</p></div>;
@@ -728,6 +738,276 @@ const EST_FAC = {
     excluida: ['No se descuenta', 'text-slate-400'], anulada: ['Anulada', 'text-slate-400'], ignorada: ['Borrador', 'text-slate-500'],
     no_aplica: ['No es reposición', 'text-slate-500'],
 };
+
+// ── Materiales (sección 5): libro valorado de insumos, empaques y consumibles ──
+const CAT_MAT = { cultivos: 'Cultivos', coagulantes: 'Coagulantes', sales: 'Sales y conservantes', empaques: 'Empaques',
+    consumibles: 'Consumibles', detergentes: 'Detergentes', reactivos: 'Reactivos', otros: 'Otros', leche: 'Leche' };
+const ORIGEN_MAT = { compras: 'Promedio de compras', promedio: 'Promedio de compras', compra: 'Promedio de compras', maestro: 'Costo del maestro', costo_cero: 'Sin costo (a propósito)' };
+const cantMat = (n, u) => `${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 3 })} ${u || ''}`;
+const precioMat = (n) => n == null ? '—' : `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 6 })}`;
+
+function Materiales({ puedeOperar, esMaster, perfil }) {
+    const [est, setEst] = useState(null);
+    const [sim, setSim] = useState(null);
+    const [movs, setMovs] = useState([]);
+    const [fletes, setFletes] = useState({});
+    const [ajuste, setAjuste] = useState(null);
+    const [ocupado, setOcupado] = useState('');
+    const [error, setError] = useState('');
+    const [aviso, setAviso] = useState('');
+
+    const cargar = async () => {
+        try {
+            const r = await llamar('materialesEstado', { perfil });
+            setEst(r);
+            setFletes(Object.fromEntries(Object.entries(r.leche?.fletePorViaje || {}).map(([k, v]) => [k, String(v)])));
+            if (r.materiales?.abierto) {
+                const s = await getDocs(query(collection(db, 'kroma_mat_libro'), where('empresaId', '==', EMPRESA)));
+                setMovs(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.categoria !== 'apertura')
+                    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 60));
+            }
+        } catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({}); }
+    };
+    useEffect(() => { cargar(); }, []);
+    const hacer = async (que, fn) => {
+        setOcupado(que); setError(''); setAviso('');
+        try { await fn(); } catch (e) { setError(e?.message || 'No se pudo completar.'); }
+        finally { setOcupado(''); }
+    };
+    const simular = () => hacer('sim', async () => setSim(await llamar('materialesAbrir', { modo: 'simular', perfil })));
+    const abrir = () => {
+        if (!window.confirm('Se abre el libro de materiales con las existencias de hoy y su costo. Desde ese momento cada compra y cada consumo queda valorado. ¿Abrir?')) return;
+        hacer('abrir', async () => { const r = await llamar('materialesAbrir', { modo: 'ejecutar', perfil }); setSim(null); setAviso(r.yaAbierto ? 'Ya estaba abierto.' : `Abierto: ${usd(r.resumen?.valor)}.`); await cargar(); });
+    };
+    const guardarFlete = () => hacer('flete', async () => {
+        await llamar('costosConfig', { fletePorViaje: fletes, perfil });
+        setAviso('Tarifas de flete guardadas.'); await cargar();
+    });
+
+    if (!est) return <Cargando />;
+    const mc = est.materiales || {};
+    const saldos = (est.saldos || []).filter(x => Math.abs(Number(x.cantidad) || 0) > 1e-9 || Math.abs(Number(x.valor) || 0) >= 0.005);
+    const total = saldos.reduce((t, x) => t + (Number(x.valor) || 0), 0);
+    const porCat = saldos.reduce((o, x) => { o[x.categoriaMaterial] = (o[x.categoriaMaterial] || 0) + (Number(x.valor) || 0); return o; }, {});
+
+    return (
+        <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
+                <p className="text-sm font-semibold text-slate-100">Flete de la leche (por viaje)</p>
+                <p className="text-xs text-slate-400 mt-1">Tarifa fija por viaje según el origen, sin importar los litros. Cada recepción guarda el flete de su viaje y cada lote carga la parte de las recepciones que usó. Aplica a lotes desde el {est.leche?.fleteDesde || '2026-11-01'}.</p>
+                <div className="space-y-2 mt-3">
+                    {(est.proveedoresLeche || []).map(p => (
+                        <div key={p.id} className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm text-slate-300 w-40">{p.nombre}</span>
+                            <span className="text-sm text-slate-400">$</span>
+                            <input value={fletes[p.id] ?? ''} onChange={e => setFletes(f => ({ ...f, [p.id]: e.target.value }))} disabled={!esMaster} inputMode="decimal" type="text"
+                                className="w-24 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60" placeholder="0" />
+                            <span className="text-xs text-slate-500">por viaje</span>
+                        </div>
+                    ))}
+                    {!(est.proveedoresLeche || []).length && <p className="text-xs text-slate-500">No hay productores de leche en el maestro.</p>}
+                </div>
+                <div className="mt-3">
+                    {esMaster ? <Boton tono="verde" onClick={guardarFlete} ocupado={ocupado === 'flete'}>Guardar tarifas</Boton>
+                        : <span className="text-xs text-slate-500">Las cambia el máster.</span>}
+                </div>
+            </div>
+
+            {!mc.abierto ? (
+                <div className="rounded-2xl border border-sky-500/40 bg-sky-500/5 p-4">
+                    <p className="text-sm font-semibold text-sky-200">El libro de materiales no está abierto</p>
+                    <p className="text-xs text-slate-400 mt-1">Al abrirlo, el saldo inicial es la existencia de hoy de cada insumo, empaque y consumible, a su costo (promedio de compras, o el del maestro si no tiene compras). Desde ahí cada compra entra a lo que costó y cada consumo sale al promedio.</p>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                        <Boton onClick={simular} ocupado={ocupado === 'sim'}>Ver la apertura</Boton>
+                        {esMaster && sim && <Boton tono="verde" onClick={abrir} ocupado={ocupado === 'abrir'}>Abrir el libro</Boton>}
+                    </div>
+                    {sim && <TablaMateriales filas={sim.lineas} total={sim.resumen?.valor} />}
+                    {sim?.resumen?.pendientesAjuste?.length > 0 && <p className="text-xs text-amber-200 mt-2">Pendiente de ajuste por peso: {sim.resumen.pendientesAjuste.map(p => `${p.materialNombre} (${usd(p.valor)})`).join(', ')}. Abre con el valor de hoy y se corrige al pesar el rollo.</p>}
+                </div>
+            ) : (
+                <>
+                    <p className="text-xs text-slate-500">Abierto desde el {mc.inicio}. Las planillas de papel descuentan insumos y empaques desde el {mc.planillasDesde}.</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <Tile label="Materiales a costo" valor={usd(total)} fuerte />
+                        {Object.entries(porCat).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => <Tile key={k} label={CAT_MAT[k] || k} valor={usd(v)} />)}
+                    </div>
+                    <TablaMateriales filas={saldos} total={total} onAjustar={esMaster ? setAjuste : null} />
+                    {ajuste && <AjustePeso material={ajuste} perfil={perfil} onCerrar={() => setAjuste(null)} onListo={async (msg) => { setAjuste(null); setAviso(msg); await cargar(); }} />}
+                    <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3">
+                        <p className="text-sm font-semibold text-slate-100 mb-2">Últimos movimientos</p>
+                        {!movs.length ? <p className="text-xs text-slate-500">Sin movimientos desde la apertura.</p> : (
+                            <div className="space-y-1 text-xs">
+                                {movs.map(a => (
+                                    <p key={a.id} className={a.sinCosto ? 'text-amber-200' : a.categoria === 'sin_tipo' ? 'text-sky-200' : 'text-slate-300'}>
+                                        {a.fecha} · {a.materialNombre} · {{ entrada: 'Entrada', consumo: 'Consumo', ajuste: 'Ajuste', merma: 'Merma', sin_tipo: 'Sin tipo' }[a.categoria] || a.categoria} ({a.tipo}){a.ref?.lote ? ` · ${a.ref.lote}` : ''}: {a.cantidad > 0 ? '+' : ''}{cantMat(a.cantidad, a.unidadBase)} · {usd(a.valor)}
+                                    </p>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+            {aviso && <p className="text-sm text-emerald-300">{aviso}</p>}
+            {error && <p className="text-sm text-red-300">{error}</p>}
+        </div>
+    );
+}
+
+// Ajuste por proporción de peso de un rollo empezado que se cargó como nuevo.
+function AjustePeso({ material, perfil, onCerrar, onListo }) {
+    const [f, setF] = useState({ pesoActual: '', pesoNuevo: '', tara: '', reemplaza: 'cerrado' });
+    const [sim, setSim] = useState(null);
+    const [ocupado, setOcupado] = useState('');
+    const [error, setError] = useState('');
+    const num = (v) => Number(String(v).replace(',', '.'));
+    const datos = () => ({ materialId: material.materialId, pesoActual: num(f.pesoActual), pesoNuevo: num(f.pesoNuevo), tara: num(f.tara) || 0, reemplaza: f.reemplaza, perfil });
+    const correr = async (modo) => {
+        setOcupado(modo); setError('');
+        try {
+            const r = await llamar('materialAjustePeso', { ...datos(), modo });
+            if (modo === 'ejecutar') onListo(`${material.materialNombre}: ${cantMat(r.despues?.cantidad, r.unidadBase)} tras el ajuste por peso.`);
+            else setSim(r);
+        } catch (e) { setError(e?.message || 'No se pudo calcular.'); }
+        finally { setOcupado(''); }
+    };
+    const campo = (k, label) => (
+        <label className="block text-xs text-slate-400">{label}
+            <input value={f[k]} onChange={e => { setF(x => ({ ...x, [k]: e.target.value })); setSim(null); }} inputMode="decimal" type="text"
+                className="mt-1 w-28 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" placeholder="0" />
+        </label>
+    );
+    return (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-3">
+            <p className="text-sm font-semibold text-amber-100">Ajuste por peso · {material.materialNombre}</p>
+            <p className="text-xs text-slate-400">Pesa el rollo empezado y un rollo nuevo, en la misma unidad (g o kg). Si pesas con el tubo, pon el peso del tubo vacío como tara. Lo que queda = contenido del rollo nuevo × peso actual ÷ peso nuevo.</p>
+            <div className="flex flex-wrap gap-3">{campo('pesoActual', 'Rollo empezado')}{campo('pesoNuevo', 'Rollo nuevo')}{campo('tara', 'Tara (tubo)')}</div>
+            <div className="flex flex-wrap gap-2 text-xs">
+                {[['cerrado', 'El rollo pesado es el que se cargó como nuevo'], ['en_uso', 'El rollo pesado es el que está en uso']].map(([k, t]) => (
+                    <button key={k} onClick={() => { setF(x => ({ ...x, reemplaza: k })); setSim(null); }}
+                        className={`rounded-full border px-3 py-1 ${f.reemplaza === k ? 'border-amber-400 text-amber-100' : 'border-slate-700 text-slate-400'}`}>{t}</button>
+                ))}
+            </div>
+            {sim && <p className="text-sm text-slate-200">Quedan {cantMat(sim.medido, sim.unidadBase)} en ese rollo. Existencia: {cantMat(sim.antes?.cantidad, sim.unidadBase)} → {cantMat(sim.despues?.cantidad, sim.unidadBase)}{sim.valorDiferencia != null ? ` · ${usd(sim.valorDiferencia)}` : ''}.</p>}
+            {error && <p className="text-sm text-red-300">{error}</p>}
+            <div className="flex flex-wrap gap-2">
+                <Boton onClick={() => correr('simular')} ocupado={ocupado === 'simular'}>Calcular</Boton>
+                {sim && <Boton tono="verde" onClick={() => correr('ejecutar')} ocupado={ocupado === 'ejecutar'}>Aplicar el ajuste</Boton>}
+                <Boton onClick={onCerrar}>Cancelar</Boton>
+            </div>
+        </div>
+    );
+}
+
+// ── Mano de obra de planta (sección 6) ──
+const ETAPA = { produccion: 'Producción', empaque: 'Empaque', sinEtapa: 'Sin etapa (gasto del mes)' };
+const mesActual = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Caracas' }).format(new Date()).slice(0, 7);
+
+function ManoDeObra({ esMaster, perfil }) {
+    const [est, setEst] = useState(null);
+    const [personas, setPersonas] = useState([]);
+    const [mes, setMes] = useState(mesActual());
+    const [sim, setSim] = useState(null);
+    const [ocupado, setOcupado] = useState('');
+    const [error, setError] = useState('');
+    const [aviso, setAviso] = useState('');
+    const cargar = async () => {
+        try { const r = await llamar('manoObraEstado', { perfil }); setEst(r); setPersonas(r.config?.personas || []); }
+        catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({ meses: [] }); }
+    };
+    useEffect(() => { cargar(); }, []);
+    const hacer = async (que, fn) => {
+        setOcupado(que); setError(''); setAviso('');
+        try { await fn(); } catch (e) { setError(e?.message || 'No se pudo completar.'); } finally { setOcupado(''); }
+    };
+    const simular = (cierre) => hacer(cierre ? 'simC' : 'simP', async () => setSim(await llamar('manoObra', { mes, cierre, modo: 'simular', perfil })));
+    const aplicar = (cierre) => {
+        if (!window.confirm(cierre ? `Se cierra la mano de obra de ${mes} con lo registrado en Zoho y queda congelada. ¿Seguir?` : `Se aplica la mano de obra provisional de ${mes}. ¿Seguir?`)) return;
+        hacer('apl', async () => { const r = await llamar('manoObra', { mes, cierre, modo: 'ejecutar', perfil }); setSim(null); setAviso(r.congelado && !r.aplicado ? r.motivo : `Aplicado: ${usd((r.aplicado?.produccion || 0) + (r.aplicado?.empaque || 0))}.`); await cargar(); });
+    };
+    const guardarPersonas = () => hacer('pers', async () => { await llamar('manoObraConfig', { personas, perfil }); setAviso('Personas guardadas.'); await cargar(); });
+
+    if (!est) return <Cargando />;
+    const r = sim || (est.meses || []).find(x => x.id === mes);
+    return (
+        <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
+                <p className="text-sm font-semibold text-slate-100">Quién está en qué etapa</p>
+                <p className="text-xs text-slate-400 mt-1">Los montos salen de lo registrado en Zoho en las cuentas de nómina de planta (facturas de proveedor y diarios), por persona. Producción se reparte entre los kg producidos del mes; empaque, entre los kg envasados. Durante el mes se usa la tasa del mes anterior; desde el día {est.config?.diaCierre || 3} del mes siguiente se cierra con lo real.</p>
+                <div className="space-y-2 mt-3">
+                    {personas.map((p, i) => (
+                        <div key={i} className="flex flex-wrap items-center gap-2">
+                            <input value={p.nombre} disabled={!esMaster} onChange={e => setPersonas(ps => ps.map((x, j) => j === i ? { ...x, nombre: e.target.value } : x))}
+                                className="w-44 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60" />
+                            <input value={p.contactId || ''} disabled={!esMaster} placeholder="Contacto de Zoho" onChange={e => setPersonas(ps => ps.map((x, j) => j === i ? { ...x, contactId: e.target.value } : x))}
+                                className="w-48 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-300 disabled:opacity-60" />
+                            <select value={p.etapa} disabled={!esMaster} onChange={e => setPersonas(ps => ps.map((x, j) => j === i ? { ...x, etapa: e.target.value } : x))}
+                                className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60">
+                                <option value="produccion">Producción</option><option value="empaque">Empaque</option>
+                            </select>
+                            {esMaster && <button onClick={() => setPersonas(ps => ps.filter((_, j) => j !== i))} className="text-xs text-red-300">Quitar</button>}
+                        </div>
+                    ))}
+                </div>
+                {esMaster && <div className="flex flex-wrap gap-2 mt-3">
+                    <Boton onClick={() => setPersonas(ps => [...ps, { nombre: '', contactId: '', etapa: 'produccion' }])}>Agregar persona</Boton>
+                    <Boton tono="verde" onClick={guardarPersonas} ocupado={ocupado === 'pers'}>Guardar</Boton>
+                </div>}
+            </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-slate-300">Mes</span>
+                    <input type="month" value={mes} onChange={e => { setMes(e.target.value); setSim(null); }} style={{ colorScheme: 'dark' }}
+                        className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" />
+                    <Boton onClick={() => simular(false)} ocupado={ocupado === 'simP'}>Simular provisional</Boton>
+                    <Boton onClick={() => simular(true)} ocupado={ocupado === 'simC'}>Simular cierre</Boton>
+                    {esMaster && sim && <Boton tono="verde" onClick={() => aplicar(sim.modo === 'cierre')} ocupado={ocupado === 'apl'}>{sim.modo === 'cierre' ? 'Cerrar el mes' : 'Aplicar provisional'}</Boton>}
+                </div>
+                {!r ? <p className="text-xs text-slate-500 mt-3">Sin cálculo para {mes} todavía.</p> : (
+                    <div className="mt-3 space-y-2 text-xs text-slate-300">
+                        <p className="text-slate-100 font-semibold">{sim ? 'Simulación' : r.congelado ? 'Cerrado' : 'Provisional'} · {r.modo === 'cierre' ? 'lo registrado en Zoho' : `tasa de ${r.tasas?.referencia?.origen || 'el mes anterior'}`}</p>
+                        {['produccion', 'empaque'].map(e => (
+                            <p key={e}>{ETAPA[e]}: {usd(r.aplicado?.[e])} aplicado sobre {fx(r.kg?.[e])} kg ({usd(r.tasas?.[e])}/kg){r.noAplicado?.[e] ? ` · ${usd(r.noAplicado[e])} queda como gasto` : ''}</p>
+                        ))}
+                        {r.noAplicado?.sinEtapa ? <p className="text-amber-300">Sin etapa (gasto del mes): {usd(r.noAplicado.sinEtapa)}</p> : null}
+                        {r.montos && ['produccion', 'empaque', 'sinEtapa'].map(e => Object.keys(r.montos[e]?.porPersona || {}).length ? (
+                            <p key={`p${e}`} className="text-slate-400">{ETAPA[e]}: {Object.entries(r.montos[e].porPersona).map(([n, v]) => `${n} ${usd(v)}`).join(' · ')}</p>
+                        ) : null)}
+                        {sim?.grupos?.length ? <p className="text-slate-400">Movimientos en el libro: {sim.movimientos} · {usd(sim.valorMovimientos)}</p> : null}
+                    </div>
+                )}
+            </div>
+            {aviso && <p className="text-sm text-emerald-300">{aviso}</p>}
+            {error && <p className="text-sm text-red-300">{error}</p>}
+        </div>
+    );
+}
+
+function TablaMateriales({ filas, total, onAjustar }) {
+    return (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-700">
+            <table className="w-full text-xs">
+                <thead className="bg-slate-900/60 text-slate-400">
+                    <tr><th className="text-left p-2">Material</th><th className="text-right p-2">Existencia</th><th className="text-right p-2">Costo unitario</th><th className="text-right p-2">Valor</th><th className="text-left p-2">Origen del costo</th></tr>
+                </thead>
+                <tbody>
+                    {(filas || []).map(x => (
+                        <tr key={x.materialId} className="border-t border-slate-800">
+                            <td className="p-2 text-slate-100">{x.materialNombre}<span className="block text-slate-500">{CAT_MAT[x.categoriaMaterial] || x.categoriaMaterial}</span>
+                                {x.pendienteAjuste && <span className="mt-1 inline-block rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200" title={x.pendienteAjuste.motivo || ''}>Pendiente de ajuste por peso</span>}
+                                {x.pendienteAjuste && onAjustar && <button onClick={() => onAjustar(x)} className="ml-2 text-[11px] text-sky-300 underline">Ajustar</button>}</td>
+                            <td className="p-2 text-right text-slate-300 whitespace-nowrap">{cantMat(x.cantidad, x.unidadBase)}</td>
+                            <td className="p-2 text-right text-slate-300 whitespace-nowrap">{precioMat(x.costoUnitario)}</td>
+                            <td className="p-2 text-right text-slate-100 whitespace-nowrap">{usd(x.valor)}</td>
+                            <td className={`p-2 ${x.aviso || (x.costoUnitario == null && x.cantidad > 0) ? 'text-amber-300' : 'text-slate-400'}`}>{x.aviso || ORIGEN_MAT[x.origenCosto] || (x.cantidad > 0 ? 'Sin costo' : '—')}</td>
+                        </tr>
+                    ))}
+                    <tr className="border-t border-slate-700 bg-slate-900/40"><td className="p-2 font-semibold text-slate-100" colSpan={3}>Total</td><td className="p-2 text-right font-semibold text-white">{usd(total)}</td><td /></tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
 function FacturasZoho({ puedeOperar, perfil }) {
     const [est, setEst] = useState(null);
