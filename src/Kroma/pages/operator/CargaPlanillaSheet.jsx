@@ -43,6 +43,7 @@ import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import { costeoPlanilla, costoUnitarioDePartida, indexPackagingAssignments } from '@/Kroma/costeoLote.js';
 import { marcaMov } from '@/utils/movInventario.js';
+import { leerConfigLeche } from '@/Kroma/configCostos.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
 import { fechaEnPalabras } from '@/Kroma/fechas.js';
 import { partidasDePlanilla, reconciliarCava, firmaCava, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento, cambiosDeLote } from '@/Kroma/ptPlanilla.js';
@@ -420,7 +421,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             // es el costo con el que su queso entra a la cava y al libro
             // valorado: antes entraba SIN costo y había que estimarlo después.
             const empaquesPorKey = indexPackagingAssignments(Object.values(materialsMap || {}));
-            datosLog.costeo = costeoPlanilla(datosLog, materialsMap || {}, empaquesPorKey);
+            datosLog.costeo = costeoPlanilla(datosLog, materialsMap || {}, empaquesPorKey, await leerConfigLeche());
             const costoDe = (pt) => costoUnitarioDePartida(datosLog.costeo, pt, ficha.productoId, empaquesPorKey);
 
             if (editando) {

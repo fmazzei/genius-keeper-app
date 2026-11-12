@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-materiales-valorados",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Insumos y empaques con su valor",
+    resumen: "Inventario valorado \u2192 Materiales: cada compra, consumo y correcci\xF3n de insumos, empaques y consumibles queda con su valor (promedio de compras). Ah\xED se fija tambi\xE9n el flete de la leche por litro, que se suma al costo de cada lote."
+  },
+  {
     id: "2026-11-12-reposiciones-inventario",
     fecha: "2026-11-12",
     roles: ["master"],

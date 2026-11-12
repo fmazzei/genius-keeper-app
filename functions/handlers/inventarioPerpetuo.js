@@ -466,7 +466,7 @@ function controlLotes(lotes, fecha, tolerancia = 0.15) {
 }
 
 /** Arma el reporte de un día con todo lo anterior. */
-function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {}, controlZoho = null, facturas = null, diasVencer = 15 }) {
+function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {}, controlZoho = null, facturas = null, diasVencer = 15, materiales = null }) {
     const hasta = asientos.filter(a => a.fecha <= fecha);
     const sal = saldos(hasta, fecha, precioKg);
     const porUbic = {};
@@ -546,6 +546,14 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
         { n: 8, nombre: `Lotes por vencer (${diasVencer} días o menos)`, estado: porVencer.length ? "aviso" : "aprobado",
             nota: porVencer.length ? "Hay que empujar estos lotes en las próximas ventas o darlos de baja." : null,
             detalle: { lotes: porVencer } },
+        // Libro de materiales (sección 5): movimientos del día sin costo (no se
+        // pueden valorar) o sin tipo (una app vieja que no marcó el movimiento).
+        materiales == null
+            ? { n: 9, nombre: "Materiales", estado: "no_aplica", nota: "El libro de materiales no está abierto." }
+            : { n: 9, nombre: "Materiales", estado: materiales.control.estado,
+                nota: materiales.control.estado === "diferencia" ? "Hay consumos de materiales sin costo: revisa la unidad o el costo en el maestro."
+                    : materiales.control.estado === "aviso" ? "Hay movimientos de materiales sin tipo: se valoran al promedio y van a ajustes." : null,
+                detalle: materiales.control.detalle },
     ];
     return {
         fecha,
@@ -567,6 +575,7 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
         })(),
         controles,
         porVencer,
+        ...(materiales ? { materiales: { valor: materiales.valor, porCategoria: materiales.porCategoria, materiales: materiales.materiales, flujosDelDia: materiales.flujosDelDia } } : {}),
         conDiferencias: controles.filter(c => c.estado === "diferencia").map(c => c.n),
         conAvisos: controles.filter(c => c.estado === "aviso").map(c => c.n),
     };
@@ -788,6 +797,8 @@ exports.inventarioComando = functions.runWith({ timeoutSeconds: 540, memory: "1G
                 const f = await require("./inventarioFacturas").procesarFacturas({ simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
                 const rec = c.modo === "ejecutar" ? await recalcularPendientes() : null;
                 resultado = { facturas: f, recalculo: rec };
+            } else if (c.accion === "materiales") {
+                resultado = await require("./inventarioMateriales")._materiales.abrirMateriales({ simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
             } else if (c.accion === "recalcular") {
                 resultado = await recalcularPendientes(/^\d{4}-\d{2}-\d{2}$/.test(c.desde || "") ? c.desde : null);
             } else {
@@ -973,7 +984,10 @@ async function generarReporte(fecha) {
         try { facturas = await require("./inventarioFacturas").pendientesHasta(fecha); }
         catch (e) { console.error("pendientesHasta", e); facturas = [{ numero: "—", estado: "error", motivo: `No se pudo leer el estado de las facturas: ${e.message}` }]; }
     }
-    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg, facturas, diasVencer: Number(cfg.diasAvisoVencimiento) || 15,
+    let materiales = null;
+    try { materiales = await require("./inventarioMateriales")._materiales.datosReporte(fecha); }
+    catch (e) { console.error("datosReporte materiales", e); }
+    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg, facturas, materiales, diasVencer: Number(cfg.diasAvisoVencimiento) || 15,
         controlZoho: z?.exists ? (z.data().control || null) : null });
     await db().doc(`${COL_REPORTES}/${fecha}`).set({
         ...JSON.parse(JSON.stringify(rep)), empresaId: EMPRESA,
@@ -1282,6 +1296,22 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
             const f = (await leerConfig()).facturas || {};
             return JSON.parse(JSON.stringify({ facturas: { ...f, desde: f.desde || R.DESDE_INICIAL }, mapeo: R.mapeoEfectivo(f),
                 presentaciones: [{ catalogId: R.CAT_250, nombre: "250 g" }, { catalogId: R.CAT_1KG, nombre: "1 kg" }] }));
+        }
+        if (accion === "materialesAbrir") {
+            // Simular: cualquiera que opere el inventario. Abrir: solo el máster.
+            const simular = request.data?.modo !== "ejecutar";
+            if (!simular) exigirMaster(m, usuario);
+            return JSON.parse(JSON.stringify(await require("./inventarioMateriales")._materiales.abrirMateriales({ simular, quien: usuario.perfilNombre || usuario.cuenta })));
+        }
+        if (accion === "materialesEstado") {
+            const cfg = await leerConfig();
+            const snap = await db().collection("kroma_mat_saldos").where("empresaId", "==", EMPRESA).get();
+            return JSON.parse(JSON.stringify({ materiales: cfg.materiales || null, leche: cfg.leche || null,
+                saldos: snap.docs.map(d => d.data()).sort((a, b) => String(a.categoriaMaterial).localeCompare(b.categoriaMaterial) || String(a.materialNombre).localeCompare(b.materialNombre)) }));
+        }
+        if (accion === "costosConfig") {
+            exigirMaster(m, usuario);
+            return await require("./inventarioMateriales")._materiales.guardarCostos(request.data || {});
         }
         if (accion === "facturasConfig") {
             exigirMaster(m, usuario);

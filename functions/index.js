@@ -20,6 +20,7 @@ const zohoInvoicing  = require('./handlers/zohoInvoicing');
 const ventasPlanta   = require('./handlers/ventasPlanta');
 const kromaEmpresas  = require('./handlers/kromaEmpresas');
 const { _internos: _invInternos, ...inventarioPerpetuo } = require('./handlers/inventarioPerpetuo');
+const { _materiales: _matInternos, ...inventarioMateriales } = require('./handlers/inventarioMateriales');
 const { inventarioZoho } = require('./handlers/inventarioZoho');
 const { datosRutaMercaderista } = require('./handlers/rutaMercaderista');
 const { simularFusionPdv, fusionarPdv } = require('./handlers/fusionPdv');
@@ -35,4 +36,4 @@ exports.mcp = require('./handlers/mcpServer').mcp;
 // las herramientas simulador_* del conector.
 exports.simulador = require('./handlers/simuladorApp').simulador;
 
-Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools, zohoInvoicing, kromaEmpresas, ventasPlanta, inventarioPerpetuo, { inventarioZoho, datosRutaMercaderista, simularFusionPdv, fusionarPdv, vigilanteAcciones, cuentaCorreo, traspasarCartera, registrarCese });
+Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools, zohoInvoicing, kromaEmpresas, ventasPlanta, inventarioPerpetuo, inventarioMateriales, { inventarioZoho, datosRutaMercaderista, simularFusionPdv, fusionarPdv, vigilanteAcciones, cuentaCorreo, traspasarCartera, registrarCese });

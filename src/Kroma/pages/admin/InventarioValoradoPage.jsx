@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/Firebase/config.js';
-import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send, Receipt, Clock } from 'lucide-react';
+import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send, Receipt, Clock, Boxes } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
 import CampoFecha, { hoyInput } from '../../Components/CampoFecha.jsx';
 import { indexById, indexPackagingAssignments, packagingCostForItem, costoBasePorKgTeorico } from '@/Kroma/costeoLote.js';
@@ -79,7 +79,7 @@ export default function InventarioValoradoPage() {
                 <>
                     <p className="text-xs text-slate-500 mb-3">Abierto desde el {config.inicio}. El libro lo escribe el servidor y no se edita desde la app.</p>
                     <div className="flex gap-1.5 mb-4 overflow-x-auto">
-                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['facturas', 'Facturas', Receipt], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
+                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['facturas', 'Facturas', Receipt], ['materiales', 'Materiales', Boxes], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
                             <button key={k} onClick={() => setTab(k)}
                                 className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border ${tab === k ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-200' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                                 <I size={14} />{l}
@@ -91,6 +91,7 @@ export default function InventarioValoradoPage() {
                     {tab === 'libro' && <Libro />}
                     {tab === 'conteo' && <Conteo puedeOperar={puedeOperar} perfil={perfil} />}
                     {tab === 'facturas' && <FacturasZoho puedeOperar={puedeOperar} perfil={perfil} />}
+                    {tab === 'materiales' && <Materiales puedeOperar={puedeOperar} esMaster={kromaRole === 'master'} perfil={perfil} />}
                     {tab === 'zoho' && <ZohoAsientos puedeOperar={puedeOperar} perfil={perfil} />}
                 </>
             )}
@@ -459,6 +460,14 @@ function DetalleControl({ c }) {
             <p key={i} className={l.dias < 0 ? 'text-red-300' : 'text-sky-200'}>{l.bodega === 'caracas' ? 'Caracas' : 'Planta'} · {l.presentacion} · lote {l.lote || 'sin lote'}: {cant(l.cantidad, l.unidad)} · {usd(l.valorCosto)} · {l.dias < 0 ? `venció hace ${-l.dias} d` : l.dias === 0 ? 'vence hoy' : `vence en ${l.dias} d`} ({l.fechaVencimiento})</p>
         ))}</div>;
     }
+    if (c.n === 9) {
+        const sc = d?.sinCosto || [], st = d?.sinTipo || [];
+        if (!sc.length && !st.length) return <p>{c.nota || 'Movimientos de materiales del día con tipo y costo.'}</p>;
+        return <div className="space-y-1">{c.nota && <p>{c.nota}</p>}
+            {sc.map((x, i) => <p key={`c${i}`} className="text-amber-200">Sin costo · {x.materialNombre}: {fx(x.cantidad, 2)} {x.unidadBase}{x.aviso ? ` · ${x.aviso}` : ''}</p>)}
+            {st.map((x, i) => <p key={`t${i}`} className="text-sky-200">Sin tipo · {x.materialNombre}: {fx(x.cantidad, 2)} {x.unidadBase} · {usd(x.valor)}</p>)}
+        </div>;
+    }
     if (c.n === 5) {
         if (!d?.ajustes?.length) return <p>{c.nota || 'Sin diferencias.'}</p>;
         return <div className="space-y-1">{d.ajustes.map((a, i) => <p key={i}>{a.productoNombre} {a.presentacion} · lote {a.lote || '—'}: {a.cantidad > 0 ? '+' : ''}{fx(a.cantidad, 2)} {a.unidad} · {usd(a.valorCosto)}</p>)}<p className="text-slate-100">Total {fx(d.cantidadTotal, 2)} · {usd(d.valorTotal)}</p></div>;
@@ -728,6 +737,132 @@ const EST_FAC = {
     excluida: ['No se descuenta', 'text-slate-400'], anulada: ['Anulada', 'text-slate-400'], ignorada: ['Borrador', 'text-slate-500'],
     no_aplica: ['No es reposición', 'text-slate-500'],
 };
+
+// ── Materiales (sección 5): libro valorado de insumos, empaques y consumibles ──
+const CAT_MAT = { cultivos: 'Cultivos', coagulantes: 'Coagulantes', sales: 'Sales y conservantes', empaques: 'Empaques',
+    consumibles: 'Consumibles', detergentes: 'Detergentes', reactivos: 'Reactivos', otros: 'Otros', leche: 'Leche' };
+const ORIGEN_MAT = { compras: 'Promedio de compras', promedio: 'Promedio de compras', compra: 'Promedio de compras', maestro: 'Costo del maestro' };
+const cantMat = (n, u) => `${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 3 })} ${u || ''}`;
+const precioMat = (n) => n == null ? '—' : `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 6 })}`;
+
+function Materiales({ puedeOperar, esMaster, perfil }) {
+    const [est, setEst] = useState(null);
+    const [sim, setSim] = useState(null);
+    const [movs, setMovs] = useState([]);
+    const [flete, setFlete] = useState('');
+    const [ocupado, setOcupado] = useState('');
+    const [error, setError] = useState('');
+    const [aviso, setAviso] = useState('');
+
+    const cargar = async () => {
+        try {
+            const r = await llamar('materialesEstado', { perfil });
+            setEst(r);
+            setFlete(r.leche?.fletePorLitro != null ? String(r.leche.fletePorLitro) : '');
+            if (r.materiales?.abierto) {
+                const s = await getDocs(query(collection(db, 'kroma_mat_libro'), where('empresaId', '==', EMPRESA)));
+                setMovs(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.categoria !== 'apertura')
+                    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 60));
+            }
+        } catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({}); }
+    };
+    useEffect(() => { cargar(); }, []);
+    const hacer = async (que, fn) => {
+        setOcupado(que); setError(''); setAviso('');
+        try { await fn(); } catch (e) { setError(e?.message || 'No se pudo completar.'); }
+        finally { setOcupado(''); }
+    };
+    const simular = () => hacer('sim', async () => setSim(await llamar('materialesAbrir', { modo: 'simular', perfil })));
+    const abrir = () => {
+        if (!window.confirm('Se abre el libro de materiales con las existencias de hoy y su costo. Desde ese momento cada compra y cada consumo queda valorado. ¿Abrir?')) return;
+        hacer('abrir', async () => { const r = await llamar('materialesAbrir', { modo: 'ejecutar', perfil }); setSim(null); setAviso(r.yaAbierto ? 'Ya estaba abierto.' : `Abierto: ${usd(r.resumen?.valor)}.`); await cargar(); });
+    };
+    const guardarFlete = () => hacer('flete', async () => {
+        const r = await llamar('costosConfig', { fletePorLitro: flete, perfil });
+        setAviso(`Flete guardado: $${fx(r.leche?.fletePorLitro, 4)} por litro.`); await cargar();
+    });
+
+    if (!est) return <Cargando />;
+    const mc = est.materiales || {};
+    const saldos = (est.saldos || []).filter(x => Math.abs(Number(x.cantidad) || 0) > 1e-9 || Math.abs(Number(x.valor) || 0) >= 0.005);
+    const total = saldos.reduce((t, x) => t + (Number(x.valor) || 0), 0);
+    const porCat = saldos.reduce((o, x) => { o[x.categoriaMaterial] = (o[x.categoriaMaterial] || 0) + (Number(x.valor) || 0); return o; }, {});
+
+    return (
+        <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-4">
+                <p className="text-sm font-semibold text-slate-100">Flete de la leche</p>
+                <p className="text-xs text-slate-400 mt-1">Se suma al costo de la leche de cada lote producido desde el {est.leche?.fleteDesde || '2026-11-01'}. Referencia: 100 USD por unos 402 L el 03/11 ≈ $0,25 por litro.</p>
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                    <span className="text-sm text-slate-300">$ por litro</span>
+                    <input value={flete} onChange={e => setFlete(e.target.value)} disabled={!esMaster} inputMode="decimal" type="text"
+                        className="w-28 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white disabled:opacity-60" placeholder="0,25" />
+                    {esMaster && <Boton tono="verde" onClick={guardarFlete} ocupado={ocupado === 'flete'}>Guardar</Boton>}
+                    {!esMaster && <span className="text-xs text-slate-500">Lo cambia el máster.</span>}
+                </div>
+            </div>
+
+            {!mc.abierto ? (
+                <div className="rounded-2xl border border-sky-500/40 bg-sky-500/5 p-4">
+                    <p className="text-sm font-semibold text-sky-200">El libro de materiales no está abierto</p>
+                    <p className="text-xs text-slate-400 mt-1">Al abrirlo, el saldo inicial es la existencia de hoy de cada insumo, empaque y consumible, a su costo (promedio de compras, o el del maestro si no tiene compras). Desde ahí cada compra entra a lo que costó y cada consumo sale al promedio.</p>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                        <Boton onClick={simular} ocupado={ocupado === 'sim'}>Ver la apertura</Boton>
+                        {esMaster && sim && <Boton tono="verde" onClick={abrir} ocupado={ocupado === 'abrir'}>Abrir el libro</Boton>}
+                    </div>
+                    {sim && <TablaMateriales filas={sim.lineas} total={sim.resumen?.valor} />}
+                </div>
+            ) : (
+                <>
+                    <p className="text-xs text-slate-500">Abierto desde el {mc.inicio}. Las planillas de papel descuentan insumos y empaques desde el {mc.planillasDesde}.</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <Tile label="Materiales a costo" valor={usd(total)} fuerte />
+                        {Object.entries(porCat).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => <Tile key={k} label={CAT_MAT[k] || k} valor={usd(v)} />)}
+                    </div>
+                    <TablaMateriales filas={saldos} total={total} />
+                    <div className="rounded-2xl border border-slate-700 bg-slate-800/40 p-3">
+                        <p className="text-sm font-semibold text-slate-100 mb-2">Últimos movimientos</p>
+                        {!movs.length ? <p className="text-xs text-slate-500">Sin movimientos desde la apertura.</p> : (
+                            <div className="space-y-1 text-xs">
+                                {movs.map(a => (
+                                    <p key={a.id} className={a.sinCosto ? 'text-amber-200' : a.categoria === 'sin_tipo' ? 'text-sky-200' : 'text-slate-300'}>
+                                        {a.fecha} · {a.materialNombre} · {{ entrada: 'Entrada', consumo: 'Consumo', ajuste: 'Ajuste', merma: 'Merma', sin_tipo: 'Sin tipo' }[a.categoria] || a.categoria} ({a.tipo}){a.ref?.lote ? ` · ${a.ref.lote}` : ''}: {a.cantidad > 0 ? '+' : ''}{cantMat(a.cantidad, a.unidadBase)} · {usd(a.valor)}
+                                    </p>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+            {aviso && <p className="text-sm text-emerald-300">{aviso}</p>}
+            {error && <p className="text-sm text-red-300">{error}</p>}
+        </div>
+    );
+}
+
+function TablaMateriales({ filas, total }) {
+    return (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-700">
+            <table className="w-full text-xs">
+                <thead className="bg-slate-900/60 text-slate-400">
+                    <tr><th className="text-left p-2">Material</th><th className="text-right p-2">Existencia</th><th className="text-right p-2">Costo unitario</th><th className="text-right p-2">Valor</th><th className="text-left p-2">Origen del costo</th></tr>
+                </thead>
+                <tbody>
+                    {(filas || []).map(x => (
+                        <tr key={x.materialId} className="border-t border-slate-800">
+                            <td className="p-2 text-slate-100">{x.materialNombre}<span className="block text-slate-500">{CAT_MAT[x.categoriaMaterial] || x.categoriaMaterial}</span></td>
+                            <td className="p-2 text-right text-slate-300 whitespace-nowrap">{cantMat(x.cantidad, x.unidadBase)}</td>
+                            <td className="p-2 text-right text-slate-300 whitespace-nowrap">{precioMat(x.costoUnitario)}</td>
+                            <td className="p-2 text-right text-slate-100 whitespace-nowrap">{usd(x.valor)}</td>
+                            <td className={`p-2 ${x.aviso || (x.costoUnitario == null && x.cantidad > 0) ? 'text-amber-300' : 'text-slate-400'}`}>{x.aviso || ORIGEN_MAT[x.origenCosto] || (x.cantidad > 0 ? 'Sin costo' : '—')}</td>
+                        </tr>
+                    ))}
+                    <tr className="border-t border-slate-700 bg-slate-900/40"><td className="p-2 font-semibold text-slate-100" colSpan={3}>Total</td><td className="p-2 text-right font-semibold text-white">{usd(total)}</td><td /></tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
 
 function FacturasZoho({ puedeOperar, perfil }) {
     const [est, setEst] = useState(null);

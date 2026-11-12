@@ -737,6 +737,15 @@ service cloud.firestore {
       allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow write: if false;
     }
+    // Libro valorado de materiales y saldos por material: solo el servidor escribe.
+    match /kroma_mat_libro/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
+    match /kroma_mat_saldos/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
     match /kroma_inv_reportes/{id} {
       allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow write: if false;

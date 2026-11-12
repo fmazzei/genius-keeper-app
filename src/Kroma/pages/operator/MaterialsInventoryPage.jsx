@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
     collection, getDocs, doc, setDoc, serverTimestamp,
-    query, where, onSnapshot, addDoc, updateDoc, runTransaction, writeBatch, getDoc,
+    query, where, onSnapshot, updateDoc, runTransaction, writeBatch, getDoc,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import { isGranel, totalDisplay, totalBase, stockStatus, tieneMinimo, esInsumoDeAlmacen, necesitaReposicion } from '@/Kroma/stockInsumos.js';
 import { usePasoSostenido, SIN_SELECCION } from '@/Kroma/pasoSostenido.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, esHoyInput } from '@/Kroma/Components/CampoFecha.jsx';
+import { marcaMov } from '@/utils/movInventario.js';
 import { Package, Plus, AlertTriangle, X, Check, TrendingDown, Bell, Settings, Trash2 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -946,6 +947,12 @@ export default function MaterialsInventoryPage({ params = null }) {
             ? (granel ? addCerrado : addCerrado * (config.cantidadPorUnidad || 0))
             : 0;
 
+        // Id de la compra antes de escribir: la marca del movimiento lo lleva y
+        // el libro de materiales (servidor) valora la entrada a lo que costó.
+        const compraRef = doc(collection(db, 'kroma_compras'));
+        const fechaMovEsHoy = esHoyInput(fechaCompraInput);
+        const usuarioMov = kromaUser ? { id: kromaUser.id, nombre: kromaUser.name, role: kromaUser.role } : null;
+
         // Todo en UNA transacción: el stock (kroma_inventory_materials) y el costo
         // promedio ponderado (kroma_materials.costoUSD) se leen y escriben juntos,
         // para que una compra concurrente no pise el promedio de otra.
@@ -977,7 +984,19 @@ export default function MaterialsInventoryPage({ params = null }) {
                 active:            true,
                 ...(notas && { ultimaNotaEntrada: notas }),
             };
-            tx.set(invRef, invData, { merge: true });
+            // Tipo del movimiento para el libro de materiales: corregir = conteo;
+            // primer stock = inventario inicial; lo demás, compra.
+            const habiaStock = invDocAntes && totalBase(invDocAntes) > 0;
+            const tipoMov = esAjuste ? 'conteo' : (habiaStock ? 'compra' : 'inventario_inicial');
+            const marca = marcaMov(tipoMov, {
+                usuario: usuarioMov,
+                fecha: !fechaMovEsHoy && fechaCompraInput ? fechaCompraInput : null,
+                motivo: notas || null,
+                ref: (!esAjuste && entradaBaseUnits > 0 && costoTotal > 0)
+                    ? { compraId: compraRef.id, costoTotal: Number(costoTotal) || 0, cantidadBase: entradaBaseUnits }
+                    : null,
+            });
+            tx.set(invRef, { ...invData, ...marca }, { merge: true });
 
             let matUpdate = null;
             if (entradaBaseUnits > 0 && costoTotal > 0) {
@@ -1010,7 +1029,7 @@ export default function MaterialsInventoryPage({ params = null }) {
         // el costeo (que es lo crítico) ya quedaron bien.
         if (!esAjuste && entradaBaseUnits > 0 && costoTotal > 0) {
             try {
-                await addDoc(collection(db, 'kroma_compras'), {
+                await setDoc(compraRef, {
                     empresaId:      kromaUser?.empresaId || 'lacteoca',
                     materialId:     mat.id,
                     materialNombre: mat.nombre,
@@ -1050,6 +1069,7 @@ export default function MaterialsInventoryPage({ params = null }) {
             empresaId: kromaUser?.empresaId || 'lacteoca',
             materialId: mat.id,
             stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp(),
+            ...marcaMov('correccion', { usuario: kromaUser ? { id: kromaUser.id, nombre: kromaUser.name, role: kromaUser.role } : null, motivo: 'Stock en uso declarado' }),
             // Declarar stock sobre un registro dado de baja lo reactiva: se está
             // volviendo a usar. Sin esto quedaría escrito pero invisible.
             active: true,
@@ -1072,7 +1092,10 @@ export default function MaterialsInventoryPage({ params = null }) {
 
     async function handleDeleteMaterial(mat, invDoc) {
         if (invDoc) {
-            await updateDoc(doc(db, 'kroma_inventory_materials', mat.id), { active: false });
+            await updateDoc(doc(db, 'kroma_inventory_materials', mat.id), {
+                active: false,
+                ...marcaMov('correccion', { usuario: kromaUser ? { id: kromaUser.id, nombre: kromaUser.name, role: kromaUser.role } : null, motivo: 'Material dado de baja' }),
+            });
         }
         setMaterials(prev => prev.filter(m => m.id !== mat.id));
         setInventory(prev => { const n = { ...prev }; delete n[mat.id]; return n; });

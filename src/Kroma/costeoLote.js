@@ -16,7 +16,25 @@
 // De ahí que un lote sin ficha (una planilla de papel cargada sin ella) o sin
 // kilos declarados no tenga costo: no hay de dónde sacarlo.
 
-import { kgProducidos, mermaDeLog } from './estadoPlanta.js';
+import { kgProducidos, mermaDeLog, fechaProduccion } from './estadoPlanta.js';
+
+// ── Flete de la leche (inventario completo, sección 5) ──
+// La leche no se guarda: se procesa el día que llega. Su costo en el lote es
+// litros × precio de la recepción MÁS el flete por litro de la configuración
+// (`kroma_inv_config/lacteoca.leche.fletePorLitro`, editable). Aplica a los
+// lotes producidos desde `leche.fleteDesde`.
+export const FLETE_DESDE_DEFECTO = '2026-11-01';
+const diaLocal = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : null;
+export function componenteFlete(log, leche) {
+    const flete = Number(leche?.fletePorLitro) || 0;
+    if (!(flete > 0)) return null;
+    const dia = diaLocal(fechaProduccion(log));
+    if (!dia || dia < (leche?.fleteDesde || FLETE_DESDE_DEFECTO)) return null;
+    const litros = (log.recepciones || []).reduce((s, r) => s + (Number(r.litros) || 0), 0) || Number(log.litrosIngresados) || 0;
+    if (!(litros > 0)) return null;
+    return { tipo: 'flete', nombre: 'Flete de la leche', cantidad: litros, unidad: 'l',
+        costoUnitario: +flete.toFixed(6), monto: +(flete * litros).toFixed(6) };
+}
 
 // Con qué rendimiento se estiman los litros cuando el lote no los trae.
 export const RENDIMIENTO_FALLBACK_L_PER_KG = 6.2;
@@ -230,7 +248,7 @@ export function costoBasePorKgTeorico(log, materialsById) {
 // litro × litros procesados × precio del maestro — lo mismo que gerencia. La
 // leche, al precio declarado en la planilla o, si no, al del maestro para ese
 // productor. Devuelve la misma forma que el costeo de una producción en la app.
-export function costeoPlanilla(log, materialsById, packagingByKey = {}) {
+export function costeoPlanilla(log, materialsById, packagingByKey = {}, leche = null) {
     const mats = Object.values(materialsById || {});
     const componentes = [];
     (log.recepciones || []).forEach(r => {
@@ -240,6 +258,8 @@ export function costeoPlanilla(log, materialsById, packagingByKey = {}) {
         componentes.push({ tipo: 'leche', proveedorId: r.proveedorId || null, nombre: r.proveedorNombre || 'Leche',
             cantidad: r.litros || 0, unidad: 'l', costoUnitario: +(precio || 0).toFixed(6), monto: +((precio || 0) * (r.litros || 0)).toFixed(6), origenPrecio });
     });
+    const flete = componenteFlete(log, leche);
+    if (flete) componentes.push(flete);
     const litrosNetos = getLitrosNetos(log) || 0;
     extractFichaDoseRefs(log.bloquesSnapshot).forEach(({ materialId, cantidad, unidad }) => {
         const mat = materialsById?.[materialId];
