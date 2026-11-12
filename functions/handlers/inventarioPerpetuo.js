@@ -755,6 +755,42 @@ exports.inventarioCambioPlanta = functions.firestore.document(`${COL_PLANTA}/{id
 exports.inventarioCambioFrimaca = functions.firestore.document(`${COL_FRIMACA}/{id}`)
     .onWrite((change, context) => procesarCambioPartida(COL_FRIMACA, change, context));
 
+// COMANDOS del servidor (`kroma_inv_comandos/{id}`): una tarea que se pide
+// creando un documento y cuyo resultado queda en el mismo documento. Solo el
+// servidor y el conector (Admin SDK) pueden crearlos: las reglas lo niegan al
+// teléfono. Sirve para correr las facturas o recalcular sin esperar al cierre
+// de las 23:55 y sin una sesión en la app.
+//   { accion: "facturas", modo: "simular" | "ejecutar" }  ·  { accion: "recalcular", desde? }
+exports.inventarioComando = functions.runWith({ timeoutSeconds: 540, memory: "1GB" })
+    .firestore.document("kroma_inv_comandos/{id}").onCreate(async (snap) => {
+        const ref = snap.ref;
+        // Entrega "al menos una vez": solo corre quien lo toma de "pendiente".
+        const tomado = await db().runTransaction(async (tx) => {
+            const d = (await tx.get(ref)).data() || {};
+            if (d.estado && d.estado !== "pendiente") return false;
+            tx.update(ref, { estado: "corriendo", inicioAt: admin.firestore.FieldValue.serverTimestamp() });
+            return true;
+        });
+        if (!tomado) return;
+        const c = snap.data() || {};
+        try {
+            let resultado;
+            if (c.accion === "facturas") {
+                const f = await require("./inventarioFacturas").procesarFacturas({ simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
+                const rec = c.modo === "ejecutar" ? await recalcularPendientes() : null;
+                resultado = { facturas: f, recalculo: rec };
+            } else if (c.accion === "recalcular") {
+                resultado = await recalcularPendientes(/^\d{4}-\d{2}-\d{2}$/.test(c.desde || "") ? c.desde : null);
+            } else {
+                throw new Error(`Acción desconocida: ${c.accion}`);
+            }
+            await ref.update({ estado: "listo", resultado: JSON.parse(JSON.stringify(resultado)), finAt: admin.firestore.FieldValue.serverTimestamp() });
+        } catch (e) {
+            console.error("inventarioComando", e);
+            await ref.update({ estado: "error", error: String(e?.message || e).slice(0, 500), finAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+    });
+
 exports.inventarioRecepcionFrimaca = functions.firestore.document("kroma_despachos/{id}").onUpdate(async (change, context) => {
     const antes = change.before.data() || {};
     const despues = change.after.data() || {};

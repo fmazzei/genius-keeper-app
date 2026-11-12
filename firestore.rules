@@ -752,6 +752,11 @@ service cloud.firestore {
     }
     // Estado de cada factura de Zoho en el inventario (qué descontó, qué falta).
     // Lo escribe solo el servidor (inventarioFacturas.js).
+    // Comandos del servidor (inventarioComando): solo Admin SDK los crea.
+    match /kroma_inv_comandos/{id} {
+      allow read: if isKromaAccess() || isAdmin();
+      allow write: if false;
+    }
     match /kroma_inv_facturas/{id} {
       allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow write: if false;
