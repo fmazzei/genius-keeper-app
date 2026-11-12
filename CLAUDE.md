@@ -3187,6 +3187,7 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
   3. **GK** (`devoluciones` con `resolucion: 'reposicion'` y `unidadesRepuestas > 0`, desde el 16-oct): lo que el mercaderista repuso sale de la bodega Caracas por FEFO, como 250 g, con la fecha de la devolución (`reposicionDeDevolucion` en `inventarioFacturasReglas.js`; asientos `tipo reposicion_gk`, `ref.devolucionId/posId/posName/visitaReportId`). Lo retirado del anaquel no vuelve a la bodega (ya había salido con su factura).
 - Lo procesa el mismo proceso de las facturas (mismo `facturas.activo`, misma corrida). Estado en `kroma_inv_facturas/dev_{id}`; lo que no alcanza queda pendiente con aviso y entra al control 7. Si en GK deja de ser reposición, se revierte. Si la reposición se documentó con una factura (campo `facturaReposicion` en la devolución), la descuenta la factura y no la devolución.
 - Reposiciones de GK desde el 16-oct: Los Pomelos (20-oct, 12 ud) y Central Madeirense Manzanares (26-oct, 12 ud).
+- **Primera corrida (12-nov) falló con 401**: el token de Zoho no tiene `ZohoBooks.creditnotes.READ` (las facturas y los diarios sí funcionan). Ahora, sin permiso para las notas de crédito, las facturas se procesan igual y queda el aviso en `facturas.notasEstado` (y en la pestaña Facturas). Cualquier otra falla de Zoho dice qué llamada falló.
 - Prueba: 5 casos nuevos en `tests/inventarioFacturas.e2e.test.mjs` (30 en verde).
 
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)

@@ -26,6 +26,10 @@ const P = () => require("./inventarioPerpetuo")._internos;
 const r6 = (n) => Math.round((Number(n) || 0) * 1e6) / 1e6;
 const r2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
 
+const statusDe = (e) => e?.response?.status || null;
+const sinPermiso = (e) => [401, 403].includes(statusDe(e)) || Number(e?.zohoCode) === 57 || Number(e?.response?.data?.code) === 57;
+const motivoZoho = (e) => `${statusDe(e) ? `${statusDe(e)} ` : ""}${e?.response?.data?.message || e?.message || e}`.slice(0, 200);
+
 async function contextoZoho() {
     const [credsSnap, cfgSnap] = await Promise.all([db().doc("zoho_secure/creds").get(), db().doc("settings/appConfig").get()]);
     const creds = credsSnap.data() || {};
@@ -116,14 +120,24 @@ async function procesar({ simular, cfg, fcfg, zohoCtx }) {
     const inicio = cfg.inicio || desde;
     const mapeo = R.mapeoEfectivo(fcfg);
     const zctx = zohoCtx || await contextoZoho();
-    const [ctx, libro, estadosSnap, lista, notas, devSnap] = await Promise.all([
+    const [ctx, libro, estadosSnap, lista, notasLeidas, devSnap] = await Promise.all([
         contexto({ simular }),
         leerLibroConId(hoy),
         db().collection(COL_FACTURAS).where("empresaId", "==", EMPRESA).get(),
-        zoho.listInvoicesDesde({ ...zctx, dateStart: desde }),
-        zoho.listCreditNotesDesde({ ...zctx, dateStart: desde }),
+        zoho.listInvoicesDesde({ ...zctx, dateStart: desde }).catch(e => { throw new Error(`Zoho al leer las facturas: ${motivoZoho(e)}`); }),
+        // Sin permiso para las notas de crédito, las facturas se procesan igual
+        // y se avisa: lo que dependa de una nota (devolución o reposición
+        // cruzada) se ajusta en cuanto el permiso exista.
+        zoho.listCreditNotesDesde({ ...zctx, dateStart: desde })
+            .then(lista => ({ ok: true, lista }))
+            .catch(e => {
+                if (sinPermiso(e)) return { ok: false, lista: [], motivo: `Zoho no da permiso para leer las notas de crédito (${motivoZoho(e)}). Renueva el permiso con el scope ZohoBooks.creditnotes.READ.` };
+                throw new Error(`Zoho al leer las notas de crédito: ${motivoZoho(e)}`);
+            }),
         db().collection("devoluciones").where("fecha", ">=", desde).get(),
     ]);
+    const notas = notasLeidas.lista;
+    const notasEstado = { autorizado: notasLeidas.ok, motivo: notasLeidas.motivo || null, leidas: notas.length };
     const estados = new Map(estadosSnap.docs.map(d => [d.id, d.data()]));
     const porId = new Map(libro.map(a => [a._id, a]));
     const nuevosLibro = [];      // asientos de esta corrida (también entran al cálculo de lotes)
@@ -354,12 +368,13 @@ async function procesar({ simular, cfg, fcfg, zohoCtx }) {
                 if (s.exists && s.data().active) await aRef.set({ active: false, resueltaAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
             }
         }
-        await db().doc(DOC_CONFIG).set({ facturas: { ultimaCorrida: new Date().toISOString(), ultimoResultado: resumir(salida, salidaNotas, ctx.migrados, salidaDev) } }, { merge: true });
+        await db().doc(DOC_CONFIG).set({ facturas: { ultimaCorrida: new Date().toISOString(), notasEstado,
+            ultimoResultado: resumir(salida, salidaNotas, ctx.migrados, salidaDev) } }, { merge: true });
     }
 
     const todos = escrituras.flatMap(e => e.asientos);
     return JSON.parse(JSON.stringify({
-        simulacion: simular, desde, hoy,
+        simulacion: simular, desde, hoy, notasEstado,
         resumen: resumir(salida, salidaNotas, ctx.migrados, salidaDev),
         facturas: salida, notas: salidaNotas, reposiciones: salidaDev, migrados: ctx.migrados,
         asientos: todos.map(a => ({ fecha: a.fecha, categoria: a.categoria, tipo: a.tipo, lote: a.lote, presentacion: a.presentacion,

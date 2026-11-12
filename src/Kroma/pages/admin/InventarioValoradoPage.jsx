@@ -782,6 +782,7 @@ function FacturasZoho({ puedeOperar, perfil }) {
                     No se descuentan las ventas de planta ni los despachos a otra ciudad. Lo que no alcanza queda pendiente y a la vista.
                 </p>
                 {f.ultimaCorrida && <p className="text-[11px] text-slate-500 mt-1">Última corrida: {new Date(f.ultimaCorrida).toLocaleString('es-VE')}</p>}
+                {f.notasEstado && f.notasEstado.autorizado === false && <p className="text-[11px] text-amber-300 mt-1">{f.notasEstado.motivo}</p>}
                 {f.ultimoError && <p className="text-[11px] text-red-300 mt-1">Último error ({f.ultimoErrorAt ? new Date(f.ultimoErrorAt).toLocaleString('es-VE') : ''}): {f.ultimoError}</p>}
                 <div className="flex flex-wrap gap-2 mt-3">
                     <Boton onClick={simular} ocupado={ocupado === 'sim'}>Simular</Boton>

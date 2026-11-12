@@ -185,6 +185,14 @@ const repPrev = M.armarReporte({ fecha: '2026-11-12', asientos: (await libro()),
 ok(repPrev.controles.find(c => c.n === 8).estado === 'aviso' && repPrev.porVencer.some(l => l.lote === 'LV' && l.dias === 13),
     'control 8 (aviso): el lote que vence el 25-nov aparece a 13 días el 12-nov');
 
+// 7b) Sin permiso para las notas de crédito: las facturas se procesan igual y se avisa.
+const cnOriginal = zoho.listCreditNotesDesde;
+zoho.listCreditNotesDesde = async () => { const e = new Error('Request failed with status code 401'); e.response = { status: 401, data: { message: 'You are not authorized to perform this operation' } }; throw e; };
+const r7b = await F.procesarFacturas({ zohoCtx: ZCTX });
+ok(!r7b.error && r7b.notasEstado?.autorizado === false && /creditnotes\.READ/.test(r7b.notasEstado.motivo) && r7b.resumen.facturas === facturas.length,
+    'sin permiso de notas de crédito: las facturas se procesan igual y queda el aviso');
+zoho.listCreditNotesDesde = cnOriginal;
+
 // 8) Inactivo: no hace nada.
 await db.doc('kroma_inv_config/lacteoca').update({ 'facturas.activo': false });
 const r9 = await F.procesarFacturas({ zohoCtx: ZCTX });
