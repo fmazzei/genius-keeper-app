@@ -136,8 +136,11 @@ async function procesar({ simular, cfg, fcfg, zohoCtx }) {
             }),
         db().collection("devoluciones").where("fecha", ">=", desde).get(),
     ]);
-    const notas = notasLeidas.lista;
-    const notasEstado = { autorizado: notasLeidas.ok, motivo: notasLeidas.motivo || null, leidas: notas.length };
+    // Zoho no filtra las notas de crédito por fecha (devuelve todas): las
+    // anteriores a `desde` no se procesan, igual que sus facturas.
+    const notas = notasLeidas.lista.filter(cn => String(cn.date || "") >= desde);
+    const notasEstado = { autorizado: notasLeidas.ok, motivo: notasLeidas.motivo || null, leidas: notasLeidas.lista.length,
+        fueraDePeriodo: notasLeidas.lista.length - notas.length };
     const estados = new Map(estadosSnap.docs.map(d => [d.id, d.data()]));
     const porId = new Map(libro.map(a => [a._id, a]));
     const nuevosLibro = [];      // asientos de esta corrida (también entran al cálculo de lotes)
@@ -295,6 +298,16 @@ async function procesar({ simular, cfg, fcfg, zohoCtx }) {
         }
         salidaNotas.push({ numero: cn.creditnote_number, fecha: det.date, cliente: cn.customer_name, estado, motivo,
             movimientos: asientos.map(a => ({ lote: a.lote, cantidad: a.cantidad, valorCosto: r2(a.valorCosto) })) });
+    }
+
+    // Notas anteriores al inicio que una corrida pasada alcanzó a guardar (sin
+    // movimientos): quedan fuera de período y se cierra su aviso.
+    for (const [id, st] of estados) {
+        if (!id.startsWith("cn_") || !(String(st.fecha || "") < desde) || (st.asientoIds || []).length) continue;
+        if (st.estado === "fuera_de_periodo") continue;
+        escrituras.push({ prefijo: null, asientos: [], estadoId: id,
+            estado: { ...st, estado: "fuera_de_periodo", motivo: `Anterior al ${desde}: no se procesa.`, sinPareja: {} },
+            alerta: { id: `fac_${id}`, activa: false } });
     }
 
     // ── Reposiciones declaradas en GK (sección 4) ──

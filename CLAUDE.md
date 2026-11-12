@@ -3191,6 +3191,7 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - **Bug corregido tras la corrida:** cada escritura del libro pisaba `recalcularDesde` con su propia fecha, así que la corrida rehízo los reportes desde el 26-oct y no desde el 19-oct (se recalculó a mano con un comando). Ahora `marcarRecalculo` guarda siempre la fecha MÁS temprana, `recalcularPendientes` toma la más temprana entre la pedida y la pendiente, y solo borra la marca si nadie marcó otra mientras recalculaba.
 - **Primera corrida (12-nov) falló con 401**: el token de Zoho no tiene `ZohoBooks.creditnotes.READ` (las facturas y los diarios sí funcionan). Ahora, sin permiso para las notas de crédito, las facturas se procesan igual y queda el aviso en `facturas.notasEstado` (y en la pestaña Facturas). Cualquier otra falla de Zoho dice qué llamada falló.
 - Prueba: 5 casos nuevos en `tests/inventarioFacturas.e2e.test.mjs` (30 en verde).
+- **Permiso de notas de crédito renovado (12-nov):** Zoho entrega las notas, pero **no las filtra por fecha** (devuelve las 18, desde 2022). Las anteriores a `facturas.desde` no se procesan (`notasEstado.fueraDePeriodo`), y un estado de nota vieja que una corrida haya guardado pasa a `fuera_de_periodo` con su aviso cerrado. Simulación del 12-nov con el permiso: ninguna nota desde el 16-oct; las facturas igual (0 pendientes, 0 por revisar).
 
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
 

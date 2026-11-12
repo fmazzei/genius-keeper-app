@@ -154,6 +154,21 @@ ok(dev.length >= 1 && M.r2(dev.reduce((s, a) => s + a.cantidad, 0)) === 2 && dev
 await F.procesarFacturas({ zohoCtx: ZCTX });
 ok((await libro()).filter(a => a.tipo === 'nota_credito').length === dev.length, 'la nota no se aplica dos veces');
 
+// 6a) Una nota anterior a `desde` (Zoho no filtra por fecha) no se procesa.
+notas.push({ creditnote_id: 'cnVieja', creditnote_number: 'CN-00001', status: 'open', date: '2023-12-04', customer_name: 'Viejo',
+    last_modified_time: 't1', _det: { status: 'open', date: '2023-12-04', reference_number: '', invoices: [{ invoice_number: 'INV-000100' }],
+        line_items: [{ item_id: P4, quantity: 9, name: 'P4' }] } });
+const r6a = await F.procesarFacturas({ zohoCtx: ZCTX });
+ok(!r6a.notas.some(n => n.numero === 'CN-00001') && r6a.notasEstado.fueraDePeriodo >= 1 && !(await db.doc('kroma_inv_facturas/cn_cnVieja').get()).exists,
+    'nota de crédito anterior al inicio: se ignora, sin estado ni alerta');
+// Si una corrida anterior la guardó "por revisar", queda fuera de período y su aviso se cierra.
+await db.doc('kroma_inv_facturas/cn_cnVieja2').set({ empresaId: 'lacteoca', tipo: 'nota_credito', numero: 'CN-00002', fecha: '2024-05-23',
+    estado: 'revisar', motivo: 'x', asientoIds: [] });
+await db.doc('kroma_alerts/fac_cn_cnVieja2').set({ tipo: 'factura_inventario', empresaId: 'lacteoca', active: true, mensaje: 'x' });
+await F.procesarFacturas({ zohoCtx: ZCTX });
+ok((await est('cn_cnVieja2')).estado === 'fuera_de_periodo' && (await db.doc('kroma_alerts/fac_cn_cnVieja2').get()).data().active === false,
+    'nota vieja guardada antes: queda fuera de período y su aviso se cierra');
+
 // 6b) Sección 4: reposiciones declaradas en GK (devoluciones con resolución reposición).
 await db.doc('devoluciones/dA').set({ fecha: '2026-10-25', posId: 'p1', posName: 'Manzanares', resolucion: 'reposicion', unidadesRepuestas: 12,
     unidades: 12, lotes: [{ expiryDate: '2026-11-21', unidades: 12, motivo: 'por_vencer' }], visitaReportId: 'v1' });
