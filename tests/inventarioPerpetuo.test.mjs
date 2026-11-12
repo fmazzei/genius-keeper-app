@@ -148,5 +148,28 @@ ok(revRec.length === 2 && revRec.find(a => a.ubicacion === 'transito')?.cantidad
     'deshacer una recepción devuelve la mercancía al camión');
 ok(M.pesoDePresentacion('250 g') === 0.25 && M.pesoDePresentacion('Bolsa 1 Kg') === 1 && M.pesoDePresentacion('') === 0, 'peso desde la presentación');
 
+// ── Presentaciones agrupadas por catálogo, no por texto (11-nov) ────────────
+{
+    const a = (o) => ({ fecha: '2026-11-10', ubicacion: 'planta', productoId: 'chevre', productoNombre: 'Lacteoca Chèvre Original ',
+        unidad: 'ud', categoria: 'transformacion', valorCosto: 0, kg: 0, ...o });
+    const libroP = [
+        a({ catalogId: 'ojsxyuc', pesoPorUnidad: 0.25, presentacion: 'Lacteoca Chèvre Original · 250 g', cantidad: 100 }),
+        a({ catalogId: 'ojsxyuc', pesoPorUnidad: 0.25, presentacion: 'Lacteoca Chèvre Original', cantidad: 278 }),
+        a({ catalogId: '9zuwn0o', pesoPorUnidad: 1, presentacion: 'Lacteoca Chèvre Original', cantidad: 3 }),
+        a({ catalogId: '9zuwn0o', pesoPorUnidad: 1, presentacion: 'Lacteoca Chèvre Original · 1 kg', cantidad: 109 }),
+        a({ catalogId: null, pesoPorUnidad: null, unidad: 'kg', presentacion: 'Sin envasar', cantidad: 147.6 }),
+    ];
+    const sal = M.saldos(libroP, '2026-11-10');
+    const s250 = sal.find(x => x.catalogId === 'ojsxyuc'), s1k = sal.find(x => x.catalogId === '9zuwn0o');
+    ok(sal.length === 3 && s250?.cantidad === 378 && s1k?.cantidad === 112,
+        'el mismo SKU con dos textos es UNA fila, y 250 g no se mezcla con 1 kg');
+    ok(s250.presentacion === 'Lacteoca Chèvre Original · 250 g' && s1k.presentacion === 'Lacteoca Chèvre Original · 1 kg',
+        'cada fila se muestra con su tamaño');
+    const id = M.controlIdentidad(libroP, '2026-11-10');
+    ok(id.length === 3 && id.every(f => f.cuadra), 'la identidad del día agrupa igual y cuadra');
+    const soloTexto = M.saldos([a({ catalogId: null, pesoPorUnidad: 1, presentacion: 'Lacteoca Chèvre Original', cantidad: 6 })], '2026-11-10');
+    ok(soloTexto[0].presentacion === 'Lacteoca Chèvre Original · 1 kg', 'sin catálogo, el nombre se completa con el peso');
+}
+
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');
 process.exit(fallas ? 1 : 0);

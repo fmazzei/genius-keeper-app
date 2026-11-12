@@ -93,6 +93,20 @@ export const etiquetaPeso = (pesoKg) => {
     return `${Math.round(p * 1000)} g`;
 };
 
+/**
+ * Nombre de una presentación CON su tamaño: "Lacteoca Chèvre Original · 250 g".
+ * En el catálogo las presentaciones suelen llamarse igual que el producto, así
+ * que el nombre solo no distingue 250 g de 1 kg. No duplica el peso si ya viene
+ * en el nombre (idempotente: aplicarlo dos veces da lo mismo).
+ */
+export const nombreConPeso = (nombre, pesoKg) => {
+    const n = String(nombre || '').trim() || 'Presentación';
+    const e = etiquetaPeso(pesoKg);
+    if (!e) return n;
+    const norm = (x) => x.toLowerCase().replace(/[\s.,]+/g, '');
+    return norm(n).includes(norm(e)) ? n : `${n} · ${e}`;
+};
+
 /** Clave de presentación de una partida empacada (por peso; si no, por nombre). */
 export const clavePresentacion = (i) => {
     const e = etiquetaPeso(i?.pesoPorUnidad);

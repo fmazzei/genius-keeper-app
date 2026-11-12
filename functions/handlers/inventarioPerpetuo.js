@@ -255,7 +255,28 @@ function asientosDeRecepcion({ despachoId, acta, despacho, fechaHoy }) {
 
 // ── Saldos y controles (puros) ─────────────────────────────────────────────
 
-const claveProducto = (a) => `${a.productoId || a.productoNombre}|${a.presentacion}|${a.unidad}`;
+// La presentación se agrupa por su id de catálogo, no por el texto: el mismo
+// SKU llegó a guardarse como "Lacteoca Chèvre Original" y como "… · 250 g", y
+// por texto se partía en dos filas (o se mezclaba con 1 kg). El granel (kg) es
+// una sola fila por producto.
+const etiquetaPeso = (kg) => {
+    const p = Number(kg) || 0;
+    if (p <= 0) return "";
+    return p >= 1 ? `${String(+p.toFixed(3)).replace(".", ",")} kg` : `${Math.round(p * 1000)} g`;
+};
+const clavePres = (a) => a.unidad === "kg" ? "granel"
+    : (a.catalogId ? `cat:${a.catalogId}` : (etiquetaPeso(a.pesoPorUnidad) ? `peso:${etiquetaPeso(a.pesoPorUnidad)}` : `txt:${a.presentacion || ""}`));
+const claveProducto = (a) => `${a.productoId || a.productoNombre}|${clavePres(a)}|${a.unidad}`;
+/** Nombre para mostrar de la presentación de un asiento, siempre con su tamaño. */
+function etiquetaPres(a) {
+    if (a.unidad === "kg") return a.presentacion || "Sin envasar";
+    const txt = String(a.presentacion || "").trim();
+    if (txt.includes("·")) return txt;
+    const e = etiquetaPeso(a.pesoPorUnidad);
+    const base = txt || String(a.productoNombre || "").trim() || "Presentación";
+    return e ? `${base} · ${e}` : base;
+}
+const mejorNombre = (actual, nuevo) => (!actual || (!actual.includes("·") && nuevo && nuevo.includes("·"))) ? nuevo : actual;
 
 /** Saldo por ubicación+producto+presentación con los asientos hasta `fecha` inclusive. */
 function saldos(asientos, fecha, precioKg = {}) {
@@ -265,8 +286,10 @@ function saldos(asientos, fecha, precioKg = {}) {
         const k = `${a.ubicacion}|${claveProducto(a)}`;
         const s = m.get(k) || {
             ubicacion: a.ubicacion, productoId: a.productoId, productoNombre: a.productoNombre,
-            presentacion: a.presentacion, unidad: a.unidad, cantidad: 0, kg: 0, valorCosto: 0,
+            catalogId: a.unidad === "kg" ? null : (a.catalogId || null), pesoPorUnidad: a.pesoPorUnidad || null,
+            presentacion: etiquetaPres(a), unidad: a.unidad, cantidad: 0, kg: 0, valorCosto: 0,
         };
+        s.presentacion = mejorNombre(s.presentacion, etiquetaPres(a));
         s.cantidad = r6(s.cantidad + (a.cantidad || 0));
         s.kg = r6(s.kg + (a.kg || 0));
         s.valorCosto = r6(s.valorCosto + (a.valorCosto || 0));
@@ -281,7 +304,8 @@ function flujosDelDia(asientos, fecha) {
     for (const a of asientos) {
         if (a.fecha !== fecha) continue;
         const k = claveProducto(a);
-        const f = m.get(k) || { productoNombre: a.productoNombre, presentacion: a.presentacion, unidad: a.unidad, cats: {} };
+        const f = m.get(k) || { productoNombre: a.productoNombre, presentacion: etiquetaPres(a), unidad: a.unidad, cats: {} };
+        f.presentacion = mejorNombre(f.presentacion, etiquetaPres(a));
         const c = f.cats[a.categoria] || (f.cats[a.categoria] = { cantidad: 0, valorCosto: 0 });
         c.cantidad = r6(c.cantidad + (a.cantidad || 0));
         c.valorCosto = r6(c.valorCosto + (a.valorCosto || 0));
@@ -295,12 +319,13 @@ function flujosDelDia(asientos, fecha) {
  * con el saldo final calculado POR SEPARADO (sumando el libro hasta el día).
  */
 function controlIdentidad(asientos, fecha) {
-    const ini = new Map(saldos(asientos, diaAnterior(fecha)).map(s => [`${s.ubicacion}|${s.productoId || s.productoNombre}|${s.presentacion}|${s.unidad}`, s]));
+    const ini = new Map(saldos(asientos, diaAnterior(fecha)).map(s => [`${s.ubicacion}|${claveProducto(s)}`, s]));
     const agrupa = (lista) => {
         const m = new Map();
         lista.forEach(s => {
-            const k = `${s.productoId || s.productoNombre}|${s.presentacion}|${s.unidad}`;
+            const k = claveProducto(s);
             const x = m.get(k) || { productoNombre: s.productoNombre, presentacion: s.presentacion, unidad: s.unidad, cantidad: 0, valorCosto: 0 };
+            x.presentacion = mejorNombre(x.presentacion, s.presentacion);
             x.cantidad = r6(x.cantidad + s.cantidad); x.valorCosto = r6(x.valorCosto + s.valorCosto);
             m.set(k, x);
         });

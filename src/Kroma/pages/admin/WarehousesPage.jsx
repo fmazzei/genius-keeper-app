@@ -15,7 +15,7 @@ import SalidaCavaSheet from '@/Kroma/Components/SalidaCavaSheet.jsx';
 import { useKroma } from '@/Kroma/KromaContext.jsx';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta, cantidadDePartida, esPartidaDe } from '@/Kroma/eliminarProduccion.js';
-import { tieneExistencia, resumenCava, pasaFiltroCava, etiquetaPeso, enDocenas } from '@/Kroma/inventarioPT.js';
+import { tieneExistencia, resumenCava, pasaFiltroCava, etiquetaPeso, enDocenas, nombreConPeso } from '@/Kroma/inventarioPT.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -270,8 +270,8 @@ function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
     function handleSave() {
         if (!canSave || saving) return;
         const productoNombre = selectedProduct?.nombre || '';
-        const presentacion   = selectedSku?.nombre || (isEmpacado ? '' : '');
         const pesoPorUnidad  = selectedSku ? pesoToKg(selectedSku.pesoNeto, selectedSku.unidad) : 0;
+        const presentacion   = selectedSku ? nombreConPeso(selectedSku.nombre, pesoPorUnidad) : '';
 
         onSave({
             tipo: isEmpacado ? 'empacado' : 'sin_envasar',
