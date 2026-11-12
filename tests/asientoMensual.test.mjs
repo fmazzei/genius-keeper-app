@@ -41,8 +41,11 @@ const mat = [
     { categoria: 'consumo', categoriaMaterial: 'consumibles', valor: -4 },
 ];
 const manoObra = { aplicadoPorCuenta: { '3576378000007389798': 200, '3576378000007596056': 100 } };
+// Todo lo comprado sigue como gasto en el mes (suficiente para lo consumido).
+const gastoLleno = { [CUENTAS.lecheTerceros.id]: 1000, [CUENTAS.lecheMasparrito.id]: 1000, [CUENTAS.fleteLeche.id]: 1000,
+    [CUENTAS.insumosProceso.id]: 1000, [CUENTAS.empaquesEtiquetas.id]: 1000 };
 const a = R.armarAsiento({ mes: '2026-11', hasta: '2026-11-30', pt, mat, costosLote: { L3: lote3, LM: loteMixto }, manoObra,
-    mpZoho: 2969.57, mpKromaFin: 676.18, matAbierto: true });
+    mpZoho: 2969.57, mpKromaFin: 676.18, matAbierto: true, gastoMes: gastoLleno });
 
 ok(a.errores.length === 0, `sin errores (${a.errores.join(' | ')})`);
 ok(a.referencia === 'KROMA-INV-2026-11' && a.fecha === '2026-11-30', 'referencia y fecha del último día');
@@ -57,7 +60,7 @@ ok(cerca(lado(a, CUENTAS.empaquesEtiquetas.id, 'produccion'), -160.26), 'el enva
 ok(cerca(lado(a, PT, 'produccion'), 558.83 + 100 + 400 + 160.26), 'débito a Inventario PT por todo lo producido');
 
 // Producción envasada: el empaque se separa por unidad.
-const b = R.armarAsiento({ mes: '2026-12', hasta: '2026-12-31', costosLote: { L3: lote3 },
+const b = R.armarAsiento({ mes: '2026-12', hasta: '2026-12-31', costosLote: { L3: lote3 }, gastoMes: gastoLleno,
     pt: [{ categoria: 'produccion', logId: 'L3', catalogId: 'ojsxyuc', unidad: 'ud', cantidad: 100, valorCosto: 100 * (12.575546 * 0.25 + 0.847644) }] });
 ok(cerca(lado(b, CUENTAS.empaquesEtiquetas.id), -84.76) && cerca(lado(b, CUENTAS.fleteLeche.id) + lado(b, CUENTAS.lecheTerceros.id) + lado(b, CUENTAS.insumosProceso.id), -314.39),
     'entrada envasada: 84,76 de empaque y el resto repartido entre leche, flete e insumos');
@@ -75,15 +78,51 @@ ok(cerca(lado(a, CUENTAS.consumoPersonal.id), 10) && cerca(lado(a, CUENTAS.muest
 ok(cerca(lado(a, AJ, 'ajustes_pt'), 3.5), 'ajustes de producto terminado contra Ajustes de inventario');
 ok(!a.lineas.some(l => /traslad/i.test(l.description)), 'los traslados no generan línea');
 
-// 6. Materiales.
-ok(cerca(lado(a, CUENTAS.insumosProceso.id, 'materiales'), -26) && cerca(lado(a, CUENTAS.empaquesEtiquetas.id, 'materiales'), 150)
-    && cerca(lado(a, AJ, 'materiales'), 4) && cerca(lado(a, MP, 'materiales'), -128), 'variación de materiales por cuenta de compra (sin la apertura); consumibles contra Ajustes');
+// 6. Materiales: el stock que creció y sigue como gasto pasa a MP (aquí cultivos +26, empaques bajaron).
+ok(cerca(lado(a, CUENTAS.insumosProceso.id, 'materiales'), -26) && cerca(lado(a, MP, 'materiales'), 26) && !a.lineas.some(l => l.grupo === 'materiales' && l.account_id === CUENTAS.empaquesEtiquetas.id),
+    'materiales: solo el stock que creció y sigue como gasto (insumos +26) pasa a MP');
 
-// 7. Cuadre de MP: 2.969,57 − 128 → 676,18 ⇒ −2.165,39 contra Ajustes.
-ok(cerca(a.cuadreMP.diferencia, -2165.39) && cerca(lado(a, MP, 'cuadre_mp'), -2165.39) && cerca(lado(a, AJ, 'cuadre_mp'), 2165.39),
-    'Inventario MP llevado al valor de Kroma contra Ajustes de inventario');
+// 7. Cuadre de MP: 2.969,57 + 26 → 676,18 contra Ajustes.
+ok(cerca(a.cuadreMP.diferencia, 676.18 - 2995.57) && cerca(lado(a, AJ, 'cuadre_mp'), 2995.57 - 676.18), 'Inventario MP llevado al valor de Kroma contra Ajustes de inventario');
 ok(cerca(a.totales.mpNeto, 676.18 - 2969.57), 'MP en Zoho queda igual al valor de Kroma');
 ok(cerca(a.totales.ptNeto, 558.832869 + 99.999989 + 400 + 160.26 + 300 - 1082.05 - 150.68 - 15 - 3.5), 'lo que mueve en PT = lo que se movió en el libro del mes');
+
+// Lo reclasificado a MP (o comprado directo a MP) se descarga contra MP: noviembre real.
+const L3n = lote3;
+const nov = R.armarAsiento({ mes: '2026-11', hasta: '2026-11-30', costosLote: { L3: L3n }, matAbierto: true,
+    pt: [{ categoria: 'produccion', logId: 'L3', valorCosto: 558.832866 }, { categoria: 'revaluacion', logId: 'L3', valorCosto: 99.999989 },
+        { categoria: 'transformacion', valorCosto: 530.18 }],
+    gastoMes: { [CUENTAS.lecheTerceros.id]: 0, [CUENTAS.fleteLeche.id]: 100, [CUENTAS.insumosProceso.id]: 0, [CUENTAS.empaquesEtiquetas.id]: 0 },
+    saldosCosto: { [CUENTAS.lecheTerceros.id]: 13563.26, [CUENTAS.fleteLeche.id]: 2306.67, [CUENTAS.insumosProceso.id]: 2070.74, [CUENTAS.empaquesEtiquetas.id]: 3688.9 },
+    mpZoho: 2969.57, mpKromaFin: 804.18, mpEnProceso: 803.2 });
+ok(nov.errores.length === 0, `noviembre real sin errores (${nov.errores.join(' | ')})`);
+ok(cerca(lado(nov, CUENTAS.lecheTerceros.id), 0) && cerca(lado(nov, CUENTAS.insumosProceso.id), 0) && cerca(lado(nov, CUENTAS.empaquesEtiquetas.id), 0),
+    'leche, insumos y empaques ya reclasificados: no se acreditan las cuentas de costo');
+ok(cerca(lado(nov, CUENTAS.fleteLeche.id), -100), 'el flete que sigue como gasto (100) sí se acredita a su cuenta');
+ok(cerca(lado(nov, MP, 'produccion'), -(514.8 + 44.03 + 530.18)), 'el resto se descarga contra Inventario MP: 1.089,01');
+ok(cerca(nov.cuadreMP.diferencia, -273.18) && cerca(nov.cuadreMP.mpKromaFin, 1607.38), 'cuadre de MP: 2.969,57 − 1.089,01 → 804,18 + 803,20 en proceso = −273,18');
+ok(nov.descargas.find(x => x.cuenta === CUENTAS.lecheTerceros.id).contraMP === 514.8, 'el detalle dice cuánto se descargó de MP por cuenta');
+
+// Una cuenta de costo nunca queda en negativo.
+const neg = R.armarAsiento({ mes: '2026-11', hasta: '2026-11-30', costosLote: { L3: L3n }, pt: [{ categoria: 'produccion', logId: 'L3', valorCosto: 658.83 }],
+    gastoMes: { [CUENTAS.fleteLeche.id]: 100 }, saldosCosto: { [CUENTAS.fleteLeche.id]: 40 } });
+ok(neg.errores.some(e => /negativo/.test(e)), 'si el saldo real de la cuenta no alcanza: no se crea');
+const sinGasto = R.armarAsiento({ mes: '2026-11', hasta: '2026-11-30', costosLote: { L3: L3n }, pt: [{ categoria: 'produccion', logId: 'L3', valorCosto: 658.83 }] });
+ok(sinGasto.avisos.some(a => /gasto/.test(a)) && cerca(lado(sinGasto, MP), -658.83), 'sin lectura de gasto del mes: todo contra MP, con aviso');
+
+// Gasto del mes desde Zoho: factura, gasto, reclasificación y asientos KROMA- excluidos.
+const gm = R.gastoDelMes({
+    bills: [{ status: 'overdue', bill_number: '1417', line_items: [{ account_id: CUENTAS.lecheTerceros.id, item_total: 522.65 }] },
+        { status: 'overdue', line_items: [{ account_id: MP, item_total: 421.2 }] }, { status: 'void', line_items: [{ account_id: CUENTAS.fleteLeche.id, item_total: 99 }] },
+        { status: 'open', line_items: [{ account_id: CUENTAS.fleteLeche.id, item_total: 100 }] }, { status: 'open', line_items: [{ account_id: CUENTAS.fleteLeche.id, item_total: 100 }] }],
+    expenses: [{ account_id: CUENTAS.insumosProceso.id, total: 144 }],
+    journals: [{ reference_number: 'RECLAS-MP-2026-11', status: 'published', line_items: [
+        { account_id: MP, debit_or_credit: 'debit', amount: 766.65 }, { account_id: CUENTAS.lecheTerceros.id, debit_or_credit: 'credit', amount: 522.65 },
+        { account_id: CUENTAS.fleteLeche.id, debit_or_credit: 'credit', amount: 100 }, { account_id: CUENTAS.insumosProceso.id, debit_or_credit: 'credit', amount: 144 }] },
+        { reference_number: 'KROMA-INV-2026-10', status: 'published', line_items: [{ account_id: CUENTAS.fleteLeche.id, debit_or_credit: 'credit', amount: 50 }] }],
+});
+ok(gm.porCuenta[CUENTAS.lecheTerceros.id] === 0 && gm.porCuenta[CUENTAS.fleteLeche.id] === 100 && gm.porCuenta[CUENTAS.insumosProceso.id] === 0,
+    'gasto del mes con RECLAS-MP-2026-11: leche 0, flete 100, insumos 0 (anuladas y KROMA- fuera)');
 
 // Controles y cuentas.
 ok(R.controlesFallidos([{ fecha: '2026-11-05', controles: [{ n: 4, nombre: 'Stock negativo', estado: 'diferencia' }, { n: 8, estado: 'aviso' }] }]).length === 1,
@@ -91,7 +130,7 @@ ok(R.controlesFallidos([{ fecha: '2026-11-05', controles: [{ n: 4, nombre: 'Stoc
 const malo = R.armarAsiento({ mes: '2026-11', hasta: '2026-11-30', pt: [{ categoria: 'venta', valorCosto: -10 }], cuentaPorCategoria: {} });
 ok(malo.errores.length === 0, 'asiento simple sin errores');
 const conCuentaAjena = R.armarAsiento({ mes: '2026-11', hasta: '2026-11-30', mat: [{ categoria: 'entrada', categoriaMaterial: 'raro', valor: 10 }],
-    cuentaPorCategoria: { raro: '999999' } });
+    cuentaPorCategoria: { raro: '999999' }, gastoMes: { '999999': 100 } });
 ok(conCuentaAjena.errores.some(e => /no permitidas/.test(e)), 'una cuenta que no está en la lista aborta el asiento');
 const sinTipo = R.armarAsiento({ mes: '2026-11', hasta: '2026-11-30', pt: [{ categoria: 'sin_tipo', valorCosto: -5 }] });
 ok(sinTipo.errores.some(e => /sin tipo/.test(e)), 'un movimiento sin tipo bloquea');

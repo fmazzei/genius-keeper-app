@@ -23,7 +23,12 @@ function zohoFalso({ pt = 4772.56, mp = 2969.57 } = {}) {
     const journals = new Map(); let n = 0; const llamadas = [];
     return {
         journals, llamadas,
-        async getAccount({ accountId }) { llamadas.push('cuenta'); return { accountId, saldo: accountId === CUENTAS.inventarioPT.id ? pt : mp }; },
+        async getAccount({ accountId }) { llamadas.push('cuenta'); return { accountId, saldo: accountId === CUENTAS.inventarioPT.id ? pt : accountId === CUENTAS.inventarioMP.id ? mp : 5000 }; },
+        async listBillsRango() { return [{ bill_id: 'B1', status: 'open' }]; },
+        async getBillDetail() { return { status: 'open', bill_number: 'F1', line_items: [{ account_id: CUENTAS.fleteLeche.id, item_total: 100 }] }; },
+        async listExpensesRango() { return []; },
+        async getExpense() { return null; },
+        async listJournalsRango() { return [...journals.values()].filter(j => j.reference_number && !/^KROMA-INV-/.test(j.reference_number)); },
         async findJournalsByReference({ referencia }) { llamadas.push('buscar'); return [...journals.values()].filter(j => j.reference_number === referencia); },
         async getJournal({ journalId }) { return journals.get(journalId) || null; },
         async createJournal({ journal }) { llamadas.push('crear'); const id = `J${++n}`; journals.set(id, { ...journal, journal_id: id }); return { journal_id: id, status: journal.status }; },
@@ -48,14 +53,19 @@ await db.doc('kroma_mat_libro/ap1').set({ empresaId: E, fecha: '2026-11-12', cat
 await db.doc('kroma_mat_libro/c1').set({ empresaId: E, fecha: '2026-11-20', categoria: 'consumo', categoriaMaterial: 'cultivos', materialId: 'm1', cantidad: -10, valor: -80.42 });
 await db.doc('kroma_inv_reportes/2026-11-30').set({ empresaId: E, fecha: '2026-11-30', totales: { valorCosto: 4772.56 + 528.83 }, controles: [{ n: 1, estado: 'aprobado' }] });
 await db.doc('kroma_inv_mano_obra/2026-11').set({ congelado: false, aplicadoPorCuenta: { '3576378000007389798': 120 } });
+await db.doc('kroma_milk_reception/r1').set({ empresaId: E, status: 'en_proceso', litros: 100, costoUsdLitro: 1.3, fleteUsd: 25, proveedorNombre: 'Los Gilgares' });
+await db.doc('kroma_milk_reception/r2').set({ empresaId: E, status: 'completada', litros: 396, costoUsdLitro: 1.3, fleteUsd: 100 });
 
 // 1) Simulación: no toca Zoho, avisa que falta el cierre de la mano de obra.
 let z = zohoFalso();
 let r = await AM.generarAsientoMensual({ mes: '2026-11', modo: 'simular', api: z, ctxForzado: CTX, hoy: '2026-12-03' });
 ok(r.estado === 'simulado' && !z.llamadas.includes('crear') && r.avisos.some(a => /mano de obra/.test(a)), 'simulación: guarda el asiento, no crea nada y avisa el cierre de mano de obra pendiente');
 ok(r.lineas.length > 0 && Math.abs(r.totales.debe - r.totales.haber) < 0.005, `simulación: cuadra (${r.totales.debe})`);
-ok(Math.abs(r.cuadreMP.mpKromaFin - 723.76) < 0.005 && Math.abs(r.control.mp.diferencia) < 0.005, 'MP llevado a 723,76 (apertura − consumo) y control posterior en 0');
+ok(Math.abs(r.cuadreMP.mpKromaFin - (723.76 + 155)) < 0.005 && r.lecheEnProceso.total === 155 && Math.abs(r.control.mp.diferencia) < 0.005,
+    'MP llevado a 723,76 de materiales + 155 de leche en proceso, y control posterior en 0');
 ok(!r.lineas.some(l => /999/.test(String(l.amount))), 'el movimiento de diciembre no entra');
+ok(r.descargas.find(x => x.cuenta === CUENTAS.fleteLeche.id)?.contraCosto === 100 && r.descargas.find(x => x.cuenta === CUENTAS.lecheTerceros.id)?.contraMP === 514.8,
+    'el flete que sigue como gasto va a su cuenta; la leche (sin gasto en el mes) se descarga contra MP');
 
 // 2) Ejecutar con la mano de obra abierta: no se crea.
 r = await AM.generarAsientoMensual({ mes: '2026-11', modo: 'ejecutar', api: z, ctxForzado: CTX, hoy: '2026-12-03' });

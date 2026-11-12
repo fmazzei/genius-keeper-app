@@ -83,13 +83,42 @@ async function contexto() {
     return require("./inventarioFacturas").contextoZoho();
 }
 
-/** Saldos de Inventario PT y MP en Zoho (no incluyen borradores). */
+/** Saldos de Inventario PT, MP y de las cuentas de costo en Zoho (no incluyen borradores). */
 async function saldosZoho(ctx, api = zoho) {
-    const [pt, mp] = await Promise.all([
-        api.getAccount({ ...ctx, accountId: CUENTAS.inventarioPT.id }),
-        api.getAccount({ ...ctx, accountId: CUENTAS.inventarioMP.id }),
+    const ids = [CUENTAS.inventarioPT.id, CUENTAS.inventarioMP.id, ...R.CUENTAS_COSTO];
+    const res = await Promise.all(ids.map(id => api.getAccount({ ...ctx, accountId: id })));
+    const por = Object.fromEntries(ids.map((id, i) => [id, res[i]?.saldo ?? null]));
+    return { pt: por[CUENTAS.inventarioPT.id], mp: por[CUENTAS.inventarioMP.id], costo: Object.fromEntries(R.CUENTAS_COSTO.map(id => [id, por[id]])) };
+}
+
+/** Lo registrado como gasto en el mes en cada cuenta de costo (facturas, gastos y diarios publicados). */
+async function gastoDelMesZoho(ctx, desde, hasta, api = zoho) {
+    const [bills, expenses, journals] = await Promise.all([
+        api.listBillsRango({ ...ctx, desde, hasta }),
+        api.listExpensesRango({ ...ctx, desde, hasta }),
+        api.listJournalsRango({ ...ctx, desde, hasta }),
     ]);
-    return { pt: pt.saldo, mp: mp.saldo };
+    const detB = [], detE = [], detJ = [];
+    for (const b of bills.filter(b => !["void", "draft"].includes(String(b.status || "").toLowerCase()))) detB.push(await api.getBillDetail({ ...ctx, billId: b.bill_id }));
+    for (const e of expenses) detE.push(await api.getExpense({ ...ctx, expenseId: e.expense_id }));
+    for (const j of journals.filter(j => !R.esReferenciaKroma(j.reference_number) && String(j.status || "").toLowerCase() !== "draft")) detJ.push(await api.getJournal({ ...ctx, journalId: j.journal_id }));
+    return R.gastoDelMes({ bills: detB, expenses: detE, journals: detJ });
+}
+
+/** Leche y flete de recepciones que todavía no pasaron a producto terminado (en tanque o en proceso). */
+async function lecheEnProceso() {
+    const snap = await db().collection("kroma_milk_reception").where("empresaId", "==", EMPRESA).get();
+    let total = 0;
+    const detalle = [];
+    for (const d of snap.docs) {
+        const r = d.data();
+        if (r.active === false || ["completada", "inactivo"].includes(r.status)) continue;
+        const v = (Number(r.litros) || 0) * (Number(r.costoUsdLitro) || 0) + (Number(r.fleteUsd) || 0);
+        if (!v) continue;
+        total += v;
+        detalle.push({ id: d.id, proveedor: r.proveedorNombre || "", litros: Number(r.litros) || 0, valor: Math.round(v * 100) / 100, status: r.status || "" });
+    }
+    return { total: Math.round(total * 100) / 100, detalle };
 }
 
 function notasAsiento(mes, a) {
@@ -114,19 +143,25 @@ async function generarAsientoMensual({ mes, modo = "simular", regenerar = false,
     if (!d.manoObra?.congelado) (ejecutar ? errores : avisos).push(`La mano de obra de ${mes} todavía no está cerrada (se cierra el día ${d.cfg.manoDeObra?.diaCierre || 3} del mes siguiente).`);
     if (!d.cfg.materiales?.abierto) avisos.push("El libro de materiales no está abierto: no hay línea de materia prima.");
 
-    let ctx = ctxForzado, saldos = { pt: null, mp: null };
-    try { ctx = ctx || await contexto(); saldos = await saldosZoho(ctx, api); }
-    catch (e) { (ejecutar ? errores : avisos).push(`No se pudo leer Zoho: ${String(e?.message || e).slice(0, 200)}`); }
+    let ctx = ctxForzado, saldos = { pt: null, mp: null, costo: null }, gasto = null;
+    try {
+        ctx = ctx || await contexto();
+        saldos = await saldosZoho(ctx, api);
+        gasto = await gastoDelMesZoho(ctx, d.desde, d.hasta, api);
+    } catch (e) { (ejecutar ? errores : avisos).push(`No se pudo leer Zoho: ${String(e?.message || e).slice(0, 200)}`); }
+    const enProceso = await lecheEnProceso();
 
     const asiento = R.armarAsiento({
         mes, hasta: d.hasta, pt: d.pt, mat: d.mat, costosLote: d.costosLote, manoObra: d.manoObra,
-        mpZoho: saldos.mp, mpKromaFin: d.mpKromaFin, matAbierto: !!d.cfg.materiales?.abierto,
+        mpZoho: saldos.mp, mpKromaFin: d.mpKromaFin, mpEnProceso: enProceso.total, matAbierto: !!d.cfg.materiales?.abierto,
+        gastoMes: gasto?.porCuenta || null, saldosCosto: saldos.costo,
     });
     errores.push(...asiento.errores);
     avisos.push(...asiento.avisos);
     const fallidos = R.controlesFallidos(d.reportes);
     if (fallidos.length) errores.push(`Hay ${fallidos.length} control(es) diario(s) del mes con diferencias.`);
-    const control = R.controlPosterior({ ptZoho: saldos.pt, mpZoho: saldos.mp, asiento, ptKromaFin: d.ptKromaFin, mpKromaFin: d.mpKromaFin });
+    const control = R.controlPosterior({ ptZoho: saldos.pt, mpZoho: saldos.mp, asiento, ptKromaFin: d.ptKromaFin,
+        mpKromaFin: d.mpKromaFin == null ? null : Math.round((d.mpKromaFin + enProceso.total) * 100) / 100 });
     const payload = R.payloadZoho(asiento, notasAsiento(mes, asiento));
 
     const ref = db().doc(`${COL_ZOHO}/${mes}`);
@@ -142,6 +177,7 @@ async function generarAsientoMensual({ mes, modo = "simular", regenerar = false,
         tipo: "mensual", mes, referencia: asiento.referencia, fecha: asiento.fecha, modo: ejecutar ? "real" : "simulacion",
         lineas: asiento.lineas, bloques: asiento.bloques, totales: asiento.totales, cuadreMP: asiento.cuadreMP,
         control, controlesFallidos: fallidos, errores, avisos, payload, quien: quien || null,
+        descargas: asiento.descargas, gastoDelMes: gasto, lecheEnProceso: enProceso,
         ptKromaFin: d.ptKromaFin, mpKromaFin: d.mpKromaFin, saldosZohoAntes: saldos, ultimoReporte: d.ultimoReporte,
         generadoAt: new Date().toISOString(),
     };

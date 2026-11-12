@@ -5,19 +5,23 @@
 // KROMA-INV-AAAA-MM, armado con los libros de Kroma del mes:
 //
 //   1. Producción: lo que entró al queso (leche, flete, insumos y empaque de
-//      cada lote, y el empaque que suma el envasado). Débito Inventario PT,
-//      crédito a la cuenta donde administración registró la compra.
+//      cada lote, y el empaque que suma el envasado). Débito Inventario PT.
+//      Crédito a la cuenta de costo de la compra SOLO hasta lo que siga como
+//      gasto ese mes en Zoho; lo que administración ya pasó a Inventario MP
+//      (compra registrada en MP o reclasificada, p. ej. RECLAS-MP-2026-11)
+//      se descarga contra Inventario MP. Una cuenta de costo nunca queda en
+//      negativo (se verifica contra su saldo real en Zoho).
 //   2. Mano de obra aplicada: débito PT, crédito a cada cuenta de nómina de
 //      planta por lo aplicado de esa cuenta (nunca más de lo registrado).
 //   3. Ventas (menos devoluciones): débito Costo de producto vendido.
 //   4. Reposiciones y mermas: débito Reposiciones, mermas y producto vencido.
 //      Consumo interno: personal o muestras.
 //   5. Ajustes, conteos y revaluaciones sin lote: contra Ajustes de inventario.
-//   6. Materiales: la variación del mes del libro de materiales (compras menos
-//      consumos, conteos) entre Inventario MP y la cuenta de compra de su
-//      categoría (insumos, empaques; consumibles contra Ajustes).
-//   7. Cuadre de MP: lleva Inventario MP en Zoho al valor de materiales de
-//      Kroma a fin de mes, contra Ajustes de inventario.
+//   6. Materiales: si el stock de materiales creció en el mes y esa compra
+//      sigue como gasto, se pasa de la cuenta de costo a Inventario MP (hasta
+//      lo que quede de gasto del mes).
+//   7. Cuadre de MP: lleva Inventario MP en Zoho al valor de Kroma a fin de
+//      mes (materiales + leche y flete de lotes en proceso), contra Ajustes.
 //
 // Todo en centavos para que cada parte cuadre exacta.
 
@@ -151,6 +155,7 @@ function variacionMateriales(asientos, cuentaPorCategoria = CUENTA_POR_CATEGORIA
  *  mpZoho: saldo de Inventario MP en Zoho antes del asiento · mpKromaFin: valor de materiales de Kroma a fin de mes
  */
 function armarAsiento({ mes, hasta, pt = [], mat = [], costosLote = {}, manoObra = null, mpZoho = null, mpKromaFin = null,
+    mpEnProceso = 0, gastoMes = null, saldosCosto = null,
     lechePorProveedor = LECHE_POR_PROVEEDOR, cuentaPorCategoria = CUENTA_POR_CATEGORIA_MAT, matAbierto = true }) {
     const lineas = [];
     const errores = [];
@@ -171,6 +176,13 @@ function armarAsiento({ mes, hasta, pt = [], mat = [], costosLote = {}, manoObra
         bloques.push({ clave, titulo, inventario, neto: usd(neto), contra: Object.fromEntries(items.map(([k, v]) => [k, usd(v)])) });
     };
 
+    // Gasto disponible del mes por cuenta de costo (centavos): lo registrado
+    // como gasto en el mes menos lo que se reclasificó a Inventario MP.
+    const gasto = {};
+    for (const [k, v] of Object.entries(gastoMes || {})) gasto[k] = Math.max(0, c(v));
+    if (!gastoMes) avisos.push("No se leyó de Zoho lo registrado como gasto en el mes: todo lo producido se descarga contra Inventario MP.");
+    const usado = {};
+
     // 1. Producción: cada lote repartido por sus componentes; el envasado suma empaque.
     const prod = {};
     for (const [logId, v] of Object.entries(g.produccionPorLote)) {
@@ -178,8 +190,18 @@ function armarAsiento({ mes, hasta, pt = [], mat = [], costosLote = {}, manoObra
     }
     const emp = g.transformacion + g.empaqueProduccion;
     if (emp) prod[CUENTAS.empaquesEtiquetas.id] = (prod[CUENTAS.empaquesEtiquetas.id] || 0) + emp;
-    if (g.sinLote) prod[AJUSTES] = (prod[AJUSTES] || 0) + g.sinLote;
-    bloque("produccion", "Materiales y leche que entraron al queso", PT, prod);
+    const contraProd = {};
+    const descargas = [];
+    for (const [cta, x] of Object.entries(prod)) {
+        if (!x) continue;
+        const aCosto = x > 0 ? Math.min(x, gasto[cta] || 0) : 0;
+        const aMP = x - aCosto;
+        if (aCosto) { contraProd[cta] = (contraProd[cta] || 0) + aCosto; usado[cta] = (usado[cta] || 0) + aCosto; }
+        if (aMP) contraProd[MP] = (contraProd[MP] || 0) + aMP;
+        descargas.push({ cuenta: cta, nombre: NOMBRE[cta] || cta, consumo: usd(x), contraCosto: usd(aCosto), contraMP: usd(aMP), gastoDelMes: usd(gasto[cta] || 0) });
+    }
+    if (g.sinLote) contraProd[AJUSTES] = (contraProd[AJUSTES] || 0) + g.sinLote;
+    bloque("produccion", "Materiales y leche que entraron al queso", PT, contraProd);
 
     // 2. Mano de obra aplicada, por cuenta de nómina.
     if (g.manoDeObra) {
@@ -194,16 +216,35 @@ function armarAsiento({ mes, hasta, pt = [], mat = [], costosLote = {}, manoObra
     bloque("consumo_interno", "Consumo interno", PT, { [CUENTAS.consumoPersonal.id]: g.personal, [CUENTAS.muestras.id]: g.muestras });
     bloque("ajustes_pt", "Ajustes y conteos de producto terminado", PT, { [AJUSTES]: g.ajustes });
 
-    // 6. Materiales: variación del mes por cuenta de compra.
+    // 6. Materiales: el stock que creció y sigue como gasto pasa a Inventario MP.
     const vm = variacionMateriales(mat, cuentaPorCategoria);
-    bloque("materiales", "Variación del inventario de materiales", MP, vm.porCuenta);
+    const aStock = {};
+    for (const [cta, dv] of Object.entries(vm.porCuenta)) {
+        if (cta === AJUSTES || !(dv > 0)) continue;
+        const resto = Math.max(0, (gasto[cta] || 0) - (usado[cta] || 0));
+        const x = Math.min(dv, resto);
+        if (x) { aStock[cta] = x; usado[cta] = (usado[cta] || 0) + x; }
+    }
+    bloque("materiales", "Materiales comprados como gasto que siguen en existencia", MP, aStock);
 
     // 7. Cuadre de Inventario MP contra el valor de Kroma a fin de mes.
     let cuadreMP = null;
     if (matAbierto && mpZoho != null && mpKromaFin != null) {
-        const dif = c(mpKromaFin) - (c(mpZoho) + vm.total);
-        cuadreMP = { mpZoho: usd(c(mpZoho)), variacion: usd(vm.total), mpKromaFin: usd(c(mpKromaFin)), diferencia: usd(dif) };
+        const mpAntes = c(mpZoho) + lineas.filter(l => l.account_id === MP).reduce((s, l) => s + (l.debit_or_credit === "debit" ? 1 : -1) * c(l.amount), 0);
+        const objetivo = c(mpKromaFin) + c(mpEnProceso);
+        const dif = objetivo - mpAntes;
+        cuadreMP = { mpZoho: usd(c(mpZoho)), despuesDelAsiento: usd(mpAntes), materialesKroma: usd(c(mpKromaFin)), lecheEnProceso: usd(c(mpEnProceso)),
+            mpKromaFin: usd(objetivo), diferencia: usd(dif) };
         bloque("cuadre_mp", "Inventario de materia prima al valor de Kroma", MP, { [AJUSTES]: dif });
+    }
+
+    // Ninguna cuenta de costo puede quedar en negativo.
+    if (saldosCosto) {
+        for (const [cta, x] of Object.entries(usado)) {
+            const saldo = saldosCosto[cta];
+            if (saldo == null) { errores.push(`No se pudo leer el saldo de «${NOMBRE[cta] || cta}» en Zoho.`); continue; }
+            if (c(saldo) - x < 0) errores.push(`«${NOMBRE[cta] || cta}» quedaría en negativo: saldo ${usd(c(saldo))}, el asiento la acredita por ${usd(x)}.`);
+        }
     }
 
     // Lo que el asiento mueve en PT tiene que ser lo que se movió en el libro.
@@ -219,10 +260,48 @@ function armarAsiento({ mes, hasta, pt = [], mat = [], costosLote = {}, manoObra
     try { verificarCuentas(lineas); } catch (e) { errores.push(e.message); }
 
     return {
-        mes, fecha: hasta, referencia: referenciaMes(mes), lineas, bloques, errores, avisos,
+        mes, fecha: hasta, referencia: referenciaMes(mes), lineas, bloques, errores, avisos, descargas,
+        gastoUsado: Object.fromEntries(Object.entries(usado).map(([k, v]) => [k, usd(v)])),
         totales: { debe: usd(debe), haber: usd(haber), ptNeto: usd(ptNeto), mpNeto: usd(lineas.filter(l => l.account_id === MP).reduce((s, l) => s + (l.debit_or_credit === "debit" ? 1 : -1) * c(l.amount), 0)) },
         cuadreMP, sinTipo: g.sinTipo,
     };
+}
+
+/** Cuentas de costo de compras de producción (las que el asiento puede acreditar). */
+const CUENTAS_COSTO = [CUENTAS.lecheMasparrito.id, CUENTAS.lecheTerceros.id, CUENTAS.fleteLeche.id, CUENTAS.empaquesEtiquetas.id, CUENTAS.insumosProceso.id];
+
+/**
+ * Lo registrado como gasto en el mes en cada cuenta de costo (USD), desde las
+ * facturas de proveedor, los gastos y los diarios publicados de Zoho (sin los
+ * KROMA-*). Una reclasificación a Inventario MP lo resta.
+ */
+function gastoDelMes({ bills = [], expenses = [], journals = [] }, cuentas = CUENTAS_COSTO) {
+    const set = new Set(cuentas);
+    const total = Object.fromEntries(cuentas.map(k => [k, 0]));
+    const detalle = [];
+    const sumar = (cta, monto, origen, numero, fecha) => {
+        if (!set.has(String(cta)) || !monto) return;
+        total[cta] += c(monto);
+        detalle.push({ cuenta: String(cta), nombre: NOMBRE[cta] || cta, monto: usd(c(monto)), origen, numero, fecha });
+    };
+    for (const b of bills) {
+        if (!b || ["void", "draft"].includes(String(b.status || "").toLowerCase())) continue;
+        for (const l of b.line_items || []) sumar(l.account_id, Number(l.item_total ?? (Number(l.rate) || 0) * (Number(l.quantity) || 1)) || 0, "factura", b.bill_number || b.bill_id, b.date);
+    }
+    for (const e of expenses) {
+        if (!e || ["void", "draft"].includes(String(e.status || "").toLowerCase())) continue;
+        const lineasE = (e.line_items || []).filter(l => l.account_id);
+        if (lineasE.length) lineasE.forEach(l => sumar(l.account_id, Number(l.item_total ?? l.amount) || 0, "gasto", e.reference_number || e.expense_id, e.date));
+        else sumar(e.account_id, Number(e.total_without_tax ?? e.total) || 0, "gasto", e.reference_number || e.expense_id, e.date);
+    }
+    for (const j of journals) {
+        if (!j || /^KROMA-/i.test(String(j.reference_number || "")) || String(j.status || "").toLowerCase() === "draft") continue;
+        for (const l of j.line_items || []) {
+            const v = Number(l.amount) || 0;
+            sumar(l.account_id, String(l.debit_or_credit || "").toLowerCase() === "credit" ? -v : v, "diario", j.reference_number || j.entry_number || j.journal_id, j.journal_date || j.date);
+        }
+    }
+    return { porCuenta: Object.fromEntries(Object.entries(total).map(([k, v]) => [k, usd(v)])), detalle };
 }
 
 const referenciaMes = (mes) => `KROMA-INV-${mes}`;
@@ -290,6 +369,6 @@ function mesAnterior(fecha) {
 
 module.exports = {
     LECHE_POR_PROVEEDOR, CUENTA_POR_CATEGORIA_MAT, NOMBRE, repartir, cuentaComponente, pesosDeLote, clasificarPT,
-    variacionMateriales, armarAsiento, referenciaMes, esReferenciaKroma, payloadZoho, controlesFallidos, firmaLineas,
+    variacionMateriales, armarAsiento, gastoDelMes, CUENTAS_COSTO, referenciaMes, esReferenciaKroma, payloadZoho, controlesFallidos, firmaLineas,
     mismoContenido, controlPosterior, rangoMes, mesAnterior,
 };

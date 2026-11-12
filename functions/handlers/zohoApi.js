@@ -567,6 +567,33 @@ async function getBillDetail({ accessToken, organizationId, dataCenter, billId }
     return exigirOk(res, 'leer la factura de proveedor').bill || null;
 }
 
+/** Gastos con fecha en [desde, hasta] (todas las páginas). */
+async function listExpensesRango({ accessToken, organizationId, dataCenter, desde, hasta, maxPages = 10 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/expenses`, {
+            params: { organization_id: organizationId, date_start: desde, date_end: hasta, page, per_page: 200 },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+        });
+        const d = exigirOk(res, 'leer los gastos');
+        const lista = Array.isArray(d.expenses) ? d.expenses : [];
+        all.push(...lista.filter(e => String(e.date || '') >= desde && String(e.date || '') <= hasta));
+        if (d.page_context?.has_more_page !== true || !lista.length) return all;
+    }
+    throw new Error(`Hay más de ${maxPages * 200} gastos entre ${desde} y ${hasta}: el listado quedó incompleto.`);
+}
+
+/** Detalle de un gasto (trae la cuenta y, si es detallado, sus líneas). */
+async function getExpense({ accessToken, organizationId, dataCenter, expenseId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/expenses/${expenseId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 20000,
+    });
+    return exigirOk(res, 'leer el gasto').expense || null;
+}
+
 /** Diarios con fecha en [desde, hasta] (todas las páginas). */
 async function listJournalsRango({ accessToken, organizationId, dataCenter, desde, hasta, maxPages = 10 }) {
     const { api } = dcUrls(dataCenter);
@@ -594,6 +621,6 @@ async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, cr
 }
 
 module.exports = {
-    listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail, listBillsRango, getBillDetail, listJournalsRango,
+    listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail, listBillsRango, getBillDetail, listJournalsRango, listExpensesRango, getExpense,
     listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal,
     categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
