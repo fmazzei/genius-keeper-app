@@ -109,9 +109,9 @@ export default function AdministracionLayout({ user, onLogout }) {
         ...(pagarOn ? [{ id: 'pagar', label: 'Pagar comisiones', Icon: Wallet }] : []),
         ...(modOn('clientes') ? [{ id: 'clientes', label: 'Clientes y PDV', Icon: Briefcase }] : []),
         ...(modOn('cartera') ? [{ id: 'cartera', label: 'Cartera', Icon: Store }] : []),
-        // Inventario de Caracas: recibe el camión, ajusta (entrada, descuento,
+        // Almacén (inventario de Caracas): recibe el camión, ajusta (entrada, descuento,
         // corrección, lotes cerrados) y hace pickings, con el alcance del máster.
-        ...(modOn('inventarioCaracas') ? [{ id: 'inventario', label: 'Inventario Caracas', Icon: Warehouse }] : []),
+        ...(modOn('almacenComercial') ? [{ id: 'inventario', label: 'Almacén', Icon: Warehouse }] : []),
     ];
     // Alertas del agente: su propia pestaña (con punto rojo), separada del
     // trabajo de pagar. Administración solo recibe avisos del agente (comisiones).

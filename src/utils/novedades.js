@@ -24,8 +24,8 @@ export const NOVEDADES = [
         id: '2026-11-12-inventario-caracas-admin',
         fecha: '2026-11-12',
         roles: ['administrador', 'master'],
-        titulo: 'Inventario de Caracas en Administración',
-        resumen: 'Administración tiene la pestaña «Inventario Caracas»: recibe el camión, da entradas, descuenta, corrige (también lotes cerrados) y registra pickings, igual que el máster. Corregir o borrar el historial de movimientos sigue siendo solo del máster, desde la pista del lote.',
+        titulo: 'Almacén en Administración',
+        resumen: 'Administración tiene la pestaña «Almacén», como el máster, gerencia y el vendedor: recibe el camión, da entradas, descuenta, corrige (también lotes cerrados) y registra pickings, igual que el máster. Corregir o borrar el historial de movimientos sigue siendo solo del máster, desde la pista del lote.',
     },
     {
         id: '2026-11-04-liquidacion-verificada',
