@@ -8,6 +8,11 @@
 //   · 2026-11-12: consumo interno en dos cuentas — consumo de personal a "Otros
 //     gastos de personal" y muestras y degustaciones a "Publicidad, promoción y
 //     material publicitario". Las donaciones van con las muestras.
+//   · 2026-11-12: administración registra las compras directo a cuentas de
+//     costo (leche, flete, insumos, empaques), no a Inventario MP. El asiento
+//     mensual acredita esas cuentas por lo que entró al queso y lleva Inventario
+//     MP al valor de materiales de Kroma contra ellas. Los consumibles de planta
+//     (guantes, detergentes, soda…) van contra Ajustes de inventario.
 
 const CUENTAS = {
     inventarioPT:       { id: "3576378000007389634", nombre: "Inventario de productos terminados" },
@@ -17,6 +22,12 @@ const CUENTAS = {
     ajustes:            { id: "3576378000008440003", nombre: "Ajustes de inventario" },
     consumoPersonal:    { id: "3576378000007389858", nombre: "Otros gastos de personal (transporte, formación, celebraciones)" },
     muestras:           { id: "3576378000007389918", nombre: "Publicidad, promoción y material publicitario" },
+    // Compras de producción: donde administración registra las facturas (5.3.1.01.xx).
+    lecheMasparrito:    { id: "3576378000007389774", nombre: "Leche - Finca Masparrito (propia)" },
+    lecheTerceros:      { id: "3576378000007389778", nombre: "Leche - productores terceros" },
+    fleteLeche:         { id: "3576378000007389782", nombre: "Flete de leche" },
+    empaquesEtiquetas:  { id: "3576378000007389786", nombre: "Empaque y etiquetas" },
+    insumosProceso:     { id: "3576378000007389794", nombre: "Insumos de proceso (fermentos, cuajo, sal, natamicina)" },
     // Nómina de planta (mano de obra aplicada, sección 6).
     sueldosProduccion:  { id: "3576378000007389798", nombre: "Sueldos y salarios producción" },
     destajo:            { id: "3576378000007596056", nombre: "Trabajos adicionales-destajo" },

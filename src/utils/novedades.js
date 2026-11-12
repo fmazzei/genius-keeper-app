@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-asiento-mensual',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'Asiento mensual de inventario a Zoho',
+        resumen: 'Inventario valorado → Zoho: un solo asiento por mes, en borrador, con lo producido, lo vendido, las mermas, la mano de obra y los materiales. Arranca en simulación; se crea en Zoho cuando lo actives.',
+    },
+    {
         id: '2026-11-12-bobina-ajuste-peso',
         fecha: '2026-11-12',
         roles: ['master'],

@@ -804,6 +804,10 @@ exports.inventarioComando = functions.runWith({ timeoutSeconds: 540, memory: "1G
                 const mes = /^\d{4}-\d{2}$/.test(c.mes || "") ? c.mes : fechaCaracas().slice(0, 7);
                 resultado = await require("./manoDeObra").aplicarManoDeObra({ mes, modo: c.cierre ? "cierre" : "provisional", simular: c.modo !== "ejecutar", forzar: !!c.forzar, quien: c.quien || "comando" });
                 if (c.modo === "ejecutar") resultado = { ...resultado, recalculo: await recalcularPendientes() };
+            } else if (c.accion === "asientoMensual") {
+                const mes = /^\d{4}-\d{2}$/.test(c.mes || "") ? c.mes : require("./asientoMensualReglas").mesAnterior(fechaCaracas());
+                resultado = await require("./asientoMensual").generarAsientoMensual({ mes, modo: c.modo === "ejecutar" ? "ejecutar" : "simular",
+                    regenerar: !!c.regenerar, quien: c.quien || "comando" });
             } else if (c.accion === "ajustePeso") {
                 resultado = await require("./inventarioMateriales")._materiales.ajustarPorPeso({ materialId: c.materialId, pesoActual: c.pesoActual,
                     pesoNuevo: c.pesoNuevo, tara: c.tara, reemplaza: c.reemplaza, simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
@@ -1055,8 +1059,12 @@ exports.inventarioCierreDiario = onSchedule({
     }
     await recalcularPendientes();
     try { await avisarLotesPorVencer(); } catch (e) { console.error("avisarLotesPorVencer", e); }
-    // Asiento del día a Zoho (o su simulación). Un fallo queda registrado por día.
-    try { await require("./inventarioZoho").sincronizarPendientes(); } catch (e) { console.error("inventarioZoho", e); }
+    // Asiento MENSUAL a Zoho en borrador (sección 7; reemplaza al asiento diario simulado):
+    // del día 1 en adelante, el del mes anterior, una vez cerrada su mano de obra.
+    try { await require("./asientoMensual").corridaMensual(); } catch (e) {
+        console.error("asientoMensual", e);
+        await db().doc(DOC_CONFIG).set({ zoho: { mensual: { ultimoError: String(e?.message || e).slice(0, 300), ultimoErrorAt: new Date().toISOString() } } }, { merge: true }).catch(() => {});
+    }
     // Segundo testigo del latido del vigilante (otro programador independiente).
     try { await require("./vigilante").revisarLatidoVigilante(); } catch (e) { console.error("latido vigilante", e); }
 });
@@ -1318,6 +1326,23 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
             const simular = request.data?.modo !== "ejecutar";
             if (!simular) exigirMaster(m, usuario);
             return JSON.parse(JSON.stringify(await require("./inventarioMateriales")._materiales.abrirMateriales({ simular, quien: usuario.perfilNombre || usuario.cuenta })));
+        }
+        if (accion === "asientoMensual") {
+            // Simular: cualquiera que opere el inventario. Crear en Zoho o regenerar: solo el máster.
+            const d = request.data || {};
+            const simular = d.modo !== "ejecutar";
+            if (!simular || d.regenerar) exigirMaster(m, usuario);
+            const AR = require("./asientoMensualReglas");
+            const mes = /^\d{4}-\d{2}$/.test(d.mes || "") ? d.mes : AR.mesAnterior(fechaCaracas());
+            return JSON.parse(JSON.stringify(await require("./asientoMensual").generarAsientoMensual({ mes, modo: simular ? "simular" : "ejecutar",
+                regenerar: !!d.regenerar && !simular, quien: usuario.perfilNombre || usuario.cuenta })));
+        }
+        if (accion === "asientoMensualEstado") {
+            return JSON.parse(JSON.stringify(await require("./asientoMensual").estadoMensual()));
+        }
+        if (accion === "asientoMensualConfig") {
+            exigirMaster(m, usuario);
+            return await require("./asientoMensual").guardarConfig(request.data || {});
         }
         if (accion === "materialAjustePeso") {
             const d = request.data || {};

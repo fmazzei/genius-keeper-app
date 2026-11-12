@@ -3146,7 +3146,10 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - Las planillas descuentan insumos solo desde el **1-nov**.
 - El 12 Pack (3 kg) son 12 de 250 g; los demás artículos inactivos generan alerta; `…261001` lo desactivan en Zoho.
 - Las 6 bolsas de 1 kg vencidas el 25-oct en ACC se dan de baja como merma con fecha del día en que se haga.
-- Por confirmar con planta: el empaque de la bolsa de 1 kg, la presentación del cloruro y de la sal, la unidad de los guantes y el stock de etiquetas.
+- Por confirmar con planta: el empaque de la bolsa de 1 kg, la presentación del cloruro y de la sal, la unidad de los guantes y el stock de etiquetas. (Guantes y etiquetas quedaron resueltos con el conteo del 11-nov.)
+- **Pendientes de planta para el lunes 16-nov** (anotado el 12-nov):
+  1. **Empaque de la bolsa de 1 kg**: qué bolsa, qué etiqueta y qué precinto lleva, para asignarlos en el maestro (hoy la presentación de 1 kg no tiene empaque y sus unidades no cargan costo de empaque).
+  2. **Ajuste por peso de la bobina**: peso del rollo empezado y de un rollo nuevo (y del tubo vacío si se pesa con él), para cargarlo en Inventario valorado → Materiales → «Ajustar».
 
 **Sección 1 — la presentación con su tamaño ✅ (12-nov):**
 - El envasado («Finalizar empaque» y el cierre de producción) guardaba el nombre del SKU del catálogo, que es igual al del producto, y no su tamaño. Ahora `nombreConPeso(nombre, pesoKg)` (`src/Kroma/inventarioPT.js`) arma «Lacteoca Chèvre Original · 250 g». No repite el peso si ya viene en el nombre. Se usa en `DailyProductionPage` (al elegir el SKU y en las cuatro escrituras) y en la entrada manual de Almacenes.
@@ -3222,6 +3225,23 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - **Provisional y cierre**: cada noche (cierre de las 23:55) se aplica el mes en curso con la tasa por kg del mes anterior; desde el día `manoDeObra.diaCierre` (3) del mes siguiente, el cierre con lo real deja el mes congelado (`aplicadoPorCuenta` para el asiento mensual). Cada corrida aplica solo la diferencia con lo ya aplicado al grupo: se repite sin duplicar. Desde `manoDeObra.desde` (2026-11).
 - Pantalla: Inventario valorado → Mano de obra (personas por etapa; simular provisional o cierre; el máster aplica o cierra). Callable `manoObra` / `manoObraEstado` / `manoObraConfig`; comando `{accion:'manoObra', mes, cierre, modo}`.
 - Pruebas: `npx firebase emulators:exec --only firestore --project demo-gk-mo "node tests/manoDeObra.e2e.test.mjs"` (21 en verde: nómina, etapas, tasas, lo que queda y lo que salió, costo de partidas y despacho, provisional → cierre solo con la diferencia, repetir sin duplicar, mes sin producción).
+
+**Sección 7 — asiento mensual en borrador (12-nov, rama `claude/inventario-zoho-s7`, sin publicar):**
+- `functions/handlers/asientoMensualReglas.js` (puro) y `asientoMensual.js`. Un asiento por mes, referencia `KROMA-INV-AAAA-MM`, fecha del último día, `status: "draft"`. Reemplaza al asiento diario simulado: el cierre de las 23:55 ya no llama a `sincronizarPendientes` sino a `corridaMensual` (del día 1 en adelante, el del mes anterior, cuando su mano de obra está congelada; en simulación una vez por día, en real hasta que quede creado).
+- **Decisión del dueño (12-nov): se respeta cómo registra administración.** Las compras van a cuentas de costo, no a Inventario MP: leche Masparrito `5.3.1.01.01` (…389774), leche terceros `.02` (…389778), flete `.03` (…389782), empaques `.04` (…389786), insumos `.06` (…389794). Se agregaron a `inventarioCuentas.js`. Los consumibles de planta (guantes, tapabocas, detergentes, soda) van contra Ajustes de inventario.
+- **Líneas** (cada bloque cuadra solo; todo en centavos):
+  1. Producción: cada lote (entradas `produccion` y sus `revaluacion` de costo) repartido por sus componentes (`kroma_inv_costos_lote.componentes`: leche por proveedor, flete, insumos); el empaque de una entrada envasada sale por unidad (`empaquePorPresentacion`) y el neto del envasado (`transformacion`) va a empaques. Débito PT, crédito a la cuenta de compra. Una entrada sin componentes va a Ajustes, con aviso.
+  2. Mano de obra: lo aplicado en el mes, por cuenta de nómina según `kroma_inv_mano_obra/{mes}.aplicadoPorCuenta`. Sin ese reparto, no se crea.
+  3. Costo de lo vendido (venta − devolución). 4. Reposiciones y mermas; consumo interno a personal o muestras. 5. Ajustes y revaluaciones sin lote contra Ajustes.
+  6. Materiales: la variación del libro de materiales del mes (sin la apertura) entre Inventario MP y la cuenta de compra de su categoría.
+  7. Cuadre de MP: lleva Inventario MP de Zoho al valor de materiales de Kroma a fin de mes, contra Ajustes (en noviembre es la línea grande).
+- **No se crea** (estado `abortado`, en simulación `abortaria`) si: falla un control diario 1, 2, 4, 7 o 9 del mes; una línea usa una cuenta fuera de la lista; hay movimientos sin tipo; lo que mueve en PT no es lo que se movió en el libro; el mes no terminó o su mano de obra no está cerrada.
+- **Zoho**: busca la referencia exacta. Borrador igual → `sin_cambios`; distinto → `difiere` (solo el máster regenera: borra el borrador y crea otro); publicado o aprobado → `ya_publicado`, no se toca. Nunca toca un asiento sin prefijo `KROMA-INV-`. Un intento fallido no pisa el registro de un asiento creado (queda en `ultimoIntento`).
+- Guarda `kroma_inv_zoho/{AAAA-MM}` (`tipo: "mensual"`): líneas, bloques, payload, respuesta, `journalId`, controles fallidos, avisos y el **control posterior** (saldo de PT y MP en Zoho después del asiento vs. Kroma a fin de mes).
+- Config `kroma_inv_config/lacteoca.zoho.mensual` = `{modo: simulacion|real, correoAprobacion, primerMes}` (pantalla Inventario valorado → Zoho; solo el máster). Callable `asientoMensual` (simular cualquiera; crear o regenerar el máster), `asientoMensualEstado`, `asientoMensualConfig`; comando `{accion:'asientoMensual', mes, modo, regenerar}`.
+- **Simulación de noviembre con datos al 12-nov:** producción 1.189,01 (leche terceros 514,80, flete 100,00, insumos 44,03, empaque de los envasados 530,18), costo de lo vendido 293,83, mermas 96,81, consumo de personal 10,90 y cuadre de MP −2.165,39 (2.969,57 en Zoho → 804,18). Cuadra en 3.755,94. Control posterior: MP queda igual a Kroma; PT queda 1.933,82 por encima, que es justo la corrección pendiente del `ARRANQUE-KROMA-2026-10` (5.515,36 en Zoho vs 3.581,54 de Kroma al 31/10).
+- **Bloqueo hoy:** el control 4 del 12-nov sale en diferencia por la baja de las 6 bolsas de 1 kg vencidas en ACC (partida sin lote). Pendiente de decidir cómo marcarla.
+- Pruebas: `node tests/asientoMensual.test.mjs` (33 en verde) y `npx firebase emulators:exec --only firestore --project demo-gk-am "node tests/asientoMensual.e2e.test.mjs"` (14 en verde: simular sin tocar Zoho, abortar por mano de obra abierta y por control, crear el borrador, no duplicar, difiere, regenerar, publicado intacto, asiento ajeno intacto, corrida nocturna).
 
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
 

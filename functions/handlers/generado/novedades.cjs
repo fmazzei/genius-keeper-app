@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-asiento-mensual",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "Asiento mensual de inventario a Zoho",
+    resumen: "Inventario valorado \u2192 Zoho: un solo asiento por mes, en borrador, con lo producido, lo vendido, las mermas, la mano de obra y los materiales. Arranca en simulaci\xF3n; se crea en Zoho cuando lo actives."
+  },
+  {
     id: "2026-11-12-bobina-ajuste-peso",
     fecha: "2026-11-12",
     roles: ["master"],
