@@ -599,15 +599,15 @@ service cloud.firestore {
       // para comercial/merchandiser; el libro de movimientos deja el rastro.)
       allow update: if isAuthenticated()
         && (isKromaAccess() || isComercialAccess() || isMerchandiser())
-        && (isMaster() || resource.data.unidades > 0);
+        && (isMaster() || isAdministrador() || resource.data.unidades > 0);
     }
     // Libro de movimientos del almacén comercial (entradas de recepción, pickings,
-    // ajustes/correcciones). Rastro inmutable de cada cambio de stock.
+    // ajustes/correcciones). Rastro de cada cambio de stock: SOLO el máster lo
+    // corrige o lo borra (administración ajusta el stock, pero no el historial).
     match /inventario_movimientos/{movId} {
       allow read:   if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
       allow create: if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
-      allow update: if false;                 // inmutable
-      allow delete: if isMaster();
+      allow update, delete: if isMaster();
     }
     // Acta de recepción del camión + entrega en Frimaca (cantidades, novedades,
     // foto de la planilla). docId = despachoId.
@@ -628,7 +628,9 @@ service cloud.firestore {
     match /ajustes_solicitudes/{solId} {
       allow read:   if isAuthenticated() && (isAdmin() || isMaster() || isComercialAccess() || isMerchandiser());
       allow create: if isAuthenticated() && (isComercialAccess() || isMerchandiser());
-      allow update, delete: if isMaster();
+      // Las resuelve el máster o administración (los dos ajustan el inventario).
+      allow update: if isMaster() || isAdministrador();
+      allow delete: if isMaster();
     }
 
     // Registro de empresas (tenants) de Kroma. Solo el máster global las da de

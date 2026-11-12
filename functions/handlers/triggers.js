@@ -38,7 +38,7 @@ const sendKromaNotif = async ({ tipo, mensaje, logId, lote, productoNombre, dest
 // Routes notification to GK push OR Kroma internal depending on destination roles
 const notifyByDestinations = async (destinations, notifPayload, dataPayload) => {
     const db = admin.firestore();
-    const GK_ROLES    = ["master", "sales_manager", "gerencia", "merchandiser"];
+    const GK_ROLES    = ["master", "sales_manager", "gerencia", "merchandiser", "administrador"];
     const KROMA_ROLES = ["kroma_admin", "kroma_gerencial"];
 
     const gkDests    = destinations.filter(d => GK_ROLES.includes(d));
@@ -486,7 +486,7 @@ exports.onAjusteSolicitado = functions.firestore
         const s = snap.data() || {};
         const cant = `${s.unidadesActuales ?? 0} ${s.unit || "ud"}`;
         try {
-            await notifyByDestinations(["master"], {
+            await notifyByDestinations(["master", "administrador"], {
                 title: "Ajuste de inventario solicitado",
                 body: `${s.solicitanteNombre || "Alguien"} reporta un error en ${s.productoNombre || "un lote"}` +
                       `${s.lote ? ` (lote ${s.lote})` : ""} — hoy en ${cant}. Motivo: ${s.motivo || "sin detalle"}`,

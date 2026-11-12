@@ -778,6 +778,7 @@ const MODULE_ROLE_CONFIG = [
             { key: 'liquidaciones',label: 'Liquidaciones',      icon: 'Wallet'    },
             { key: 'conciliacion', label: 'Conciliación',       icon: 'Store'     },
             { key: 'cartera',      label: 'Cartera',            icon: 'Briefcase' },
+            { key: 'inventarioCaracas', label: 'Inventario Caracas', icon: 'Warehouse' },
         ],
     },
 ];
@@ -5084,6 +5085,7 @@ const ADMIN_MODULES = [
     { id: 'liquidaciones', label: 'Liquidaciones' },
     { id: 'conciliacion',  label: 'Conciliación de facturas' },
     { id: 'cartera',       label: 'Cartera' },
+    { id: 'inventarioCaracas', label: 'Inventario de Caracas (ajustes y pickings)' },
 ];
 
 // Herramienta general: sincroniza el índice de login por nombre de usuario

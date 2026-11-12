@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-inventario-caracas-admin",
+    fecha: "2026-11-12",
+    roles: ["administrador", "master"],
+    titulo: "Inventario de Caracas en Administraci\xF3n",
+    resumen: "Administraci\xF3n tiene la pesta\xF1a \xABInventario Caracas\xBB: recibe el cami\xF3n, da entradas, descuenta, corrige (tambi\xE9n lotes cerrados) y registra pickings, igual que el m\xE1ster. Corregir o borrar el historial de movimientos sigue siendo solo del m\xE1ster, desde la pista del lote."
+  },
+  {
     id: "2026-11-04-liquidacion-verificada",
     fecha: "2026-11-04",
     roles: ["master"],

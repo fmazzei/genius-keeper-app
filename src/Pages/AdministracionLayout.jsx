@@ -2,7 +2,8 @@
 //
 // Panel del rol `administrador` (operativo de Lacteoca). Reúne las herramientas
 // comerciales que ya existen — Dashboard de comisiones a pagar, Liquidaciones,
-// Conciliación de facturas por vendedor y gestión de Cartera — sin acceso a
+// Conciliación de facturas por vendedor, gestión de Cartera e Inventario de
+// Caracas (ajustes y pickings, con el alcance del máster) — sin acceso a
 // creación de usuarios, metas ni configuración del sistema (eso es del master).
 //
 // Aquí se cargan las LIQUIDACIONES DE COMISIONES. El "devengado" del vendedor
@@ -17,13 +18,14 @@ import { db } from '@/Firebase/config.js';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
-import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2, Bot } from 'lucide-react';
+import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2, Bot, Warehouse } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import CarteraManager from '@/Components/CarteraManager.jsx';
 import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } from '@/Pages/AdminPanel.jsx';
 import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
+import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
@@ -107,6 +109,9 @@ export default function AdministracionLayout({ user, onLogout }) {
         ...(pagarOn ? [{ id: 'pagar', label: 'Pagar comisiones', Icon: Wallet }] : []),
         ...(modOn('clientes') ? [{ id: 'clientes', label: 'Clientes y PDV', Icon: Briefcase }] : []),
         ...(modOn('cartera') ? [{ id: 'cartera', label: 'Cartera', Icon: Store }] : []),
+        // Inventario de Caracas: recibe el camión, ajusta (entrada, descuento,
+        // corrección, lotes cerrados) y hace pickings, con el alcance del máster.
+        ...(modOn('inventarioCaracas') ? [{ id: 'inventario', label: 'Inventario Caracas', Icon: Warehouse }] : []),
     ];
     // Alertas del agente: su propia pestaña (con punto rojo), separada del
     // trabajo de pagar. Administración solo recibe avisos del agente (comisiones).
@@ -199,6 +204,8 @@ export default function AdministracionLayout({ user, onLogout }) {
                     <ListaMaestraPdv />
                 ) : activeTab?.id === 'cartera' ? (
                     <CarteraAdmin vendedores={vendedores} />
+                ) : activeTab?.id === 'inventario' ? (
+                    <AlmacenComercialPage canPicking actor={{ id: uid || '', nombre: perfil.name || authUser?.email || '', role: 'administrador' }} />
                 ) : (
                     /* ── Flujo "Pagar comisiones": panorama → ① Conciliar → ② Liquidar ── */
                     !payVendedorId ? (
