@@ -126,10 +126,12 @@ const THEME = {
 const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPicking = false }) => {
     const t = THEME[theme] || THEME.light;
     const { user, role } = useAuth();
-    // El máster es el único que puede dar entradas/corregir (y tocar lotes
-    // cerrados); también es quien ve la cadena de planta (Kroma) en la pista.
-    const isMaster    = role === 'master';
-    const verKroma    = isMaster || ['gerencia', 'sales_manager', 'director'].includes(role);
+    // El máster y administración dan entradas, descuentan, corrigen y tocan lotes
+    // cerrados, con el mismo alcance. Lo único que es solo del máster: corregir o
+    // borrar el historial de movimientos (en la pista del lote).
+    const isMaster     = role === 'master';
+    const puedeAjustar = isMaster || role === 'administrador';
+    const verKroma     = isMaster || ['gerencia', 'sales_manager', 'director', 'administrador'].includes(role);
     const [tab, setTab]                 = useState('recepcion');
     const [almacenes, setAlmacenes]     = useState([]);
     const [inventario, setInventario]   = useState([]);
@@ -170,9 +172,9 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
             // Solo lo que viene a Caracas: un despacho de planta a otra ciudad
             // también está "en tránsito", pero no se recibe en Frimaca.
             setPendientes(despSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => lineasACaracas(d).length > 0));
-            // El máster ve las solicitudes de ajuste pendientes (quien no puede
-            // corregir por sí mismo se las envía desde el ítem).
-            if (isMaster) {
+            // El máster y administración ven las solicitudes de ajuste pendientes
+            // (quien no puede corregir por sí mismo se las envía desde el ítem).
+            if (puedeAjustar) {
                 const solSnap = await getDocs(query(collection(db, 'ajustes_solicitudes'), where('estado', '==', 'pendiente')))
                     .catch(() => ({ docs: [] }));
                 setSolicitudes((solSnap.docs || []).map(d => ({ id: d.id, ...d.data() })));
@@ -182,7 +184,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
         } finally {
             setLoading(false);
         }
-    }, [isMaster]);
+    }, [puedeAjustar]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -385,7 +387,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
 
             {/* Solicitudes de ajuste (solo máster): alguien reportó un error que
                 él debe corregir — un picking no se revierte solo. */}
-            {isMaster && solicitudes.length > 0 && (
+            {puedeAjustar && solicitudes.length > 0 && (
                 <div className={`rounded-xl p-3 mb-4 space-y-2 ${t.warning}`}>
                     <p className="text-xs font-extrabold uppercase tracking-wider">
                         {solicitudes.length} ajuste{solicitudes.length !== 1 ? 's' : ''} solicitado{solicitudes.length !== 1 ? 's' : ''}
@@ -609,7 +611,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
             {adjustItem && (
                 <StockAdjustSheet
                     item={adjustItem}
-                    isMaster={isMaster}
+                    puedeAjustar={puedeAjustar}
                     onClose={() => setAdjustItem(null)}
                     onSave={handleAdjustSave}
                     onNotifyAdmin={handleNotifyAdmin}
@@ -623,6 +625,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                     item={traceItem}
                     theme={theme}
                     verKroma={verKroma}
+                    editarHistorial={isMaster}
                     onClose={() => setTraceItem(null)}
                 />
             )}

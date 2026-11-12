@@ -65,6 +65,15 @@ mercaderista (`AppShell`/`MerchandiserHub` → "Almacén Frimaca", light, canPic
 máster/gerencia (`AdminPanel` → Almacén Comercial, light, canPicking). `AlmacenComercialPage`
 acepta `actor={{id,nombre,role}}` (mercaderista pasa el reporter) y `canPicking`.
 
+### Administración ajusta el inventario de Caracas como el máster (2026-11-12) ✅
+
+Pedido del dueño: la administradora (rol `administrador`) ajusta libremente el inventario de Caracas y hace pickings, con el mismo alcance que el máster. Lo único que no puede: corregir o borrar el historial de movimientos.
+- **Pestaña «Almacén»** en `AdministracionLayout` (mismo nombre que en máster, gerencia y vendedor; módulo `almacenComercial`, se apaga por usuario o por rol como los demás): la misma `AlmacenComercialPage` con `canPicking` y la administradora como actor.
+- `AlmacenComercialPage`: `puedeAjustar` = máster o administración → Entrada, Descontar, Corregir y lotes cerrados (`StockAdjustSheet puedeAjustar`), y ve y resuelve las solicitudes de ajuste. El aviso `onAjusteSolicitado` llega al máster y a administración (`administrador` en `GK_ROLES` de `notifyByDestinations`). Administración ve también la cadena de planta en la pista.
+- **Historial solo del máster**: en la pista del lote (`LoteTrazabilidadModal editarHistorial`) cada movimiento tiene **Corregir** (cantidad con signo y nota; deja `correcciones[]` con lo anterior, quién y cuándo) y **Borrar** (si es un picking, borra también su documento de `pickings`). Ninguno de los dos cambia el stock ni el libro valorado de Kroma (`kroma_inv_libro`): para mover existencias se hace un ajuste.
+- Reglas: `inventario_comercial` update en lote cerrado = máster o administración; `inventario_movimientos` update/delete = solo máster (antes: inmutable para todos); `ajustes_solicitudes` update = máster o administración; `pickings` update/delete sigue solo máster.
+- Prueba: `tests/firestore.rules.test.mjs` (68 en verde; 14 casos nuevos de administración, vendedor y máster).
+
 ### Lotes cerrados, pista del lote y candados (2026-08) ✅
 
 - **Lote CERRADO = 0 unidades.** Sale de la lista activa y pasa a un desplegable

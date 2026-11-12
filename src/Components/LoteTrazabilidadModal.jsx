@@ -10,17 +10,22 @@
 //    → despacho), leída de kroma_production_logs / kroma_inventory_pt /
 //    kroma_warehouse_movements.
 //
+// El MÁSTER (y solo él) puede corregir o borrar un movimiento del historial
+// (`editarHistorial`). Corregir deja constancia en el propio movimiento; ni
+// corregir ni borrar cambian el stock (eso se hace con un ajuste).
+//
 // Todas las consultas son de igualdad simple (`where('lote','==',…)`) y se
 // ordenan en cliente: no requieren índices compuestos.
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { db } from '@/Firebase/config.js';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, deleteDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import {
     X, Loader, Truck, PackageCheck, PackageMinus, Milk, Factory, Package,
-    AlertTriangle, SlidersHorizontal, MapPin,
+    AlertTriangle, SlidersHorizontal, MapPin, Pencil, Trash2,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { fmtVence } from '@/utils/fechaCorta.js';
 
 const THEME = {
@@ -52,11 +57,27 @@ const EVENTO = {
     ajuste:     { Icon: SlidersHorizontal,color: 'text-slate-400',   label: 'Ajuste de inventario' },
 };
 
-export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma = false, onClose }) {
+// Título de un movimiento del libro de Frimaca.
+const tituloMov = (m, unit) => {
+    const c = Number(m.cantidad) || 0;
+    if (m.tipo === 'picking') return `Picking · ${Math.abs(c)} ${unit}`;
+    if (m.tipo === 'entrada_recepcion') return `Entrada por recepción · +${c} ${unit}`;
+    if (m.tipo === 'correccion') return `Corrección de stock → ${m.unidadesDespues} ${unit}`;
+    if (c < 0) return `Descuento · ${c} ${unit}`;
+    return `Entrada manual · +${c} ${unit}`;
+};
+
+export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma = false, editarHistorial = false, onClose }) {
     const t = THEME[theme] || THEME.light;
+    const { user } = useAuth();
     const [loading, setLoading] = useState(true);
     const [eventos, setEventos] = useState([]);
     const [error, setError]     = useState('');
+    const [recarga, setRecarga] = useState(0);
+    const [editando, setEditando] = useState(null); // { mov, cantidad, nota }
+    const [borrando, setBorrando] = useState(null); // mov
+    const [guardando, setGuardando] = useState(false);
+    const [errorAccion, setErrorAccion] = useState('');
     const lote = item?.lote || '';
     const unit = item?.unit || 'ud';
 
@@ -69,7 +90,9 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
 
                 // 1) Libro de movimientos del almacén comercial (siempre).
                 const movSnap = await getDocs(query(collection(db, 'inventario_movimientos'), where('lote', '==', lote)));
-                const movs = movSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                // Sin lote (partidas de conteo): solo los movimientos de ESTA partida.
+                const movs = movSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+                    .filter(m => lote || !item?.id || m.ref?.itemId === item.id);
 
                 let despachoId = null;
                 movs.forEach(m => {
@@ -79,13 +102,12 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
                     evs.push({
                         kind: esPicking ? 'picking' : esEntradaRecep ? 'recepcion' : 'ajuste',
                         at: toDate(m.createdAt),
-                        titulo: esPicking ? `Picking · ${Math.abs(m.cantidad)} ${unit}`
-                            : esEntradaRecep ? `Entrada por recepción · +${m.cantidad} ${unit}`
-                            : m.tipo === 'correccion' ? `Corrección de stock → ${m.unidadesDespues} ${unit}`
-                            : `Entrada manual · +${m.cantidad} ${unit}`,
+                        titulo: tituloMov(m, unit),
                         actor: m.actorNombre || '—',
                         rol: m.actorRole || '',
                         detalle: `${m.unidadesAntes} → ${m.unidadesDespues} ${unit}${m.nota ? ` · ${m.nota}` : ''}`,
+                        mov: m,
+                        corregido: (m.correcciones || []).length,
                     });
                 });
 
@@ -195,7 +217,49 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
             }
         })();
         return () => { alive = false; };
-    }, [lote, verKroma, unit, item?.productoNombre]);
+    }, [lote, verKroma, unit, item?.productoNombre, item?.id, recarga]);
+
+    const quien = { id: user?.uid || '', nombre: user?.displayName || user?.email || '' };
+
+    // Corregir un movimiento: cambia lo que dice el historial, no el stock.
+    const guardarCorreccion = async () => {
+        if (!editando || guardando) return;
+        const m = editando.mov;
+        const cantidad = Number(String(editando.cantidad).replace(',', '.'));
+        if (!Number.isFinite(cantidad)) { setErrorAccion('Escribe una cantidad válida.'); return; }
+        const antes = Number(m.unidadesAntes) || 0;
+        setGuardando(true); setErrorAccion('');
+        try {
+            await updateDoc(doc(db, 'inventario_movimientos', m.id), {
+                cantidad,
+                unidadesDespues: Math.round((antes + cantidad) * 1000) / 1000,
+                nota: editando.nota.trim(),
+                correcciones: arrayUnion({
+                    antes: { cantidad: m.cantidad ?? null, unidadesDespues: m.unidadesDespues ?? null, nota: m.nota || '' },
+                    por: quien, at: new Date().toISOString(),
+                }),
+                corregidoAt: serverTimestamp(),
+            });
+            setEditando(null); setRecarga(r => r + 1);
+        } catch (e) {
+            setErrorAccion('No se pudo guardar: ' + (e?.message || ''));
+        } finally { setGuardando(false); }
+    };
+
+    // Borrar un movimiento (y su picking, si lo tiene). No devuelve el stock.
+    const confirmarBorrado = async () => {
+        if (!borrando || guardando) return;
+        setGuardando(true); setErrorAccion('');
+        try {
+            await deleteDoc(doc(db, 'inventario_movimientos', borrando.id));
+            if (borrando.tipo === 'picking' && borrando.ref?.pickingId) {
+                await deleteDoc(doc(db, 'pickings', borrando.ref.pickingId)).catch(() => {});
+            }
+            setBorrando(null); setRecarga(r => r + 1);
+        } catch (e) {
+            setErrorAccion('No se pudo borrar: ' + (e?.message || ''));
+        } finally { setGuardando(false); }
+    };
 
     const totalPicked = eventos.filter(e => e.kind === 'picking').length;
 
@@ -258,6 +322,54 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
                                                     {fmt(e.at)} · <span className="font-semibold">{e.actor}</span>
                                                     {e.rol && <span className="opacity-70"> ({e.rol})</span>}
                                                 </p>
+                                                {e.corregido > 0 && (
+                                                    <p className="text-[11px] mt-1 font-semibold text-amber-600">Corregido por el máster ({e.corregido} vez{e.corregido === 1 ? '' : 'es'})</p>
+                                                )}
+                                                {editarHistorial && e.mov && (
+                                                    <div className="flex gap-2 mt-2">
+                                                        <button onClick={() => { setErrorAccion(''); setBorrando(null); setEditando({ mov: e.mov, cantidad: String(e.mov.cantidad ?? 0), nota: e.mov.nota || '' }); }}
+                                                            className={`flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg ${t.chip}`}>
+                                                            <Pencil size={12} /> Corregir
+                                                        </button>
+                                                        <button onClick={() => { setErrorAccion(''); setEditando(null); setBorrando(e.mov); }}
+                                                            className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg bg-red-500/10 text-red-600">
+                                                            <Trash2 size={12} /> Borrar
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {editando?.mov?.id === e.mov?.id && e.mov && (
+                                                    <div className="mt-2 space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-slate-800">
+                                                        <p className="text-[11px] font-semibold">Corrige lo que dice el historial. El stock no cambia: si también hay que moverlo, haz un ajuste.</p>
+                                                        <label className="block text-[11px] font-bold">Cantidad del movimiento ({unit}, con signo)
+                                                            <input type="text" inputMode="decimal" value={editando.cantidad}
+                                                                onChange={ev => setEditando(x => ({ ...x, cantidad: ev.target.value }))}
+                                                                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                                                        </label>
+                                                        <label className="block text-[11px] font-bold">Nota
+                                                            <input type="text" value={editando.nota}
+                                                                onChange={ev => setEditando(x => ({ ...x, nota: ev.target.value }))}
+                                                                className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+                                                        </label>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={guardarCorreccion} disabled={guardando}
+                                                                className="flex-1 rounded-lg bg-[#0D2B4C] py-1.5 text-xs font-bold text-white disabled:opacity-50">{guardando ? 'Guardando…' : 'Guardar corrección'}</button>
+                                                            <button onClick={() => setEditando(null)} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold">Cancelar</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {borrando?.id === e.mov?.id && e.mov && (
+                                                    <div className="mt-2 space-y-2 rounded-lg border border-red-300 bg-red-50 p-2 text-red-800">
+                                                        <p className="text-[11px] font-semibold">¿Borrar este movimiento del historial{borrando.tipo === 'picking' ? ' (y su picking)' : ''}? No se puede deshacer y el stock no cambia.</p>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={confirmarBorrado} disabled={guardando}
+                                                                className="flex-1 rounded-lg bg-red-600 py-1.5 text-xs font-bold text-white disabled:opacity-50">{guardando ? 'Borrando…' : 'Sí, borrar'}</button>
+                                                            <button onClick={() => setBorrando(null)} className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700">Cancelar</button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {(editando?.mov?.id === e.mov?.id || borrando?.id === e.mov?.id) && errorAccion && e.mov && (
+                                                    <p className="text-[11px] mt-1 text-red-600">{errorAccion}</p>
+                                                )}
                                                 {(e.foto || e.fotoNovedad) && (
                                                     <div className="flex gap-2 mt-2">
                                                         {e.foto && <img src={e.foto} alt="Planilla" className="h-16 rounded-lg border border-slate-400/30" />}

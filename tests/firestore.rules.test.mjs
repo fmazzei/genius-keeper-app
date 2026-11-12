@@ -140,6 +140,36 @@ await check('permite','VENDEDOR guarda su plan',                 () => setDoc(do
 await check('niega','VENDEDOR guarda el plan de otro',           () => setDoc(doc(V2,'planes_venta','vend2_2026-10-12'), { vendedorId:'vend', items:[] }));
 await check('permite','GERENCIA lee planes',                     () => getDocs(collection(G,'planes_venta')));
 
+// ── Inventario de Caracas (12-nov): administración ajusta como el máster; el
+//    historial de movimientos solo lo corrige o borra el máster.
+await env.withSecurityRulesDisabled(async (c) => {
+  const db = c.firestore();
+  await setDoc(doc(db,'users_metadata','adm'),  { role:'administrador', email:'a@lacteoca.com' });
+  await setDoc(doc(db,'users_metadata','vend'), { role:'vendedor', email:'v@lacteoca.com', name:'Vend' });
+  await setDoc(doc(db,'inventario_comercial','vivo'),    { unidades: 24, lote:'L1' });
+  await setDoc(doc(db,'inventario_comercial','cerrado'), { unidades: 0,  lote:'L2' });
+  await setDoc(doc(db,'inventario_comercial','cerrado2'),{ unidades: 0,  lote:'L3' });
+  await setDoc(doc(db,'inventario_movimientos','m1'), { tipo:'picking', cantidad:-12, lote:'L1' });
+  await setDoc(doc(db,'inventario_movimientos','m2'), { tipo:'correccion', cantidad:5, lote:'L1' });
+  await setDoc(doc(db,'pickings','p1'), { cantidad:12 });
+  await setDoc(doc(db,'ajustes_solicitudes','s1'), { estado:'pendiente' });
+});
+const AD = env.authenticatedContext('adm', { email:'a@lacteoca.com' }).firestore();
+await check('permite','ADMINISTRACIÓN ajusta un lote vivo',         () => updateDoc(doc(AD,'inventario_comercial','vivo'), { unidades: 30 }));
+await check('permite','ADMINISTRACIÓN reabre un lote cerrado',      () => updateDoc(doc(AD,'inventario_comercial','cerrado'), { unidades: 6 }));
+await check('permite','ADMINISTRACIÓN crea una partida',            () => addDoc(collection(AD,'inventario_comercial'), { unidades: 3 }));
+await check('permite','ADMINISTRACIÓN escribe en el libro',         () => addDoc(collection(AD,'inventario_movimientos'), { tipo:'picking', cantidad:-1 }));
+await check('permite','ADMINISTRACIÓN registra un picking',         () => addDoc(collection(AD,'pickings'), { cantidad:1 }));
+await check('permite','ADMINISTRACIÓN resuelve una solicitud',      () => updateDoc(doc(AD,'ajustes_solicitudes','s1'), { estado:'resuelto' }));
+await check('niega','ADMINISTRACIÓN corrige el historial',          () => updateDoc(doc(AD,'inventario_movimientos','m2'), { cantidad: 4 }));
+await check('niega','ADMINISTRACIÓN borra del historial',           () => deleteDoc(doc(AD,'inventario_movimientos','m2')));
+await check('niega','ADMINISTRACIÓN borra un picking',              () => deleteDoc(doc(AD,'pickings','p1')));
+await check('niega','VENDEDOR reabre un lote cerrado',              () => updateDoc(doc(V,'inventario_comercial','cerrado2'), { unidades: 1 }));
+await check('niega','VENDEDOR corrige el historial',                () => updateDoc(doc(V,'inventario_movimientos','m2'), { cantidad: 4 }));
+await check('permite','MÁSTER corrige el historial',                () => updateDoc(doc(M,'inventario_movimientos','m2'), { cantidad: 4 }));
+await check('permite','MÁSTER borra del historial',                 () => deleteDoc(doc(M,'inventario_movimientos','m1')));
+await check('permite','MÁSTER borra un picking',                    () => deleteDoc(doc(M,'pickings','p1')));
+
 console.log(ok.join('\n'));
 if (bad.length) { console.log('\n--- FALLOS ---\n' + bad.join('\n')); process.exitCode = 1; }
 else console.log(`\nTodo correcto: ${ok.length}/${ok.length}`);

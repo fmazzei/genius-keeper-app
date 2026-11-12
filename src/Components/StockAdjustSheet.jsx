@@ -2,15 +2,13 @@
 //
 // Ajuste de stock de un ítem de `inventario_comercial`, con permisos por rol:
 //
-//  - MÁSTER: puede dar Entrada, Descontar y Corregir el stock, incluso en lotes
-//    ya cerrados (es quien arregla los errores).
-//  - Resto (vendedor / mercaderista / gerencia): SOLO puede DESCONTAR (con
-//    motivo). No puede dar entradas ni corregir, y en un lote CERRADO no puede
-//    tocar nada. Si hubo una equivocación, usa "Notificar al administrador",
-//    que le avisa al máster para que ajuste.
+//  - MÁSTER y ADMINISTRACIÓN (mismo alcance): Entrada, Descontar y Corregir el
+//    stock, incluso en lotes ya cerrados (son quienes arreglan los errores).
+//  - Resto (vendedor / mercaderista / gerencia): solo consulta. Si hubo una
+//    equivocación, usa "Notificar al administrador", que les avisa a los dos.
 //
-// Un picking confirmado nunca se revierte desde aquí (el libro de movimientos
-// es inmutable): lo que procede es notificar al máster.
+// Un picking confirmado se corrige con un ajuste, no se borra: corregir o borrar
+// el historial de movimientos es solo del máster (en la pista del lote).
 
 import React, { useState } from 'react';
 import { X, Plus, Minus, Loader, ShieldAlert, History, Send, Lock } from 'lucide-react';
@@ -69,7 +67,7 @@ const Contador = ({ label, value, onChange, max, t }) => (
     </div>
 );
 
-const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdmin, onVerTrazabilidad, theme = 'light' }) => {
+const StockAdjustSheet = ({ item, puedeAjustar = false, onClose, onSave, onNotifyAdmin, onVerTrazabilidad, theme = 'light' }) => {
     const t = THEME[theme] || THEME.light;
     const current = Number(item?.unidades) || 0;
     const unit    = item?.unit || 'ud';
@@ -81,10 +79,10 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
     const ven     = estadoVence(item?.fechaVencimiento);
     const tonoVence = TONO_VENCE[theme] || TONO_VENCE.light;
 
-    // Los AJUSTES de inventario son EXCLUSIVOS del máster. El vendedor y el
-    // mercaderista solo hacen PICKINGS (salida declarada, con su propia hoja):
-    // aquí solo consultan el lote y, si hubo un error, notifican al máster.
-    const soloLectura = !isMaster;
+    // Los AJUSTES de inventario los hacen el máster y administración. El vendedor
+    // y el mercaderista solo hacen PICKINGS (salida declarada, con su propia
+    // hoja): aquí consultan el lote y, si hubo un error, avisan para que lo ajusten.
+    const soloLectura = !puedeAjustar;
 
     const [modo, setModo]     = useState('entrada'); // entrada | salida | correccion
     const [value, setValue]   = useState(0);
@@ -172,7 +170,7 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                                 <Lock size={16} className="shrink-0 mt-0.5" />
                                 <span>
                                     {cerrado ? <><b>Lote cerrado.</b> </> : null}
-                                    Los ajustes de inventario los hace el <b>máster</b>. Tú registras las salidas con <b>Picking</b>.
+                                    Los ajustes de inventario los hacen el <b>máster</b> y <b>administración</b>. Tú registras las salidas con <b>Picking</b>.
                                     Si hubo una equivocación, notifícalo y él lo corrige.
                                 </span>
                             </div>
@@ -187,7 +185,7 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                         </>
                     ) : (
                         <>
-                            {/* Modos de ajuste — exclusivos del máster */}
+                            {/* Modos de ajuste — máster y administración */}
                             <div className="flex gap-2 mb-4">
                                 <button type="button" onClick={() => switchMode('entrada')}
                                     className={`flex-1 py-2.5 rounded-xl text-sm font-semibold ${modo === 'entrada' ? t.toggleEntrada : t.toggleInactive}`}>
@@ -206,7 +204,7 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                             {cerrado && (
                                 <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 mb-3 ${t.notice}`}>
                                     <ShieldAlert size={14} className="shrink-0 mt-0.5" />
-                                    <span>Este lote está <b>cerrado</b>. Solo tú (máster) puedes reabrirlo o corregirlo.</span>
+                                    <span>Este lote está <b>cerrado</b>. Solo el máster y administración pueden reabrirlo o corregirlo.</span>
                                 </div>
                             )}
 
