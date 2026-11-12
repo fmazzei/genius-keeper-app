@@ -701,6 +701,15 @@ async function preciosPlanta(ids) {
     return out;
 }
 
+/** Marca `recalcularDesde` con la fecha más temprana entre la que había y `fecha`. */
+async function marcarRecalculo(fecha) {
+    const ref = db().doc(DOC_CONFIG);
+    await db().runTransaction(async (tx) => {
+        const actual = (await tx.get(ref)).data()?.recalcularDesde || null;
+        if (!actual || fecha < actual) tx.set(ref, { recalcularDesde: fecha }, { merge: true });
+    });
+}
+
 /** Escribe asientos con id determinista (un reintento del evento no duplica). */
 async function escribirAsientos(asientos, prefijoId) {
     if (!asientos.length) return;
@@ -715,13 +724,13 @@ async function escribirAsientos(asientos, prefijoId) {
             creadoAt: admin.firestore.FieldValue.serverTimestamp(),
         });
     });
+    await batch.commit();
     // Un asiento con fecha pasada obliga a recalcular los reportes desde ahí.
+    // Se guarda la fecha MÁS TEMPRANA pendiente: varias escrituras seguidas (las
+    // facturas de una corrida) no pueden pisar una fecha anterior con una posterior.
     const hoy = fechaCaracas();
     const minFecha = asientos.map(a => a.fecha).sort()[0];
-    if (minFecha < hoy) {
-        batch.set(db().doc(DOC_CONFIG), { recalcularDesde: minFecha }, { merge: true });
-    }
-    await batch.commit();
+    if (minFecha < hoy) await marcarRecalculo(minFecha);
 }
 
 /** Saldo de la ruta por producto (catalogId|unidad) de los productos de `asientos`. */
@@ -905,8 +914,8 @@ async function repararAperturaTransito() {
         if (!minFecha || a.fecha < minFecha) minFecha = a.fecha;
     }
     if (reparados.length) {
-        batch.set(db().doc(DOC_CONFIG), { recalcularDesde: minFecha }, { merge: true });
         await batch.commit();
+        await marcarRecalculo(minFecha);
     }
     return { reparados: JSON.parse(JSON.stringify(reparados)) };
 }
@@ -978,7 +987,10 @@ async function recalcularPendientes(desdeForzado = null) {
     const cfg = await leerConfig();
     if (!cfg.abierto) return { generado: [] };
     const hoy = fechaCaracas();
-    let f = desdeForzado || cfg.recalcularDesde || hoy;
+    // La fecha más temprana entre la pedida y la pendiente: pedir un día posterior
+    // no puede dejar sin rehacer los anteriores que estaban pendientes.
+    const pendiente = cfg.recalcularDesde || null;
+    let f = [desdeForzado, pendiente].filter(Boolean).sort()[0] || hoy;
     if (cfg.inicio && f < cfg.inicio) f = cfg.inicio;
     const hechos = [];
     let n = 0;
@@ -989,7 +1001,12 @@ async function recalcularPendientes(desdeForzado = null) {
         f = new Date(Date.UTC(y, m - 1, d + 1, 12)).toISOString().slice(0, 10);
         n++;
     }
-    await db().doc(DOC_CONFIG).set({ recalcularDesde: admin.firestore.FieldValue.delete(), ultimoReporte: hoy }, { merge: true });
+    // Solo se borra la marca si nadie marcó otra fecha mientras se recalculaba.
+    const ref = db().doc(DOC_CONFIG);
+    await db().runTransaction(async (tx) => {
+        const ahora = (await tx.get(ref)).data()?.recalcularDesde || null;
+        tx.set(ref, { ultimoReporte: hoy, ...(ahora === pendiente ? { recalcularDesde: admin.firestore.FieldValue.delete() } : {}) }, { merge: true });
+    });
     // Una fecha pasada recalculada cambia su asiento en Zoho y los siguientes.
     if (hechos.length && hechos[0] < hoy) {
         try { await require("./inventarioZoho").marcarPendienteDesde(hechos[0]); } catch (e) { console.error("marcarPendienteDesde", e); }
