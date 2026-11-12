@@ -28,8 +28,8 @@ import { marcaMov } from '../utils/movInventario.js';
 export const MOTIVOS_SALIDA = [
     { key: 'merma',           label: 'Merma o producto dañado' },
     { key: 'vencido',         label: 'Vencido' },
-    { key: 'muestra',         label: 'Muestra o degustación' },
-    { key: 'consumo_interno', label: 'Consumo interno' },
+    { key: 'muestra',         label: 'Muestras y degustaciones' },
+    { key: 'consumo_interno', label: 'Consumo de personal' },
     { key: 'donacion',        label: 'Donación' },
     { key: 'otro',            label: 'Otro motivo' },
 ];

@@ -109,7 +109,7 @@ ok(libro.some(a => a.categoria === 'merma' && a.cantidad === -1 && M.r2(a.valorC
 // 3) Picking de 7 ud para un PDV; luego uno que pide más de lo que hay.
 const f250 = filasFr.find(f => f.unit !== 'kg');
 await aplicar(() => registrarPicking(merch, { itemId: f250.id, cantidad: 7, fecha: HOY, hora: '10:00', actor: { id: 'r1', nombre: 'Ana' }, pdv: { id: 'pdv1', nombre: 'Páramo La Urbina' } }));
-ok(libro.some(a => a.tipo === 'picking' && a.cantidad === -7 && a.ref?.posId === 'pdv1'), 'picking = salida de Frimaca, con el punto de venta');
+ok(libro.some(a => a.tipo === 'picking' && a.ubicacion === 'frimaca' && a.cantidad === -7 && a.ref?.posId === 'pdv1') && libro.some(a => a.tipo === 'picking' && a.ubicacion === 'ruta' && a.cantidad === 7), 'picking: sale de ACC a la ruta, con el punto de venta');
 let rechazo = null;
 try { await registrarPicking(merch, { itemId: f250.id, cantidad: 50, fecha: HOY, hora: '10:05', actor: { id: 'r1' } }); } catch (e) { rechazo = e.message; }
 ok(!!rechazo && /Solo quedan 12/.test(rechazo), `picking mayor al stock se rechaza: "${rechazo}"`);
@@ -131,8 +131,8 @@ const actuales = Object.entries(await foto()).map(([k, d]) => {
 const rep = M.armarReporte({ fecha: HOY, asientos: libro, partidasHoy: actuales });
 ok(rep.controles[1].estado === 'aprobado', `cuadre contra lotes: libro ${rep.controles[1].detalle.totalLibro} = partidas ${rep.controles[1].detalle.totalPartidas}`);
 ok(rep.controles[0].estado === 'aprobado', 'identidad del día: inicial + movimientos = final');
-const salidas = M.r2(-(5 * 2.1817 + 1 * 2.1817 + 7 * 2.1817 + 6 * 2.4074 + 1 * 8.4268));
-ok(Math.abs((rep.totales.valorCosto - valorInicial) - salidas) <= 0.011, `variación del día = solo lo que salió (${salidas}); los traslados no cambian el valor`);
+const salidas = M.r2(-(5 * 2.1817 + 1 * 2.1817 + 6 * 2.4074 + 1 * 8.4268));
+ok(Math.abs((rep.totales.valorCosto - valorInicial) - salidas) <= 0.011, `variación del día = solo lo que salió (${salidas}); los traslados y el picking no cambian el valor`);
 
 // ── Reglas: el libro no lo escribe el teléfono ────────────────────────────
 let negado = false;

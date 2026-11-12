@@ -26,11 +26,14 @@ const EMPRESA = 'lacteoca';
 const fx = (n, d = 2) => (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: d, maximumFractionDigits: d });
 const usd = (n) => `$${fx(n)}`;
 const cant = (n, u) => `${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: u === 'kg' ? 2 : 0 })} ${u === 'kg' ? 'kg' : 'ud'}`;
-const UBIC = { planta: 'Planta (Barinas)', transito: 'En camino a Caracas', frimaca: 'Frimaca (Caracas)' };
+const UBIC = {
+    planta: 'Planta (Barinas)', caracas: 'Bodega Caracas',
+    transito: 'Caracas · en camino', frimaca: 'Caracas · en ACC', ruta: 'Caracas · ruta (picking sin factura)',
+};
 const ORIGEN = { produccion: 'De su producción', calculado: 'Calculado desde su producción', manual: 'Ingresado a mano' };
 const CAT_LABEL = {
     apertura: 'Apertura', produccion: 'Producción', transformacion: 'Envasado', devolucion: 'Devoluciones',
-    traslado: 'Traslados', venta: 'Ventas y despachos', reposicion: 'Reposiciones', muestra: 'Muestras',
+    traslado: 'Traslados', venta: 'Ventas y despachos', reposicion: 'Reposiciones', muestra: 'Muestras', consumo_interno: 'Consumo interno',
     merma: 'Mermas', ajuste: 'Ajustes', revaluacion: 'Revaluación', sin_tipo: 'Sin tipo',
 };
 const llamar = (accion, data = {}) => httpsCallable(functions, 'inventarioPerpetuo')({ accion, ...data }).then(r => r.data);
@@ -323,14 +326,27 @@ const ESTADO = {
 function VistaReporte({ rep }) {
     const [abierto, setAbierto] = useState(null);
     const ub = rep.totales?.porUbicacion || {};
+    // Reportes anteriores a la bodega Caracas no traen porBodega: se arma aquí.
+    const bod = rep.totales?.porBodega || {
+        planta: ub.planta,
+        caracas: ['transito', 'frimaca', 'ruta'].reduce((t, u) => ({ valorCosto: (t.valorCosto || 0) + (ub[u]?.valorCosto || 0), kg: (t.kg || 0) + (ub[u]?.kg || 0), valorPlanta: (t.valorPlanta || 0) + (ub[u]?.valorPlanta || 0) }), {}),
+    };
+    const det = (u) => ub[u] && (Math.abs(ub[u].valorCosto) >= 0.005 || Math.abs(ub[u].kg) >= 0.005);
     return (
         <div className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Tile label="Total a costo" valor={usd(rep.totales?.valorCosto)} sub={`A precio planta ${usd(rep.totales?.valorPlanta)}`} fuerte />
-                {['planta', 'transito', 'frimaca'].map(u => (
-                    <Tile key={u} label={UBIC[u]} valor={usd(ub[u]?.valorCosto)} sub={`${fx(ub[u]?.kg)} kg · planta ${usd(ub[u]?.valorPlanta)}`} />
-                ))}
+                <Tile label={UBIC.planta} valor={usd(bod.planta?.valorCosto)} sub={`${fx(bod.planta?.kg)} kg · planta ${usd(bod.planta?.valorPlanta)}`} />
+                <Tile label={UBIC.caracas} valor={usd(bod.caracas?.valorCosto)}
+                    sub={['transito', 'frimaca', 'ruta'].filter(det).map(u => `${{ transito: 'en camino', frimaca: 'en ACC', ruta: 'ruta' }[u]} ${usd(ub[u].valorCosto)}`).join(' · ') || `${fx(bod.caracas?.kg)} kg`} />
             </div>
+            {(rep.ruta || []).length > 0 && (
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3 py-2 text-xs text-slate-300">
+                    <p className="text-slate-100 font-medium">Ruta de Caracas</p>
+                    <p className="text-slate-400 mb-1">Lo que salió de ACC por picking menos lo facturado. Positivo: se entregó y falta la factura. Negativo: se facturó y falta declarar el picking.</p>
+                    {rep.ruta.map((r, i) => <p key={i}>{r.productoNombre} <span className="text-slate-500">{r.presentacion}</span>: {r.cantidad > 0 ? '+' : ''}{cant(r.cantidad, r.unidad)} · {usd(r.valorCosto)}</p>)}
+                </div>
+            )}
 
             <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Controles del {rep.fecha}</p>
