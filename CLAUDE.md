@@ -3180,6 +3180,16 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - **Simulación con los datos reales (12-nov):** 18 facturas desde el 16-oct; 16 de Caracas (301 bolsas de 250 g) se descuentan completas; INV-001802 (Linares, Barquisimeto) e INV-001814 (ALPIN) quedan fuera por su despacho. FEFO saca las 144 del lote LCO20260715-H (vence 25-nov), las 12 sin lote y 145 del LCO20260905-H, a costo **$1.102,05**. El cierre del 31/10 pasa de 4.772,56 a **3.670,51**. Quedan en Caracas 71 del LCO20260905-H y 180 del LCO20260912-H. Las 12 sin lote salen como «salida sin lote» (control 4 del 22-oct).
 - Pruebas: `tests/inventarioFacturas.e2e.test.mjs` (25 en verde, emulador + Zoho falso: idempotencia, FEFO, stock insuficiente y luego resuelto, anulada, reposición, sin mapear, otra ciudad, despacho y venta de planta excluidos, migración del número, nota de crédito una sola vez, simulación sin escribir, controles 7 y 8, inactivo) y la regla de `kroma_inv_facturas` en la e2e del libro.
 
+**Sección 4 — reposiciones (12-nov):**
+- La categoría `reposicion` del libro se alimenta de tres fuentes, y las tres salen del inventario como reposición (cuenta «Reposiciones, mermas y producto vencido»), no como venta:
+  1. **Planta** (`kroma_ventas_planta` `tipo: reposicion`, salida de cava): ya entraba así (`_mov.tipo reposicion`).
+  2. **Facturas de reposición** (sección 3): factura en cero, marcada `esReposicion` en GK o cruzada con una nota de crédito de reposición.
+  3. **GK** (`devoluciones` con `resolucion: 'reposicion'` y `unidadesRepuestas > 0`, desde el 16-oct): lo que el mercaderista repuso sale de la bodega Caracas por FEFO, como 250 g, con la fecha de la devolución (`reposicionDeDevolucion` en `inventarioFacturasReglas.js`; asientos `tipo reposicion_gk`, `ref.devolucionId/posId/posName/visitaReportId`). Lo retirado del anaquel no vuelve a la bodega (ya había salido con su factura).
+- Lo procesa el mismo proceso de las facturas (mismo `facturas.activo`, misma corrida). Estado en `kroma_inv_facturas/dev_{id}`; lo que no alcanza queda pendiente con aviso y entra al control 7. Si en GK deja de ser reposición, se revierte. Si la reposición se documentó con una factura (campo `facturaReposicion` en la devolución), la descuenta la factura y no la devolución.
+- Reposiciones de GK desde el 16-oct: Los Pomelos (20-oct, 12 ud) y Central Madeirense Manzanares (26-oct, 12 ud).
+- **Primera corrida (12-nov) falló con 401**: el token de Zoho no tiene `ZohoBooks.creditnotes.READ` (las facturas y los diarios sí funcionan). Ahora, sin permiso para las notas de crédito, las facturas se procesan igual y queda el aviso en `facturas.notasEstado` (y en la pestaña Facturas). Cualquier otra falla de Zoho dice qué llamada falló.
+- Prueba: 5 casos nuevos en `tests/inventarioFacturas.e2e.test.mjs` (30 en verde).
+
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
 
 `functions/handlers/inventarioZoho.js` + pestaña **Zoho** en Kroma → Inventario valorado. Un asiento por día con la VARIACIÓN del valor a costo del producto terminado:

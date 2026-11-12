@@ -726,6 +726,7 @@ const EST_FAC = {
     descontada: ['Descontada', 'text-emerald-300'], pendiente: ['Pendiente: falta existencia', 'text-amber-300'],
     sin_mapear: ['Artículo sin presentación', 'text-amber-300'], revisar: ['Por revisar', 'text-amber-300'],
     excluida: ['No se descuenta', 'text-slate-400'], anulada: ['Anulada', 'text-slate-400'], ignorada: ['Borrador', 'text-slate-500'],
+    no_aplica: ['No es reposición', 'text-slate-500'],
 };
 
 function FacturasZoho({ puedeOperar, perfil }) {
@@ -781,6 +782,7 @@ function FacturasZoho({ puedeOperar, perfil }) {
                     No se descuentan las ventas de planta ni los despachos a otra ciudad. Lo que no alcanza queda pendiente y a la vista.
                 </p>
                 {f.ultimaCorrida && <p className="text-[11px] text-slate-500 mt-1">Última corrida: {new Date(f.ultimaCorrida).toLocaleString('es-VE')}</p>}
+                {f.notasEstado && f.notasEstado.autorizado === false && <p className="text-[11px] text-amber-300 mt-1">{f.notasEstado.motivo}</p>}
                 {f.ultimoError && <p className="text-[11px] text-red-300 mt-1">Último error ({f.ultimoErrorAt ? new Date(f.ultimoErrorAt).toLocaleString('es-VE') : ''}): {f.ultimoError}</p>}
                 <div className="flex flex-wrap gap-2 mt-3">
                     <Boton onClick={simular} ocupado={ocupado === 'sim'}>Simular</Boton>
@@ -804,9 +806,10 @@ function FacturasZoho({ puedeOperar, perfil }) {
                     <p className="text-slate-300">
                         {sim.resumen.facturas} facturas · {sim.resumen.descontadas} se descuentan · {sim.resumen.pendientes} pendientes · {sim.resumen.sinMapear} sin presentación · {sim.resumen.revisar} por revisar · {sim.resumen.excluidas} no se descuentan.
                         Ventas {fx(-sim.resumen.ventasUnidades, 0)} ud a costo {usd(-sim.resumen.ventasCosto)}; reposiciones {fx(-sim.resumen.reposicionUnidades, 0)} ud a costo {usd(-sim.resumen.reposicionCosto)}.
+                        {sim.resumen.reposicionesGK > 0 && <> Reposiciones declaradas en GK: {sim.resumen.reposicionesGK} ({fx(-sim.resumen.reposicionesGKUnidades, 0)} ud a costo {usd(-sim.resumen.reposicionesGKCosto)}).</>}
                     </p>
                     {(sim.migrados || []).length > 0 && <p className="text-slate-400">Despachos enlazados por el número escrito en las notas: {sim.migrados.map(m => m.facturaNumero).join(', ')}.</p>}
-                    <ListaFacturas filas={sim.facturas.map(x => ({ ...x, movs: x.movimientos }))} />
+                    <ListaFacturas filas={[...sim.facturas, ...(sim.reposiciones || [])].map(x => ({ ...x, movs: x.movimientos }))} />
                 </div>
             )}
 
