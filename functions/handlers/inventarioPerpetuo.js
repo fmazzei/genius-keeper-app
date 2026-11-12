@@ -466,7 +466,7 @@ function controlLotes(lotes, fecha, tolerancia = 0.15) {
 }
 
 /** Arma el reporte de un día con todo lo anterior. */
-function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {}, controlZoho = null }) {
+function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {}, controlZoho = null, facturas = null, diasVencer = 15 }) {
     const hasta = asientos.filter(a => a.fecha <= fecha);
     const sal = saldos(hasta, fecha, precioKg);
     const porUbic = {};
@@ -509,6 +509,7 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
     const sinCosto = delDia.filter(a => a.sinCosto && !casiCero(a.cantidad));
     const sinLote = delDia.filter(a => !a.lote && !casiCero(a.cantidad));
     const conteos = delDia.filter(a => a.tipo === "conteo");
+    const porVencer = lotesPorVencer(hasta, fecha, diasVencer);
     const lineaAsiento = (a) => ({ productoNombre: a.productoNombre, presentacion: a.presentacion, lote: a.lote, ubicacion: a.ubicacion,
         cantidad: a.cantidad, unidad: a.unidad, valorCosto: r2(a.valorCosto), tipo: a.tipo, motivo: a.motivo || null });
 
@@ -535,6 +536,16 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
         // Lo escribe la sincronización con Zoho (inventarioZoho.js) después de enviar el asiento.
         controlZoho ? { n: 6, nombre: "Control contra Zoho", ...controlZoho }
             : { n: 6, nombre: "Control contra Zoho", estado: "no_aplica", nota: "Todavía no se sincronizó este día con Zoho." },
+        // Facturas de Zoho que no se pudieron descontar completas: quedan a la
+        // vista hasta que se resuelvan (falta stock, artículo sin presentación
+        // o factura a otra ciudad sin despacho enlazado).
+        facturas == null
+            ? { n: 7, nombre: "Facturas de Zoho", estado: "no_aplica", nota: "El descuento con facturas no está activado." }
+            : { n: 7, nombre: "Facturas de Zoho", estado: facturas.length ? "diferencia" : "aprobado",
+                nota: facturas.length ? `${facturas.length} factura(s) sin descontar completas.` : null, detalle: { pendientes: facturas } },
+        { n: 8, nombre: `Lotes por vencer (${diasVencer} días o menos)`, estado: porVencer.length ? "aviso" : "aprobado",
+            nota: porVencer.length ? "Hay que empujar estos lotes en las próximas ventas o darlos de baja." : null,
+            detalle: { lotes: porVencer } },
     ];
     return {
         fecha,
@@ -555,7 +566,9 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
             return [...m.values()].filter(q => q > 0.0005).length;
         })(),
         controles,
+        porVencer,
         conDiferencias: controles.filter(c => c.estado === "diferencia").map(c => c.n),
+        conAvisos: controles.filter(c => c.estado === "aviso").map(c => c.n),
     };
 }
 
@@ -577,14 +590,14 @@ function asignarFIFO(lotes, cantidad) {
  * Saldo de la bodega Caracas por LOTE y presentación hasta `fecha` inclusive
  * (tránsito + ACC + ruta). Es de donde salen las ventas por factura. Puro.
  */
-function lotesCaracas(asientos, fecha) {
+function lotesCaracas(asientos, fecha, bodega = "caracas") {
     const m = new Map();
     for (const a of asientos) {
         if (fecha && a.fecha > fecha) continue;
-        if (bodegaDe(a.ubicacion) !== "caracas") continue;
+        if (bodegaDe(a.ubicacion) !== bodega) continue;
         const k = `${a.logId || a.lote || "sin-lote"}|${clavePres(a)}`;
         const x = m.get(k) || {
-            clave: k, productoId: a.productoId, productoNombre: a.productoNombre, catalogId: a.unidad === "kg" ? null : (a.catalogId || null),
+            clave: k, bodega, productoId: a.productoId, productoNombre: a.productoNombre, catalogId: a.unidad === "kg" ? null : (a.catalogId || null),
             presentacion: etiquetaPres(a), unidad: a.unidad, pesoPorUnidad: a.pesoPorUnidad || null,
             logId: a.logId || null, lote: a.lote || "", fechaVencimiento: a.fechaVencimiento || null,
             cantidad: 0, kg: 0, valorCosto: 0, porUbicacion: {},
@@ -617,6 +630,24 @@ function asignarFEFO(lotes, cantidad) {
         resta = r6(resta - toma);
     }
     return { asignado: out, faltante: r6(Math.max(0, resta)) };
+}
+
+/** Días entre dos fechas YYYY-MM-DD (b − a). */
+const diasEntre = (a, b) => Math.round((Date.UTC(...b.split("-").map((x, i) => i === 1 ? x - 1 : +x)) - Date.UTC(...a.split("-").map((x, i) => i === 1 ? x - 1 : +x))) / 86400000);
+
+/**
+ * Lotes con existencia que vencen en `dias` días o menos (o ya vencieron), en
+ * las dos bodegas. Es un AVISO, no un error: hay que empujar esos lotes en las
+ * próximas ventas o darlos de baja. Puro.
+ */
+function lotesPorVencer(asientos, fecha, dias = 15) {
+    return ["planta", "caracas"].flatMap(b => lotesCaracas(asientos, fecha, b))
+        .filter(l => l.cantidad > 1e-6 && /^\d{4}-\d{2}-\d{2}$/.test(l.fechaVencimiento || ""))
+        .map(l => ({ ...l, dias: diasEntre(fecha, l.fechaVencimiento) }))
+        .filter(l => l.dias <= dias)
+        .sort((a, b) => a.dias - b.dias)
+        .map(l => ({ bodega: l.bodega, productoNombre: l.productoNombre, presentacion: l.presentacion, lote: l.lote || "",
+            fechaVencimiento: l.fechaVencimiento, dias: l.dias, cantidad: r6(l.cantidad), unidad: l.unidad, valorCosto: r2(l.valorCosto) }));
 }
 
 const claveRutaProducto = (a) => `${a.catalogId || a.productoId || ""}|${a.unidad}`;
@@ -891,7 +922,14 @@ async function generarReporte(fecha) {
         preciosPlanta(asientos.map(a => a.productoId)),
     ]);
     const z = await db().doc(`kroma_inv_zoho/${fecha}`).get().catch(() => null);
-    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg, controlZoho: z?.exists ? (z.data().control || null) : null });
+    const cfg = await leerConfig();
+    let facturas = null;
+    if (cfg.facturas?.activo) {
+        try { facturas = await require("./inventarioFacturas").pendientesHasta(fecha); }
+        catch (e) { console.error("pendientesHasta", e); facturas = [{ numero: "—", estado: "error", motivo: `No se pudo leer el estado de las facturas: ${e.message}` }]; }
+    }
+    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg, facturas, diasVencer: Number(cfg.diasAvisoVencimiento) || 15,
+        controlZoho: z?.exists ? (z.data().control || null) : null });
     await db().doc(`${COL_REPORTES}/${fecha}`).set({
         ...JSON.parse(JSON.stringify(rep)), empresaId: EMPRESA,
         generadoAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -927,12 +965,40 @@ exports.inventarioCierreDiario = onSchedule({
     schedule: "55 23 * * *", timeZone: TZ, region: "us-central1", timeoutSeconds: 540, memory: "1GiB", retryCount: 0,
 }, async () => {
     try { await repararAperturaTransito(); } catch (e) { console.error("repararAperturaTransito", e); }
+    // Facturas de Zoho del día (solo si está activado): descuentan la bodega Caracas.
+    try { await require("./inventarioFacturas").procesarFacturas({ quien: "cierre diario" }); } catch (e) {
+        console.error("inventarioFacturas", e);
+        await db().doc(DOC_CONFIG).set({ facturas: { ultimoError: String(e?.message || e).slice(0, 300), ultimoErrorAt: new Date().toISOString() } }, { merge: true }).catch(() => {});
+    }
     await recalcularPendientes();
+    try { await avisarLotesPorVencer(); } catch (e) { console.error("avisarLotesPorVencer", e); }
     // Asiento del día a Zoho (o su simulación). Un fallo queda registrado por día.
     try { await require("./inventarioZoho").sincronizarPendientes(); } catch (e) { console.error("inventarioZoho", e); }
     // Segundo testigo del latido del vigilante (otro programador independiente).
     try { await require("./vigilante").revisarLatidoVigilante(); } catch (e) { console.error("latido vigilante", e); }
 });
+
+/** Aviso en Kroma (kroma_alerts) por cada lote que vence pronto; se cierra solo cuando ya no hay existencia. */
+async function avisarLotesPorVencer() {
+    const hoy = fechaCaracas();
+    const cfg = await leerConfig();
+    const lotes = lotesPorVencer(await leerAsientos(hoy), hoy, Number(cfg.diasAvisoVencimiento) || 15);
+    const vivos = new Set();
+    for (const l of lotes) {
+        const id = `vence_${l.bodega}_${(l.lote || "sin-lote").replace(/[^\w-]/g, "_")}_${l.fechaVencimiento}_${l.unidad}`;
+        vivos.add(id);
+        const ref = db().doc(`kroma_alerts/${id}`);
+        const s = await ref.get();
+        const cuando = l.dias < 0 ? `venció hace ${-l.dias} día(s)` : (l.dias === 0 ? "vence hoy" : `vence en ${l.dias} día(s)`);
+        await ref.set({ tipo: "lote_por_vencer", empresaId: EMPRESA, active: true,
+            mensaje: `${l.bodega === "caracas" ? "Caracas" : "Planta"}: ${fmt(l.cantidad)} ${l.unidad} de ${l.presentacion} del lote ${l.lote || "sin lote"} ${cuando} (${l.fechaVencimiento}). Empújalo en las próximas ventas o dalo de baja.`,
+            ...(s.exists ? {} : { leidaPor: [], createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+            actualizadoAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    }
+    const abiertas = await db().collection("kroma_alerts").where("tipo", "==", "lote_por_vencer").where("active", "==", true).get();
+    for (const d of abiertas.docs) if (!vivos.has(d.id)) await d.ref.set({ active: false, resueltaAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return lotes.length;
+}
 
 // ── Acciones de la pantalla ────────────────────────────────────────────────
 
@@ -1089,6 +1155,40 @@ async function contar(data, usuario) {
     return { ajustes: res.filter(r => !casiCero(r.diferencia)), contadas: res.length };
 }
 
+// Máster: la cuenta de máster de GK o la cuenta compartida de planta con el
+// perfil Master (como la apertura). El perfil es atribución, no seguridad.
+function exigirMaster(m, usuario) {
+    const ok = ["master", "kroma_owner", "gerencia"].includes(m.role) || (m.role === "produccion" && usuario.perfilRol === "master");
+    if (!ok) throw new HttpsError("permission-denied", "Solo el máster puede hacer esto.");
+}
+
+/** Activar/desactivar el descuento con facturas, la fecha de inicio y la tabla de artículos. */
+async function guardarConfigFacturas(data, usuario) {
+    const cambios = {};
+    if (typeof data.activo === "boolean") cambios.activo = data.activo;
+    if (data.desde != null) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(data.desde)) throw new HttpsError("invalid-argument", "Fecha de inicio inválida.");
+        cambios.desde = data.desde;
+    }
+    if (data.mapeo != null) {
+        if (typeof data.mapeo !== "object") throw new HttpsError("invalid-argument", "Tabla de artículos inválida.");
+        const limpio = {};
+        for (const [id, v] of Object.entries(data.mapeo)) {
+            if (!/^\d{6,25}$/.test(id)) throw new HttpsError("invalid-argument", `Artículo de Zoho inválido: ${id}`);
+            if (v?.ignorar) { limpio[id] = { ignorar: true, nombre: String(v.nombre || "").slice(0, 80) }; continue; }
+            const factor = Number(v?.factor) || 1;
+            if (!v?.catalogId || !(factor > 0)) throw new HttpsError("invalid-argument", `El artículo ${id} necesita presentación y factor.`);
+            limpio[id] = { catalogId: String(v.catalogId), factor, nombre: String(v.nombre || "").slice(0, 80) };
+        }
+        cambios.mapeo = limpio;
+    }
+    cambios.actualizadoPor = { nombre: usuario.perfilNombre || usuario.cuenta || null, at: new Date().toISOString() };
+    // Ruta con punto: la tabla de artículos se REEMPLAZA entera (con merge, un
+    // artículo quitado seguiría ahí).
+    await db().doc(DOC_CONFIG).update(Object.fromEntries(Object.entries(cambios).map(([k, v]) => [`facturas.${k}`, v])));
+    return { ok: true, facturas: (await leerConfig()).facturas };
+}
+
 exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540, memory: "1GiB" }, async (request) => {
     const m = await exigirAcceso(request);
     const { accion } = request.data || {};
@@ -1118,6 +1218,22 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
             const desde = [request.data?.desde, desdeRep].filter(Boolean).sort()[0] || null;
             return { ...(await recalcularPendientes(desde)), apertura: rep };
         }
+        if (accion === "facturas") {
+            // Simular: cualquiera que opere el inventario. Ejecutar: solo el máster.
+            const simular = request.data?.modo !== "ejecutar";
+            if (!simular) exigirMaster(m, usuario);
+            return await require("./inventarioFacturas").procesarFacturas({ simular, quien: usuario.perfilNombre || usuario.cuenta });
+        }
+        if (accion === "facturasEstado") {
+            const R = require("./inventarioFacturasReglas");
+            const f = (await leerConfig()).facturas || {};
+            return JSON.parse(JSON.stringify({ facturas: { ...f, desde: f.desde || R.DESDE_INICIAL }, mapeo: R.mapeoEfectivo(f),
+                presentaciones: [{ catalogId: R.CAT_250, nombre: "250 g" }, { catalogId: R.CAT_1KG, nombre: "1 kg" }] }));
+        }
+        if (accion === "facturasConfig") {
+            exigirMaster(m, usuario);
+            return await guardarConfigFacturas(request.data || {}, usuario);
+        }
         throw new HttpsError("invalid-argument", "Acción desconocida.");
     } catch (e) {
         if (e instanceof HttpsError) throw e;
@@ -1131,5 +1247,5 @@ exports._internos = {
     armarReporte, asignarFIFO, asignarFEFO, lotesCaracas, netearConRuta, categoria, subcategoria, bodegaDe, docRuta,
     fechaCaracas, diaAnterior, r2, r6, CATEGORIAS,
     procesarCambioPartida, generarReporte, abrir, contar, escribirAsientos,
-    pesoDePresentacion, completarLineaDespacho, repararAperturaTransito,
+    pesoDePresentacion, completarLineaDespacho, repararAperturaTransito, lotesPorVencer, diasEntre, avisarLotesPorVencer,
 };

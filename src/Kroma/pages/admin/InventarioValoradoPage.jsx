@@ -17,7 +17,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/Firebase/config.js';
-import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send } from 'lucide-react';
+import { Scale, Loader, RefreshCw, CheckCircle, AlertTriangle, MinusCircle, ClipboardCheck, BookText, CalendarDays, Lock, Send, Receipt, Clock } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
 import CampoFecha, { hoyInput } from '../../Components/CampoFecha.jsx';
 import { indexById, indexPackagingAssignments, packagingCostForItem, costoBasePorKgTeorico } from '@/Kroma/costeoLote.js';
@@ -79,7 +79,7 @@ export default function InventarioValoradoPage() {
                 <>
                     <p className="text-xs text-slate-500 mb-3">Abierto desde el {config.inicio}. El libro lo escribe el servidor y no se edita desde la app.</p>
                     <div className="flex gap-1.5 mb-4 overflow-x-auto">
-                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
+                        {[['hoy', 'Hoy', Scale], ['reporte', 'Reporte diario', CalendarDays], ['libro', 'Libro valorado', BookText], ['conteo', 'Conteo físico', ClipboardCheck], ['facturas', 'Facturas', Receipt], ['zoho', 'Zoho', Send]].map(([k, l, I]) => (
                             <button key={k} onClick={() => setTab(k)}
                                 className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border ${tab === k ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-200' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                                 <I size={14} />{l}
@@ -90,6 +90,7 @@ export default function InventarioValoradoPage() {
                     {tab === 'reporte' && <Reporte />}
                     {tab === 'libro' && <Libro />}
                     {tab === 'conteo' && <Conteo puedeOperar={puedeOperar} perfil={perfil} />}
+                    {tab === 'facturas' && <FacturasZoho puedeOperar={puedeOperar} perfil={perfil} />}
                     {tab === 'zoho' && <ZohoAsientos puedeOperar={puedeOperar} perfil={perfil} />}
                 </>
             )}
@@ -320,6 +321,7 @@ function Reporte({ fechaFija = false }) {
 const ESTADO = {
     aprobado:   { I: CheckCircle,   c: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30', t: 'Aprobado' },
     diferencia: { I: AlertTriangle, c: 'text-amber-300 bg-amber-500/10 border-amber-500/30',       t: 'Con diferencia' },
+    aviso:      { I: Clock,         c: 'text-sky-300 bg-sky-500/10 border-sky-500/30',              t: 'Aviso' },
     no_aplica:  { I: MinusCircle,   c: 'text-slate-400 bg-slate-800 border-slate-700',              t: 'No aplica' },
 };
 
@@ -444,6 +446,18 @@ function DetalleControl({ c }) {
         const lista = (t, xs) => xs?.length ? <div><p className="text-slate-100 mt-1">{t}</p>{xs.map((x, i) => <p key={i}>{x.productoNombre} {x.presentacion || ''} · lote {x.lote || '—'} · {UBIC[x.ubicacion] || x.ubicacion} · {fx(x.cantidad, 2)} {x.unidad}{x.valorCosto != null ? ` · ${usd(x.valorCosto)}` : ''}{x.motivo ? ` · ${x.motivo}` : ''}</p>)}</div> : null;
         const vacio = !d?.negativos?.length && !d?.sinTipo?.length && !d?.sinCosto?.length && !d?.sinLote?.length;
         return vacio ? <p>Sin casos.</p> : <>{lista('Stock negativo', d.negativos)}{lista('Movimientos sin tipo', d.sinTipo)}{lista('Movimientos sin costo', d.sinCosto)}{lista('Movimientos sin lote', d.sinLote)}</>;
+    }
+    if (c.n === 7) {
+        const ps = d?.pendientes || [];
+        if (!ps.length) return <p>{c.nota || 'Todas las facturas del período quedaron descontadas.'}</p>;
+        return <div className="space-y-1">{ps.map((x, i) => <p key={i} className="text-amber-200">{x.numero} · {x.fecha} · {x.cliente}: {x.motivo}</p>)}</div>;
+    }
+    if (c.n === 8) {
+        const ls = d?.lotes || [];
+        if (!ls.length) return <p>Ningún lote vence en los próximos días.</p>;
+        return <div className="space-y-1">{c.nota && <p>{c.nota}</p>}{ls.map((l, i) => (
+            <p key={i} className={l.dias < 0 ? 'text-red-300' : 'text-sky-200'}>{l.bodega === 'caracas' ? 'Caracas' : 'Planta'} · {l.presentacion} · lote {l.lote || 'sin lote'}: {cant(l.cantidad, l.unidad)} · {usd(l.valorCosto)} · {l.dias < 0 ? `venció hace ${-l.dias} d` : l.dias === 0 ? 'vence hoy' : `vence en ${l.dias} d`} ({l.fechaVencimiento})</p>
+        ))}</div>;
     }
     if (c.n === 5) {
         if (!d?.ajustes?.length) return <p>{c.nota || 'Sin diferencias.'}</p>;
@@ -702,6 +716,158 @@ function ZohoAsientos({ puedeOperar, perfil }) {
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+// ── Facturas de Zoho → salida de la bodega Caracas ─────────────────────────
+
+const EST_FAC = {
+    descontada: ['Descontada', 'text-emerald-300'], pendiente: ['Pendiente: falta existencia', 'text-amber-300'],
+    sin_mapear: ['Artículo sin presentación', 'text-amber-300'], revisar: ['Por revisar', 'text-amber-300'],
+    excluida: ['No se descuenta', 'text-slate-400'], anulada: ['Anulada', 'text-slate-400'], ignorada: ['Borrador', 'text-slate-500'],
+};
+
+function FacturasZoho({ puedeOperar, perfil }) {
+    const [est, setEst] = useState(null);
+    const [lista, setLista] = useState([]);
+    const [sim, setSim] = useState(null);
+    const [mapa, setMapa] = useState(null);
+    const [nuevo, setNuevo] = useState({ id: '', catalogId: '', factor: '1' });
+    const [ocupado, setOcupado] = useState('');
+    const [error, setError] = useState('');
+    const [aviso, setAviso] = useState('');
+
+    const cargar = async () => {
+        try {
+            const r = await llamar('facturasEstado', { perfil });
+            setEst(r); setMapa(r.mapeo || {});
+            const s = await getDocs(query(collection(db, 'kroma_inv_facturas'), where('empresaId', '==', EMPRESA)));
+            setLista(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.tipo !== 'nota_credito')
+                .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.numero).localeCompare(String(a.numero))));
+        } catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({ facturas: {} }); }
+    };
+    useEffect(() => { cargar(); }, []);
+    const hacer = async (que, fn) => {
+        setOcupado(que); setError(''); setAviso('');
+        try { await fn(); await cargar(); } catch (e) { setError(e?.message || 'No se pudo completar.'); }
+        finally { setOcupado(''); }
+    };
+    const simular = () => hacer('sim', async () => setSim(await llamar('facturas', { modo: 'simular', perfil })));
+    const ejecutar = () => {
+        if (!window.confirm('Se descuentan del inventario las facturas mostradas. ¿Seguir?')) return;
+        hacer('ejec', async () => { const r = await llamar('facturas', { modo: 'ejecutar', perfil }); setSim(null); setAviso(r.motivo || `Listo: ${r.resumen?.descontadas ?? 0} descontadas, ${r.resumen?.pendientes ?? 0} pendientes.`); });
+    };
+    const activar = (activo) => {
+        if (activo && !window.confirm('Desde ahora el cierre de cada noche descuenta las facturas nuevas de Zoho. ¿Activar?')) return;
+        hacer('act', async () => { await llamar('facturasConfig', { activo, perfil }); });
+    };
+    const guardarMapa = (m) => hacer('mapa', async () => { await llamar('facturasConfig', { mapeo: m, perfil }); setAviso('Tabla de artículos guardada.'); });
+
+    if (!est) return <Cargando />;
+    const f = est.facturas || {};
+    const pres = est.presentaciones || [];
+    const nombrePres = (id) => pres.find(p => p.catalogId === id)?.nombre || id;
+    const abiertas = lista.filter(x => ['pendiente', 'sin_mapear', 'revisar'].includes(x.estado));
+
+    return (
+        <div className="space-y-4">
+            <div className={`rounded-2xl border p-4 ${f.activo ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-sky-500/40 bg-sky-500/5'}`}>
+                <p className={`text-sm font-semibold ${f.activo ? 'text-emerald-200' : 'text-sky-200'}`}>
+                    {f.activo ? 'Activo: cada noche se descuentan las facturas nuevas' : 'Sin activar: simula para ver qué haría'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                    Facturas de Zoho desde el {f.desde}. Cada una sale de la bodega Caracas (en camino, ACC y ruta), primero el lote que vence antes.
+                    No se descuentan las ventas de planta ni los despachos a otra ciudad. Lo que no alcanza queda pendiente y a la vista.
+                </p>
+                {f.ultimaCorrida && <p className="text-[11px] text-slate-500 mt-1">Última corrida: {new Date(f.ultimaCorrida).toLocaleString('es-VE')}</p>}
+                {f.ultimoError && <p className="text-[11px] text-red-300 mt-1">Último error ({f.ultimoErrorAt ? new Date(f.ultimoErrorAt).toLocaleString('es-VE') : ''}): {f.ultimoError}</p>}
+                <div className="flex flex-wrap gap-2 mt-3">
+                    <Boton onClick={simular} ocupado={ocupado === 'sim'}>Simular</Boton>
+                    {puedeOperar && f.activo && <Boton tono="verde" onClick={ejecutar} ocupado={ocupado === 'ejec'}>Procesar ahora</Boton>}
+                    {puedeOperar && <Boton tono={f.activo ? 'gris' : 'verde'} onClick={() => activar(!f.activo)} ocupado={ocupado === 'act'}>{f.activo ? 'Desactivar' : 'Activar'}</Boton>}
+                </div>
+            </div>
+            {error && <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">{error}</p>}
+            {aviso && <p className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">{aviso}</p>}
+
+            {abiertas.length > 0 && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+                    <p className="text-amber-200 font-semibold mb-1">{abiertas.length} factura(s) sin descontar completas</p>
+                    {abiertas.map(x => <p key={x.id} className="text-amber-100">{x.numero} · {x.fecha} · {x.cliente}: {x.motivo}</p>)}
+                </div>
+            )}
+
+            {sim && (
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs space-y-2">
+                    <p className="text-slate-100 font-semibold">Simulación (no se escribió nada)</p>
+                    <p className="text-slate-300">
+                        {sim.resumen.facturas} facturas · {sim.resumen.descontadas} se descuentan · {sim.resumen.pendientes} pendientes · {sim.resumen.sinMapear} sin presentación · {sim.resumen.revisar} por revisar · {sim.resumen.excluidas} no se descuentan.
+                        Ventas {fx(-sim.resumen.ventasUnidades, 0)} ud a costo {usd(-sim.resumen.ventasCosto)}; reposiciones {fx(-sim.resumen.reposicionUnidades, 0)} ud a costo {usd(-sim.resumen.reposicionCosto)}.
+                    </p>
+                    {(sim.migrados || []).length > 0 && <p className="text-slate-400">Despachos enlazados por el número escrito en las notas: {sim.migrados.map(m => m.facturaNumero).join(', ')}.</p>}
+                    <ListaFacturas filas={sim.facturas.map(x => ({ ...x, movs: x.movimientos }))} />
+                </div>
+            )}
+
+            {!sim && lista.length > 0 && <ListaFacturas filas={lista} />}
+
+            {mapa && (
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 text-xs">
+                    <p className="text-slate-100 font-semibold mb-1">Artículos de Zoho → presentación de Kroma</p>
+                    <p className="text-slate-400 mb-2">Factor = unidades de la presentación por cada una facturada (12 Pack = 12). Un artículo que no está aquí no se adivina: queda pendiente.</p>
+                    <div className="space-y-1">
+                        {Object.entries(mapa).map(([id, v]) => (
+                            <div key={id} className="flex flex-wrap items-center gap-2 border-t border-slate-700/60 pt-1">
+                                <span className="text-slate-300 min-w-0 flex-1">{v.nombre || id} <span className="text-slate-500">{id}</span></span>
+                                <span className="text-slate-200">{v.ignorar ? 'Se ignora' : `${nombrePres(v.catalogId)} × ${fx(v.factor, 0)}`}</span>
+                                {puedeOperar && <button className="text-red-300" onClick={() => { const m = { ...mapa }; delete m[id]; setMapa(m); guardarMapa(m); }}>Quitar</button>}
+                            </div>
+                        ))}
+                    </div>
+                    {puedeOperar && (
+                        <div className="flex flex-wrap items-center gap-2 mt-3">
+                            <input className="min-w-0 flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-100" placeholder="Id del artículo en Zoho"
+                                value={nuevo.id} onChange={e => setNuevo({ ...nuevo, id: e.target.value.trim() })} inputMode="numeric" />
+                            <select className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-100" value={nuevo.catalogId} onChange={e => setNuevo({ ...nuevo, catalogId: e.target.value })}>
+                                <option value="">Presentación…</option>
+                                {pres.map(p => <option key={p.catalogId} value={p.catalogId}>{p.nombre}</option>)}
+                                <option value="ignorar">Ignorar</option>
+                            </select>
+                            <input className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-100" value={nuevo.factor} inputMode="decimal"
+                                onChange={e => setNuevo({ ...nuevo, factor: e.target.value })} />
+                            <Boton disabled={!/^\d{6,25}$/.test(nuevo.id) || !nuevo.catalogId} ocupado={ocupado === 'mapa'} onClick={() => {
+                                const m = { ...mapa, [nuevo.id]: nuevo.catalogId === 'ignorar' ? { ignorar: true, nombre: '' } : { catalogId: nuevo.catalogId, factor: Number(String(nuevo.factor).replace(',', '.')) || 1, nombre: '' } };
+                                setMapa(m); setNuevo({ id: '', catalogId: '', factor: '1' }); guardarMapa(m);
+                            }}>Agregar</Boton>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ListaFacturas({ filas }) {
+    return (
+        <div className="space-y-1.5">
+            {filas.map(x => {
+                const [t, c] = EST_FAC[x.estado] || [x.estado, 'text-slate-300'];
+                return (
+                    <div key={x.id || x.numero} className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs">
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                            <span className="text-slate-100 font-medium">{x.numero}</span>
+                            <span className="text-slate-400">{x.fecha} · {x.cliente}</span>
+                            {x.categoria === 'reposicion' && <span className="text-sky-300">reposición</span>}
+                            <span className={`ml-auto ${c}`}>{t}</span>
+                        </div>
+                        {x.estado !== 'descontada' && x.motivo && <p className="text-slate-400 mt-0.5">{x.motivo}</p>}
+                        {(x.movs || []).filter(m => m.cantidad).map((m, i) => (
+                            <p key={i} className="text-slate-300">{m.fecha} · lote {m.lote || 'sin lote'} · {m.presentacion}: {m.cantidad > 0 ? '+' : ''}{fx(m.cantidad, 0)} ud × {usd(m.costoUnitario)} = {usd(m.valorCosto)}</p>
+                        ))}
+                    </div>
+                );
+            })}
         </div>
     );
 }

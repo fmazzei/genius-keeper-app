@@ -502,6 +502,53 @@ async function deleteJournal({ accessToken, organizationId, dataCenter, journalI
     return true;
 }
 
+// ── Facturas y notas de crédito desde una fecha (inventario, inventarioFacturas.js) ──
+// Scope: ZohoBooks.invoices.READ (facturas) y ZohoBooks.creditnotes.READ (notas).
+
+/** Todas las facturas con fecha desde `dateStart` (YYYY-MM-DD), con su estado. */
+async function listInvoicesDesde({ accessToken, organizationId, dataCenter, dateStart, maxPages = 20 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/invoices`, {
+            params: { organization_id: organizationId, date_start: dateStart, page, per_page: 200, sort_column: 'date', sort_order: 'A' },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+        });
+        const d = exigirOk(res, 'leer las facturas');
+        const lista = Array.isArray(d.invoices) ? d.invoices : [];
+        all.push(...lista);
+        if (d.page_context?.has_more_page !== true || !lista.length) return all;
+    }
+    throw new Error(`Hay más de ${maxPages * 200} facturas desde ${dateStart}: el listado quedó incompleto.`);
+}
+
+/** Todas las notas de crédito con fecha desde `dateStart`. */
+async function listCreditNotesDesde({ accessToken, organizationId, dataCenter, dateStart, maxPages = 10 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/creditnotes`, {
+            params: { organization_id: organizationId, date_start: dateStart, filter_by: 'Status.All', page, per_page: 200 },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+        });
+        const d = exigirOk(res, 'leer las notas de crédito');
+        const lista = Array.isArray(d.creditnotes) ? d.creditnotes : [];
+        all.push(...lista);
+        if (d.page_context?.has_more_page !== true || !lista.length) return all;
+    }
+    throw new Error(`Hay más de ${maxPages * 200} notas de crédito desde ${dateStart}: el listado quedó incompleto.`);
+}
+
+async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, creditnoteId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/creditnotes/${creditnoteId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 20000,
+    });
+    return exigirOk(res, 'leer la nota de crédito').creditnote || null;
+}
+
 module.exports = {
+    listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail,
     listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal,
     categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
