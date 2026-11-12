@@ -148,6 +148,15 @@ const antesC = correos.length;
 const pr = await AM.correoPrueba({ mes: '2026-11', a: 'francisco@lacteoca.test', enviarCorreo });
 ok(pr.estado === 'enviado' && correos.length === antesC + 1 && correos[antesC].asunto.startsWith('[PRUEBA] ') && correos[antesC].a === 'francisco@lacteoca.test', 'correo de prueba al correo indicado');
 
+// 8d) Sin permiso para leer los gastos: se sigue con lo demás, avisa en simulación y no se crea en real.
+z = zohoFalso(); z.listExpensesRango = async () => { throw new Error('Request failed with status code 401'); };
+await db.doc('kroma_inv_zoho/2026-11').delete();
+r = await AM.generarAsientoMensual({ mes: '2026-11', modo: 'simular', api: z, ctxForzado: CTX, hoy: '2026-12-03', enviarCorreo });
+ok(r.estado === 'simulado' && r.avisos.some(a => /gastos.*ZohoBooks\.expenses\.READ/.test(a)) && r.descargas.find(x => x.cuenta === CUENTAS.fleteLeche.id)?.contraCosto === 100,
+    'sin permiso de gastos: la simulación avisa cuál falta y usa las facturas y diarios que sí leyó');
+r = await AM.generarAsientoMensual({ mes: '2026-11', modo: 'ejecutar', api: z, ctxForzado: CTX, hoy: '2026-12-03', enviarCorreo });
+ok(r.estado === 'abortado' && !z.llamadas.includes('crear'), 'sin permiso de gastos: en real no se crea');
+
 // 9) Corrida nocturna en simulación (config por defecto).
 const cr = await AM.corridaMensual({ api: zohoFalso() });
 ok(cr.omitido === 'ya está' || cr.esperando || cr.estado, `corrida nocturna responde (${JSON.stringify(cr).slice(0, 80)})`);
