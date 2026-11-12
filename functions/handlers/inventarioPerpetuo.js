@@ -1340,6 +1340,11 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
         if (accion === "asientoMensualEstado") {
             return JSON.parse(JSON.stringify(await require("./asientoMensual").estadoMensual()));
         }
+        if (accion === "asientoMensualCorreoPrueba") {
+            exigirMaster(m, usuario);
+            const d = request.data || {};
+            return JSON.parse(JSON.stringify(await require("./asientoMensual").correoPrueba({ mes: d.mes, a: d.a || null })));
+        }
         if (accion === "asientoMensualConfig") {
             exigirMaster(m, usuario);
             return await require("./asientoMensual").guardarConfig(request.data || {});

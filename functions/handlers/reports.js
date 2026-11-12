@@ -5,24 +5,10 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall }     = require("firebase-functions/v2/https");
 const { logger }     = require("firebase-functions");
 const admin          = require("firebase-admin");
-const nodemailer     = require("nodemailer");
 
 // ── Config helpers ─────────────────────────────────────────────────────────────
 
-async function getSmtpTransporter() {
-    const snap = await admin.firestore().doc("settings/smtpConfig").get();
-    // Admin SDK: `exists` es PROPIEDAD, no método (llamarlo lanza TypeError y
-    // mataba todos los reportes por correo — mismo bug histórico de webhooks.js).
-    if (!snap.exists) throw new Error("SMTP no configurado en settings/smtpConfig");
-    const c = snap.data();
-    return {
-        transporter: nodemailer.createTransport({
-            host: c.host, port: c.port, secure: c.secure || false,
-            auth: { user: c.user, pass: c.password },
-        }),
-        from: `"${c.fromName || 'Genius Keeper'}" <${c.user}>`,
-    };
-}
+const { getSmtpTransporter } = require("./correoSmtp");
 
 async function getReportsConfig() {
     const snap = await admin.firestore().doc("settings/reportsConfig").get();

@@ -502,6 +502,28 @@ async function deleteJournal({ accessToken, organizationId, dataCenter, journalI
     return true;
 }
 
+/**
+ * Manda un asiento en borrador a aprobación (POST /journals/{id}/submit).
+ * Si la organización no tiene aprobaciones activas, Zoho responde con un código
+ * de error: quien llama lo trata como "sin aprobaciones" y el asiento queda en borrador.
+ */
+async function submitJournal({ accessToken, organizationId, dataCenter, journalId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.post(`${api}/books/v3/journals/${journalId}/submit`, {}, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000,
+    });
+    const d = exigirOk(res, 'mandar el asiento a aprobación');
+    return { ok: true, mensaje: d.message || null };
+}
+
+/** Dirección del asiento en la web de Zoho Books (para el correo de aprobación). */
+function urlAsientoWeb({ dataCenter, organizationId, journalId }) {
+    const dc = String(dataCenter || 'com').toLowerCase();
+    const dominio = dc === 'ca' ? 'books.zohocloud.ca' : `books.zoho.${DC[dc] ? dc : 'com'}`;
+    return `https://${dominio}/app/${organizationId}#/journals/${journalId}`;
+}
+
 // ── Facturas y notas de crédito desde una fecha (inventario, inventarioFacturas.js) ──
 // Scope: ZohoBooks.invoices.READ (facturas) y ZohoBooks.creditnotes.READ (notas).
 
@@ -622,5 +644,5 @@ async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, cr
 
 module.exports = {
     listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail, listBillsRango, getBillDetail, listJournalsRango, listExpensesRango, getExpense,
-    listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal,
+    listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal, submitJournal, urlAsientoWeb,
     categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };

@@ -600,7 +600,7 @@ const ESTADO_MES = {
     creado: ['Borrador en Zoho', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
     sin_cambios: ['Ya estaba en Zoho', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
     difiere: ['Cambió: regenerar', 'text-amber-300 bg-amber-500/10 border-amber-500/30'],
-    ya_publicado: ['Aprobado en Zoho', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
+    ya_publicado: ['Aprobado o en aprobación', 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'],
     error: ['Error', 'text-red-300 bg-red-500/10 border-red-500/30'],
 };
 const mesAnteriorDe = (m) => { const [y, mm] = m.split('-').map(Number); return mm === 1 ? `${y - 1}-12` : `${y}-${String(mm - 1).padStart(2, '0')}`; };
@@ -627,6 +627,11 @@ function ZohoAsientos({ perfil, esMaster }) {
         if (!window.confirm(regenerar ? `Se borra el borrador de ${mes} en Zoho y se crea otro con los datos de hoy. ¿Seguir?` : `Se crea en Zoho el asiento de ${mes} en BORRADOR, para que administración lo apruebe. ¿Seguir?`)) return;
         hacer('crear', async () => { const r = await llamar('asientoMensual', { mes, modo: 'ejecutar', regenerar, perfil }); setRes(r); setAviso(r.mensaje || ''); await cargar(); });
     };
+    const probarCorreo = () => {
+        const a = window.prompt('¿A qué correo mando la prueba?', correo || '');
+        if (!a) return;
+        hacer('correo', async () => { await llamar('asientoMensualCorreoPrueba', { mes, a, perfil }); setAviso(`Correo de prueba enviado a ${a}.`); });
+    };
     const guardarConfig = (patch) => hacer('cfg', async () => { await llamar('asientoMensualConfig', { ...patch, perfil }); setAviso('Configuración guardada.'); await cargar(); });
 
     if (!est) return <Cargando />;
@@ -650,8 +655,11 @@ function ZohoAsientos({ perfil, esMaster }) {
                             if (real && !window.confirm('Desde ahora el cierre crea el asiento en Zoho como borrador. ¿Activar?')) return;
                             guardarConfig({ modo: real ? 'real' : 'simulacion' });
                         }} ocupado={ocupado === 'cfg'}>{zm.modo === 'real' ? 'Volver a simulación' : 'Activar modo real'}</Boton>
+                        <Boton onClick={() => guardarConfig({ enviarAprobacion: zm.enviarAprobacion === false })} ocupado={ocupado === 'cfg'}>
+                            {zm.enviarAprobacion === false ? 'Mandar a aprobación en Zoho: no' : 'Mandar a aprobación en Zoho: sí'}</Boton>
                     </div>
                 )}
+                <p className="text-xs text-slate-500">Al crearlo, Kroma lo manda a aprobación en Zoho (si la organización tiene aprobaciones; si no, queda en borrador) y escribe al correo de aprobación con las líneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. En simulación no se manda nada.</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -659,6 +667,7 @@ function ZohoAsientos({ perfil, esMaster }) {
                 <Boton onClick={simular} ocupado={ocupado === 'sim'}>Simular</Boton>
                 {esMaster && <Boton tono="verde" onClick={() => crear(false)} ocupado={ocupado === 'crear'}>Crear borrador en Zoho</Boton>}
                 {esMaster && r?.estado === 'difiere' && <Boton onClick={() => crear(true)} ocupado={ocupado === 'crear'}>Regenerar</Boton>}
+                {esMaster && r && <Boton onClick={probarCorreo} ocupado={ocupado === 'correo'}>Correo de prueba</Boton>}
             </div>
 
             {r && (
@@ -669,6 +678,16 @@ function ZohoAsientos({ perfil, esMaster }) {
                         {r.journalId && <span className="text-xs text-slate-400">asiento {r.journalId}</span>}
                     </div>
                     {r.mensaje && <p className="text-xs text-slate-300">{r.mensaje}</p>}
+                    {(r.aprobacion || r.correo || r.correoAborto) && (
+                        <div className="text-xs space-y-0.5">
+                            {r.aprobacion && <p className={r.aprobacion.estado === 'enviado' ? 'text-emerald-300' : 'text-slate-400'}>Aprobación en Zoho: {r.aprobacion.mensaje}</p>}
+                            {[r.correo, r.correoAborto].filter(Boolean).map((c, i) => (
+                                <p key={i} className={c.estado === 'enviado' ? 'text-emerald-300' : c.estado === 'error' ? 'text-red-300' : 'text-amber-300'}>
+                                    Correo: {c.estado === 'enviado' ? `enviado a ${c.a}` : c.mensaje || c.estado}</p>
+                            ))}
+                            {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="text-sky-300 underline">Abrir el asiento en Zoho</a>}
+                        </div>
+                    )}
                     {(r.errores || []).length > 0 && <div className="text-xs text-red-300 space-y-1">{r.errores.map((e, i) => <p key={i}>• {e}</p>)}</div>}
                     {(r.controlesFallidos || []).length > 0 && <div className="text-xs text-red-300">{r.controlesFallidos.map((c, i) => <p key={i}>{c.fecha}: control {c.n} ({c.nombre}){c.nota ? ` · ${c.nota}` : ''}</p>)}</div>}
                     {(r.avisos || []).length > 0 && <div className="text-xs text-amber-200 space-y-1">{r.avisos.map((e, i) => <p key={i}>• {e}</p>)}</div>}

@@ -3244,6 +3244,15 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - **Baja de las 6 bolsas de 1 kg (12-nov, aprobado):** la partida de ACC no tenía lote y el control 4 la marcaba. Se anotó con el lote de referencia `AJUSTE-ACC-06OCT` y motivo «Vencido» en el asiento del libro, la partida (`inventario_comercial/ajuste-20261006-1`) y su movimiento, y se recalculó desde el 12-nov.
 - Pruebas: `node tests/asientoMensual.test.mjs` (41 en verde, con noviembre real: lo reclasificado contra MP, cuenta de costo nunca en negativo, gasto del mes con RECLAS) y `npx firebase emulators:exec --only firestore --project demo-gk-am "node tests/asientoMensual.e2e.test.mjs"` (15 en verde: simular sin tocar Zoho, abortar por mano de obra abierta y por control, crear el borrador, no duplicar, difiere, regenerar, publicado intacto, asiento ajeno intacto, corrida nocturna).
 
+**Sección 8 — a aprobación y correo (12-nov, misma rama, sin publicar):**
+- Solo en modo real, después de crear el borrador (`asientoMensual.js`):
+  - **Aprobación en Zoho** (`zohoApi.submitJournal`, POST /journals/{id}/submit). Si la organización no tiene aprobaciones de asientos, Zoho responde con error: el asiento queda en borrador y se anota `aprobacion.estado: 'sin_aprobaciones'` con el mensaje de Zoho. Se apaga con `zoho.mensual.enviarAprobacion: false`. Un asiento en aprobación ya no se toca (queda `ya_publicado`, «en aprobación»).
+  - **Correo a `zoho.mensual.correoAprobacion`** por el SMTP de `settings/smtpConfig` (`correoSmtp.js`, compartido con los reportes por correo). Contenido (`asientoMensualCorreo.js`, puro): mes y referencia, botón al asiento en Zoho (`urlAsientoWeb`), qué registra (bloques), las líneas (concepto, cuenta, debe, haber, total), el inventario final de Kroma por ubicación y presentación (del reporte del último día, con subtotales), la materia prima (materiales + leche en proceso), la diferencia con Zoho después de aprobarlo (PT y MP) y los avisos.
+  - **Si no se crea** (abortado): correo con los motivos y los controles diarios con diferencias. El mismo motivo no se manda dos veces (`firmaAborto`, guardado en `correoAborto`).
+  - El registro del mes guarda `aprobacion`, `correo` (enviado / error / sin_correo) y `url`. Un error del correo no deshace el asiento.
+- **En simulación no se manda nada.** «Correo de prueba» (solo máster, acción `asientoMensualCorreoPrueba`): manda el correo del último registro guardado del mes con «[PRUEBA]» en el asunto, sin tocar Zoho.
+- Pruebas: `node tests/asientoMensualCorreo.test.mjs` (17 en verde) y la e2e del asiento (25 en verde: aborto con correo una sola vez, correo de aprobación con enlace e inventario, sin aprobaciones queda en borrador, con aprobaciones queda en aprobación y no se toca, correo de prueba, simulación sin correo).
+
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
 
 `functions/handlers/inventarioZoho.js` + pestaña **Zoho** en Kroma → Inventario valorado. Un asiento por día con la VARIACIÓN del valor a costo del producto terminado:

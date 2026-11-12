@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-12-asiento-correo-aprobacion',
+        fecha: '2026-11-12',
+        roles: ['master'],
+        titulo: 'El asiento mensual avisa por correo',
+        resumen: 'Cuando el asiento de inventario quede en Zoho, Kroma lo manda a aprobación y escribe al correo de aprobación con las líneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. Hay un botón «Correo de prueba» en Inventario valorado → Zoho.',
+    },
+    {
         id: '2026-11-12-asiento-mensual',
         fecha: '2026-11-12',
         roles: ['master'],

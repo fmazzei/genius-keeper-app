@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-12-asiento-correo-aprobacion",
+    fecha: "2026-11-12",
+    roles: ["master"],
+    titulo: "El asiento mensual avisa por correo",
+    resumen: "Cuando el asiento de inventario quede en Zoho, Kroma lo manda a aprobaci\xF3n y escribe al correo de aprobaci\xF3n con las l\xEDneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. Hay un bot\xF3n \xABCorreo de prueba\xBB en Inventario valorado \u2192 Zoho."
+  },
+  {
     id: "2026-11-12-asiento-mensual",
     fecha: "2026-11-12",
     roles: ["master"],
