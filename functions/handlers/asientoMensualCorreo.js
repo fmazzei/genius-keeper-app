@@ -121,10 +121,14 @@ function correoAprobacion({ reg, inventario = {}, url = null, aprobacion = null 
 
     const intro = `Kroma dejó en Zoho Books el asiento de cierre de inventario de ${mes}, en borrador${pendienteAprobar ? " y enviado a aprobación" : ""}. `
         + `Referencia ${reg.referencia}, fecha ${fechaCorta(reg.fecha)}. Mientras no se apruebe no cambia ningún saldo.`;
+    const notaBorrador = aprobacion && !pendienteAprobar
+        ? "No se mandó a aprobación porque las aprobaciones de asientos todavía no están activas en Zoho. Para aprobarlo, ábrelo en Zoho y publícalo."
+        : null;
 
     const h = [];
     h.push(`<div style="${ESTILO.cuerpo}">`);
     h.push(`<p>${esc(intro)}</p>`);
+    if (notaBorrador) h.push(`<p><b>${esc(notaBorrador)}</b></p>`);
     if (url) h.push(`<p><a href="${esc(url)}" style="${ESTILO.boton}">Abrir el asiento en Zoho</a></p>`);
 
     // Qué registra
@@ -179,6 +183,7 @@ function correoAprobacion({ reg, inventario = {}, url = null, aprobacion = null 
 
     const t = [];
     t.push(intro, "");
+    if (notaBorrador) t.push(notaBorrador, "");
     if (url) t.push(`Abrir el asiento en Zoho: ${url}`, "");
     t.push("Qué registra:");
     for (const b of reg.bloques || []) t.push(`  - ${b.titulo}: ${usd(Math.abs(Number(b.neto) || 0))}`);

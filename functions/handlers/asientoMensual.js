@@ -17,7 +17,9 @@
 //   (regenerar); uno ya publicado o aprobado no se toca nunca.
 // - Sección 8: al crearlo en real lo manda a aprobación en Zoho (si la
 //   organización tiene aprobaciones; si no, queda en borrador) y avisa por
-//   correo a `zoho.mensual.correoAprobacion`. Si no se crea, manda un correo con
+//   correo a `zoho.mensual.correoAprobacion` (con copia a `correoCopia`). El envío a
+//   aprobación está APAGADO por defecto (`enviarAprobacion: true` lo prende cuando
+//   las aprobaciones de asientos estén activas en Zoho). Si no se crea, manda un correo con
 //   el motivo (una vez por motivo). En simulación no se manda nada.
 
 "use strict";
@@ -128,20 +130,26 @@ async function lecheEnProceso() {
 }
 
 /** Manda un correo por el SMTP de settings/smtpConfig. */
-async function enviarPorSmtp({ a, asunto, html, texto }) {
+async function enviarPorSmtp({ a, cc, asunto, html, texto }) {
     const { transporter, from } = await require("./correoSmtp").getSmtpTransporter();
-    await transporter.sendMail({ from, to: a, subject: asunto, html, text: texto });
+    await transporter.sendMail({ from, to: a, ...(cc ? { cc } : {}), subject: asunto, html, text: texto });
+}
+
+/** Lista de correos válidos separados por coma o punto y coma ("" si no hay). */
+function listaCorreos(txt) {
+    return String(txt || "").split(/[,;]/).map(x => x.trim()).filter(Boolean).join(", ");
 }
 
 /** Resultado de un envío, para guardar en el registro del mes. */
-async function intentarCorreo(enviarCorreo, a, msj) {
+async function intentarCorreo(enviarCorreo, a, msj, cc = "") {
     const at = new Date().toISOString();
     if (!a) return { estado: "sin_correo", at, mensaje: "No hay correo de aprobación configurado (Inventario valorado → Zoho)." };
+    const copia = listaCorreos(cc) || null;
     try {
-        await enviarCorreo({ a, ...msj });
-        return { estado: "enviado", a, asunto: msj.asunto, at };
+        await enviarCorreo({ a, cc: copia, ...msj });
+        return { estado: "enviado", a, cc: copia, asunto: msj.asunto, at };
     } catch (e) {
-        return { estado: "error", a, asunto: msj.asunto, at, mensaje: String(e?.message || e).slice(0, 300) };
+        return { estado: "error", a, cc: copia, asunto: msj.asunto, at, mensaje: String(e?.message || e).slice(0, 300) };
     }
 }
 
@@ -221,7 +229,7 @@ async function generarAsientoMensual({ mes, modo = "simular", regenerar = false,
         const firma = C.firmaAborto(reg);
         reg.correoAborto = anterior && anterior.firma === firma && anterior.estado === "enviado"
             ? anterior
-            : { firma, ...(await intentarCorreo(enviarCorreo, zm.correoAprobacion, C.correoAborto({ reg }))) };
+            : { firma, ...(await intentarCorreo(enviarCorreo, zm.correoAprobacion, C.correoAborto({ reg }), zm.correoCopia)) };
         await guardar(reg);
         return reg;
     }
@@ -262,10 +270,10 @@ async function generarAsientoMensual({ mes, modo = "simular", regenerar = false,
     await guardar(reg);
 
     // Sección 8: a aprobación en Zoho y correo a quien aprueba.
-    reg.aprobacion = await mandarAAprobacion({ api, ctx, journalId, activo: zm.enviarAprobacion !== false });
+    reg.aprobacion = await mandarAAprobacion({ api, ctx, journalId, activo: zm.enviarAprobacion === true });
     reg.url = urlAsiento(api, ctx, journalId);
     reg.correo = await intentarCorreo(enviarCorreo, zm.correoAprobacion,
-        C.correoAprobacion({ reg, inventario: d.inventarioFin, url: reg.url, aprobacion: reg.aprobacion }));
+        C.correoAprobacion({ reg, inventario: d.inventarioFin, url: reg.url, aprobacion: reg.aprobacion }), zm.correoCopia);
     await guardar(reg);
     await db().doc(DOC_CONFIG).set({ zoho: { mensual: { ultimo: { mes, estado, journalId, at: reg.creadoAt } } } }, { merge: true });
     return reg;
@@ -277,7 +285,7 @@ async function generarAsientoMensual({ mes, modo = "simular", regenerar = false,
  */
 async function mandarAAprobacion({ api, ctx, journalId, activo }) {
     const at = new Date().toISOString();
-    if (!activo) return { estado: "no_pedido", at, mensaje: "Envío a aprobación apagado en la configuración: queda en borrador." };
+    if (!activo) return { estado: "no_pedido", at, mensaje: "Queda en borrador: las aprobaciones de asientos no están activas en Zoho, así que no se mandó a aprobación." };
     if (typeof api.submitJournal !== "function") return { estado: "no_disponible", at, mensaje: "Queda en borrador." };
     try {
         await api.submitJournal({ ...ctx, journalId });
@@ -344,7 +352,12 @@ async function guardarConfig(data = {}) {
         if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) throw new Error("El correo no es válido.");
         patch.correoAprobacion = correo || null;
     }
-    if (data.enviarAprobacion !== undefined) patch.enviarAprobacion = data.enviarAprobacion !== false;
+    if (data.enviarAprobacion !== undefined) patch.enviarAprobacion = data.enviarAprobacion === true;
+    if (data.correoCopia !== undefined) {
+        const lista = listaCorreos(data.correoCopia);
+        if (lista && lista.split(", ").some(c => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c))) throw new Error("Algún correo de copia no es válido.");
+        patch.correoCopia = lista || null;
+    }
     if (data.primerMes !== undefined) {
         if (data.primerMes && !/^\d{4}-\d{2}$/.test(data.primerMes)) throw new Error("Primer mes inválido (AAAA-MM).");
         patch.primerMes = data.primerMes || null;

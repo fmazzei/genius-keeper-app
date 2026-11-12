@@ -3244,14 +3244,41 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - **Baja de las 6 bolsas de 1 kg (12-nov, aprobado):** la partida de ACC no tenía lote y el control 4 la marcaba. Se anotó con el lote de referencia `AJUSTE-ACC-06OCT` y motivo «Vencido» en el asiento del libro, la partida (`inventario_comercial/ajuste-20261006-1`) y su movimiento, y se recalculó desde el 12-nov.
 - Pruebas: `node tests/asientoMensual.test.mjs` (41 en verde, con noviembre real: lo reclasificado contra MP, cuenta de costo nunca en negativo, gasto del mes con RECLAS) y `npx firebase emulators:exec --only firestore --project demo-gk-am "node tests/asientoMensual.e2e.test.mjs"` (15 en verde: simular sin tocar Zoho, abortar por mano de obra abierta y por control, crear el borrador, no duplicar, difiere, regenerar, publicado intacto, asiento ajeno intacto, corrida nocturna).
 
-**Sección 8 — a aprobación y correo (12-nov, misma rama, sin publicar):**
+**Sección 8 — a aprobación y correo (12-nov):**
 - Solo en modo real, después de crear el borrador (`asientoMensual.js`):
-  - **Aprobación en Zoho** (`zohoApi.submitJournal`, POST /journals/{id}/submit). Si la organización no tiene aprobaciones de asientos, Zoho responde con error: el asiento queda en borrador y se anota `aprobacion.estado: 'sin_aprobaciones'` con el mensaje de Zoho. Se apaga con `zoho.mensual.enviarAprobacion: false`. Un asiento en aprobación ya no se toca (queda `ya_publicado`, «en aprobación»).
-  - **Correo a `zoho.mensual.correoAprobacion`** por el SMTP de `settings/smtpConfig` (`correoSmtp.js`, compartido con los reportes por correo). Contenido (`asientoMensualCorreo.js`, puro): mes y referencia, botón al asiento en Zoho (`urlAsientoWeb`), qué registra (bloques), las líneas (concepto, cuenta, debe, haber, total), el inventario final de Kroma por ubicación y presentación (del reporte del último día, con subtotales), la materia prima (materiales + leche en proceso), la diferencia con Zoho después de aprobarlo (PT y MP) y los avisos.
+  - **Aprobación en Zoho** (`zohoApi.submitJournal`, POST /journals/{id}/submit): **APAGADA por defecto** (decisión del dueño, 12-nov: las aprobaciones de asientos las activa Francisco o María José a mano en Zoho). Sin `zoho.mensual.enviarAprobacion: true`, el asiento queda en borrador (`aprobacion.estado: 'no_pedido'`) y el correo lo dice: «ábrelo en Zoho y publícalo». Encendido y sin aprobaciones en Zoho, queda en borrador con `sin_aprobaciones` y el mensaje de Zoho. Un asiento en aprobación ya no se toca (queda `ya_publicado`, «en aprobación»).
+  - **Correo a `zoho.mensual.correoAprobacion`** (María José, `administracionbns@lacteoca.com`, cargado el 12-nov) **con copia a `zoho.mensual.correoCopia`** (lista separada por comas, campo «Con copia a» en Inventario valorado → Zoho; vacío hasta que Francisco ponga su correo) por el SMTP de `settings/smtpConfig` (`correoSmtp.js`, compartido con los reportes por correo). Contenido (`asientoMensualCorreo.js`, puro): mes y referencia, botón al asiento en Zoho (`urlAsientoWeb`), qué registra (bloques), las líneas (concepto, cuenta, debe, haber, total), el inventario final de Kroma por ubicación y presentación (del reporte del último día, con subtotales), la materia prima (materiales + leche en proceso), la diferencia con Zoho después de aprobarlo (PT y MP) y los avisos.
   - **Si no se crea** (abortado): correo con los motivos y los controles diarios con diferencias. El mismo motivo no se manda dos veces (`firmaAborto`, guardado en `correoAborto`).
   - El registro del mes guarda `aprobacion`, `correo` (enviado / error / sin_correo) y `url`. Un error del correo no deshace el asiento.
 - **En simulación no se manda nada.** «Correo de prueba» (solo máster, acción `asientoMensualCorreoPrueba`): manda el correo del último registro guardado del mes con «[PRUEBA]» en el asunto, sin tocar Zoho.
 - Pruebas: `node tests/asientoMensualCorreo.test.mjs` (17 en verde) y la e2e del asiento (25 en verde: aborto con correo una sola vez, correo de aprobación con enlace e inventario, sin aprobaciones queda en borrador, con aprobaciones queda en aprobación y no se toca, correo de prueba, simulación sin correo).
+
+**Leche de Masparrito (12-nov):** se le factura a Francisco Mazzei Osorio (proveedor en Zoho). La factura CXP 111120262 (id 3576378000008463002, 11-nov, $222,60 = 159 L × $1,40) está en Inventario de materia prima y es la recepción `2YKr0bNTvHuRVcvgEPTU` del lote LCO20261111-1913. Kroma la tenía a $1,60 (el precio del maestro): por el conector se pasó a $1,40 en la recepción y en `recepciones` del lote (`costoUsdLitroAnterior` y `facturaZoho` quedan de constancia; cambios `8sjmOjGn4ArYZMjkm7JU` y `611k6vujbqYb8rFPPg3n`). **El precio del maestro de Masparrito sigue en $1,60: decisión pendiente del dueño.** El flete de Masparrito ($25 por viaje) no tiene factura en Zoho.
+- **Cuadre de MP recalculado (datos al 12-nov): −304,98** contra Ajustes de inventario (antes −273,18). El desglose anterior estaba mal: daba la leche de Masparrito por «sin compra en Zoho», y la factura sí está en el saldo de MP. Zoho MP 2.969,57 = 1.559,12 al 31-oct + RECLAS 766,65 + Gilgares 421,20 + Masparrito 222,60. Después de la producción (−1.089,01) queda en 1.880,56, contra Kroma 1.575,58 (materiales 804,18 + leche y flete en proceso 771,40). La diferencia de 304,98 se explica así:
+  - 324,73: el saldo de MP de Zoho al 31-oct (1.559,12) está por encima de lo que Kroma cuenta a esa fecha (1.234,39 = conteo del 11-nov 804,18 + 574,21 consumidos en noviembre antes del conteo − 144 de fermentos comprados en noviembre). Una parte puede ser la bobina, pendiente de ajuste por peso.
+  - +7,85: factura 1417 (402,04 L facturados, 396 recibidos).
+  - −2,60: factura del 11-nov de Los Gilgares (324 L facturados, 326 recibidos).
+  - −25,00: flete de Masparrito sin factura en Zoho.
+  - El flete de Randy del 4-nov (reclasificado a MP) y el del 11-nov (sigue como gasto) se compensan: no suman al cuadre.
+
+**Sección 9 — plan de simulación del 1 al 3 de diciembre (12-nov):**
+- **Antes del 30-nov** (pendientes):
+  - planta: empaque de la bolsa de 1 kg y ajuste por peso de la bobina (lunes 16-nov);
+  - conteo físico de ACC (la ruta de Caracas está en −325 ud);
+  - cerrar o envasar el lote del 11-nov;
+  - que Francisco ponga su correo en «Con copia a»;
+  - decidir el precio de Masparrito en el maestro.
+- **Automático, con el cierre de las 23:55**, en este orden: facturas → mano de obra → recalcular → asiento mensual.
+  - **1 y 2-dic**: el asiento de noviembre espera el cierre de la mano de obra (`esperando`).
+  - **3-dic**: se cierra la mano de obra de noviembre con lo real de Zoho y se simula el asiento (`kroma_inv_zoho/2026-11`, estado `simulado` o `abortaria`). No se manda nada a Zoho ni por correo.
+- **4-dic, revisión** (Inventario valorado → Zoho, mes 2026-11):
+  1. controles diarios 1, 2, 4, 7 y 9 de noviembre sin diferencias;
+  2. ninguna cuenta de costo en negativo y `descargas` coherente con RECLAS-MP-2026-11 y las facturas de noviembre;
+  3. el cuadre de MP explicado partida por partida;
+  4. el control posterior de PT y MP;
+  5. «Correo de prueba» a María José y a Francisco.
+- **Si todo cuadra y Francisco aprueba:** «Activar modo real». La siguiente noche se crea el borrador `KROMA-INV-2026-11` (sin mandar a aprobación) y sale el correo. María José lo revisa y lo publica en Zoho.
+- **Pruebas antes de activar:** `node tests/asientoMensual.test.mjs`, `node tests/asientoMensualCorreo.test.mjs`, la e2e del asiento, `node tests/inventarioPerpetuo.test.mjs`, `node tests/inventarioMateriales.test.mjs`, y las e2e de facturas, materiales y mano de obra, todas en verde.
 
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
 

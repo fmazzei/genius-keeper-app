@@ -46,7 +46,7 @@ const correos = [];
 const enviarCorreo = async (m) => { correos.push(m); };
 
 // Datos de noviembre.
-await db.doc('kroma_inv_config/lacteoca').set({ abierto: true, inicio: '2026-10-15', materiales: { abierto: true, inicio: '2026-11-12' }, zoho: { mensual: { correoAprobacion: 'admin@lacteoca.test' } } });
+await db.doc('kroma_inv_config/lacteoca').set({ abierto: true, inicio: '2026-10-15', materiales: { abierto: true, inicio: '2026-11-12' }, zoho: { mensual: { correoAprobacion: 'admin@lacteoca.test', correoCopia: 'francisco@lacteoca.test' } } });
 await db.doc('kroma_inv_costos_lote/L3').set({ empresaId: E, componentes: [
     { tipo: 'leche', proveedorId: GIL, monto: 514.8 }, { tipo: 'flete', monto: 100 }, { tipo: 'insumo', monto: 44.03 }] });
 const libro = [
@@ -98,10 +98,12 @@ let reg;
 r = await AM.generarAsientoMensual({ mes: '2026-11', modo: 'ejecutar', api: z, ctxForzado: CTX, hoy: '2026-12-03', enviarCorreo });
 const j = z.journals.get(r.journalId);
 ok(r.estado === 'creado' && j?.status === 'draft' && j.reference_number === 'KROMA-INV-2026-11' && j.journal_date === '2026-11-30', 'crea el asiento en borrador con la referencia y la fecha del último día');
-ok(r.aprobacion?.estado === 'sin_aprobaciones' && /queda en borrador/.test(r.aprobacion.mensaje), 'sin aprobaciones en Zoho: queda en borrador y lo anota');
+ok(r.aprobacion?.estado === 'no_pedido' && !z.llamadas.includes('aprobacion') && /borrador/i.test(r.aprobacion.mensaje), 'por defecto no se manda a aprobación: queda en borrador y lo anota');
 const cAp = correos[correos.length - 1];
 ok(correos.length === 3 && /listo para aprobar \(KROMA-INV-2026-11\)/.test(cAp.asunto) && cAp.html.includes(`journals/${r.journalId}`) && cAp.html.includes('Planta (cava)') && r.correo?.estado === 'enviado',
     'correo de aprobación: asunto, enlace al asiento e inventario final');
+ok(cAp.cc === 'francisco@lacteoca.test' && correos[0].cc === 'francisco@lacteoca.test' && /aprobaciones de asientos todavía no están activas/.test(cAp.html),
+    'el correo va con copia y dice que quedó en borrador sin mandar a aprobación');
 reg = (await db.doc('kroma_inv_zoho/2026-11').get()).data();
 ok(reg.correo?.estado === 'enviado' && reg.aprobacion && reg.url, 'el registro del mes guarda el correo, la aprobación y el enlace');
 
@@ -131,7 +133,8 @@ await db.doc('kroma_inv_zoho/2026-11').delete();
 r = await AM.generarAsientoMensual({ mes: '2026-11', modo: 'ejecutar', api: z, ctxForzado: CTX, hoy: '2026-12-03', enviarCorreo });
 ok(r.estado === 'creado' && z.journals.has('A1'), 'un asiento sin referencia KROMA-INV- queda intacto');
 
-// 8b) Con aprobaciones en Zoho: queda «en aprobación» y ya no se toca.
+// 8b) Con aprobaciones activadas en la configuración y en Zoho: queda «en aprobación» y ya no se toca.
+await db.doc('kroma_inv_config/lacteoca').set({ zoho: { mensual: { enviarAprobacion: true } } }, { merge: true });
 z = zohoFalso({ aprobaciones: true });
 await db.doc('kroma_inv_zoho/2026-11').delete();
 r = await AM.generarAsientoMensual({ mes: '2026-11', modo: 'ejecutar', api: z, ctxForzado: CTX, hoy: '2026-12-03', enviarCorreo });

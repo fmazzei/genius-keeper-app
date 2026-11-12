@@ -610,11 +610,12 @@ function ZohoAsientos({ perfil, esMaster }) {
     const [mes, setMes] = useState(mesAnteriorDe(mesActual()));
     const [res, setRes] = useState(null);
     const [correo, setCorreo] = useState('');
+    const [copia, setCopia] = useState('');
     const [ocupado, setOcupado] = useState('');
     const [error, setError] = useState('');
     const [aviso, setAviso] = useState('');
     const cargar = async () => {
-        try { const r = await llamar('asientoMensualEstado', { perfil }); setEst(r); setCorreo(r.mensual?.correoAprobacion || ''); }
+        try { const r = await llamar('asientoMensualEstado', { perfil }); setEst(r); setCorreo(r.mensual?.correoAprobacion || ''); setCopia(r.mensual?.correoCopia || ''); }
         catch (e) { setError(e?.message || 'No se pudo leer el estado.'); setEst({ meses: [] }); }
     };
     useEffect(() => { cargar(); }, []);
@@ -649,17 +650,24 @@ function ZohoAsientos({ perfil, esMaster }) {
                         <label className="text-xs text-slate-400">Correo de aprobación
                             <input value={correo} onChange={e => setCorreo(e.target.value)} type="email" className="mt-1 block w-64 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" placeholder="administracion@…" />
                         </label>
-                        <Boton onClick={() => guardarConfig({ correoAprobacion: correo })} ocupado={ocupado === 'cfg'}>Guardar correo</Boton>
+                        <label className="text-xs text-slate-400">Con copia a (separados por coma)
+                            <input value={copia} onChange={e => setCopia(e.target.value)} type="text" className="mt-1 block w-64 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" placeholder="opcional" />
+                        </label>
+                        <Boton onClick={() => guardarConfig({ correoAprobacion: correo, correoCopia: copia })} ocupado={ocupado === 'cfg'}>Guardar correos</Boton>
                         <Boton tono={zm.modo === 'real' ? undefined : 'verde'} onClick={() => {
                             const real = zm.modo !== 'real';
                             if (real && !window.confirm('Desde ahora el cierre crea el asiento en Zoho como borrador. ¿Activar?')) return;
                             guardarConfig({ modo: real ? 'real' : 'simulacion' });
                         }} ocupado={ocupado === 'cfg'}>{zm.modo === 'real' ? 'Volver a simulación' : 'Activar modo real'}</Boton>
-                        <Boton onClick={() => guardarConfig({ enviarAprobacion: zm.enviarAprobacion === false })} ocupado={ocupado === 'cfg'}>
-                            {zm.enviarAprobacion === false ? 'Mandar a aprobación en Zoho: no' : 'Mandar a aprobación en Zoho: sí'}</Boton>
+                        <Boton onClick={() => {
+                            const prender = zm.enviarAprobacion !== true;
+                            if (prender && !window.confirm('Solo actívalo si las aprobaciones de asientos ya están activas en Zoho. ¿Seguir?')) return;
+                            guardarConfig({ enviarAprobacion: prender });
+                        }} ocupado={ocupado === 'cfg'}>
+                            {zm.enviarAprobacion === true ? 'Mandar a aprobación en Zoho: sí' : 'Mandar a aprobación en Zoho: no'}</Boton>
                     </div>
                 )}
-                <p className="text-xs text-slate-500">Al crearlo, Kroma lo manda a aprobación en Zoho (si la organización tiene aprobaciones; si no, queda en borrador) y escribe al correo de aprobación con las líneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. En simulación no se manda nada.</p>
+                <p className="text-xs text-slate-500">Al crearlo queda en borrador (se manda a aprobación en Zoho solo si lo activas, cuando las aprobaciones de asientos estén encendidas allá) y Kroma escribe al correo de aprobación, con copia a quien pongas, con las líneas, el inventario final y la diferencia con Zoho. Si no se crea, escribe el motivo. En simulación no se manda nada.</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -683,7 +691,7 @@ function ZohoAsientos({ perfil, esMaster }) {
                             {r.aprobacion && <p className={r.aprobacion.estado === 'enviado' ? 'text-emerald-300' : 'text-slate-400'}>Aprobación en Zoho: {r.aprobacion.mensaje}</p>}
                             {[r.correo, r.correoAborto].filter(Boolean).map((c, i) => (
                                 <p key={i} className={c.estado === 'enviado' ? 'text-emerald-300' : c.estado === 'error' ? 'text-red-300' : 'text-amber-300'}>
-                                    Correo: {c.estado === 'enviado' ? `enviado a ${c.a}` : c.mensaje || c.estado}</p>
+                                    Correo: {c.estado === 'enviado' ? `enviado a ${c.a}${c.cc ? ` (copia: ${c.cc})` : ''}` : c.mensaje || c.estado}</p>
                             ))}
                             {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="text-sky-300 underline">Abrir el asiento en Zoho</a>}
                         </div>
