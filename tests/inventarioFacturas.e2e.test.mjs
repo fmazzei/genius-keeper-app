@@ -118,6 +118,8 @@ const rep1813 = (await libro()).filter(a => a.ref?.facturaNumero === 'INV-001813
 ok((await est('id1813')).categoria === 'reposicion' && rep1813.length === 1 && rep1813[0].categoria === 'reposicion' && rep1813[0].cantidad === -2,
     'factura en cero: 2 bolsas de 1 kg salen como reposición, no como venta');
 ok(!(await est('id1799')) || (await est('id1799')).estado === 'ignorada', 'el borrador no descuenta');
+ok((await db.doc('kroma_inv_config/lacteoca').get()).data().recalcularDesde === '2026-10-19',
+    'los reportes se recalculan desde la factura MÁS vieja (cada factura escribe aparte y ninguna pisa la fecha anterior)');
 const n1 = (await libro()).length;
 
 // 3) Idempotencia: otra corrida no repite nada ni pide el detalle otra vez.
