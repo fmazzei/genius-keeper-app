@@ -142,12 +142,16 @@ function repartirMonto(monto, grupos) {
  *   asientos: los del libro hasta hoy · filtro(a) → pertenece al grupo
  *   totalKg: kg del grupo (producidos, o envasados en total)
  */
+// Colecciones que solo existen en el libro como contrapartida de un costo
+// agregado a lo que ya salió (mano de obra, corrección del precio de la leche).
+const COLECCIONES_CONTRAPARTIDA = new Set(["mano_de_obra", "costo_leche"]);
+
 function estadoGrupo(asientos, filtro, totalKg) {
     const buckets = new Map();
     const salidas = {};
     for (const a of asientos) {
         if (!filtro(a)) continue;
-        if (a.coleccion === "mano_de_obra") continue;
+        if (COLECCIONES_CONTRAPARTIDA.has(a.coleccion)) continue;
         const k = `${a.coleccion}|${a.docId}|${a.ubicacion}|${a.catalogId || ""}|${a.unidad}`;
         const b = buckets.get(k) || { coleccion: a.coleccion, docId: a.docId, ubicacion: a.ubicacion, catalogId: a.catalogId || null,
             unidad: a.unidad, pesoPorUnidad: a.pesoPorUnidad || null, logId: a.logId || null, lote: a.lote || "",
@@ -178,10 +182,11 @@ function estadoGrupo(asientos, filtro, totalKg) {
  *   delta: USD a aplicar ahora (puede ser negativo al cerrar con lo real)
  * → { asientos, porUnidad: [{coleccion, docId, ubicacion, delta por unidad}] }
  */
-function asientosDeGrupo({ delta, estado, etapa, mes, fecha, modo, grupo, info = {} }) {
+function asientosDeGrupo({ delta, estado, etapa, mes, fecha, modo, grupo, info = {},
+    tipo = "mano_de_obra", cat = "mano_de_obra", ref = null, extra = {}, etiqueta = "Mano de obra" }) {
     if (!delta || !(estado.base > 0)) return { asientos: [], ajustes: [] };
     const porKg = delta / estado.base;
-    const comun = { fecha, tipo: "mano_de_obra", subcategoria: etapa, cantidad: 0, kg: 0, ref: { mes, etapa, modo, grupo }, empresaId: "lacteoca" };
+    const comun = { fecha, tipo, subcategoria: etapa, cantidad: 0, kg: 0, ref: ref || { mes, etapa, modo, grupo }, empresaId: "lacteoca", ...extra };
     const asientos = [], ajustes = [];
     let quedanValor = 0;
     for (const b of estado.quedan) {
@@ -191,7 +196,7 @@ function asientosDeGrupo({ delta, estado, etapa, mes, fecha, modo, grupo, info =
         asientos.push({ ...comun, coleccion: b.coleccion, docId: b.docId, ubicacion: b.ubicacion, logId: b.logId, lote: b.lote,
             catalogId: b.catalogId, unidad: b.unidad, pesoPorUnidad: b.pesoPorUnidad, productoId: b.productoId,
             productoNombre: b.productoNombre, presentacion: b.presentacion, fechaVencimiento: b.fechaVencimiento,
-            categoria: "mano_de_obra", valorCosto: v, costoUnitario: null });
+            categoria: cat, valorCosto: v, costoUnitario: null });
         const porUnidad = b.unidad === "kg" ? porKg : porKg * (Number(b.pesoPorUnidad) || 0);
         ajustes.push({ coleccion: b.coleccion, docId: b.docId, ubicacion: b.ubicacion, logId: b.logId, catalogId: b.catalogId, unidad: b.unidad, porUnidad: r6(porUnidad) });
     }
@@ -206,11 +211,11 @@ function asientosDeGrupo({ delta, estado, etapa, mes, fecha, modo, grupo, info =
         reparto.forEach(([c, v], i) => {
             const val = i === reparto.length - 1 ? r6(resto) : r6(v);
             resto = r6(resto - val);
-            const base = { ...comun, coleccion: "mano_de_obra", docId, ubicacion: "planta", logId: info.logId || estado.quedan[0]?.logId || null,
+            const base = { ...comun, coleccion: cat, docId, ubicacion: "planta", logId: info.logId || estado.quedan[0]?.logId || null,
                 lote: info.lote || estado.quedan[0]?.lote || "", unidad: "kg", productoId: info.productoId || estado.quedan[0]?.productoId || null,
-                productoNombre: info.productoNombre || estado.quedan[0]?.productoNombre || "", presentacion: "Mano de obra" };
-            asientos.push({ ...base, categoria: "mano_de_obra", valorCosto: val, motivo: `Parte de lo que ya salió (${c})` });
-            asientos.push({ ...base, categoria: c, valorCosto: -val, motivo: "Mano de obra de lo que ya salió" });
+                productoNombre: info.productoNombre || estado.quedan[0]?.productoNombre || "", presentacion: etiqueta };
+            asientos.push({ ...base, categoria: cat, valorCosto: val, motivo: `Parte de lo que ya salió (${c})` });
+            asientos.push({ ...base, categoria: c, valorCosto: -val, motivo: `${etiqueta} de lo que ya salió` });
         });
     }
     return { asientos, ajustes };
@@ -218,5 +223,5 @@ function asientosDeGrupo({ delta, estado, etapa, mes, fecha, modo, grupo, info =
 
 module.exports = {
     CUENTAS_PLANTA, PERSONAS_INICIALES, ETAPAS, SALIDAS, rangoMes, mesAnterior,
-    lineasNomina, etapaDe, montosPorEtapa, repartirPorCuenta, repartirMonto, estadoGrupo, asientosDeGrupo,
+    lineasNomina, etapaDe, montosPorEtapa, repartirPorCuenta, repartirMonto, estadoGrupo, asientosDeGrupo, COLECCIONES_CONTRAPARTIDA,
 };

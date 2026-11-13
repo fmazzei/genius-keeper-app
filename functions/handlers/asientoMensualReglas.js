@@ -96,7 +96,7 @@ function pesosDeLote(costeo, lechePorProveedor) {
  */
 function clasificarPT(asientos, costosLote = {}) {
     const g = {
-        produccionPorLote: {}, empaqueProduccion: 0, sinLote: 0, transformacion: 0, manoDeObra: 0, ventas: 0,
+        produccionPorLote: {}, lechePorProveedor: {}, empaqueProduccion: 0, sinLote: 0, transformacion: 0, manoDeObra: 0, ventas: 0,
         reposiciones: 0, personal: 0, muestras: 0, ajustes: 0, traslados: 0, sinTipo: [], total: 0,
     };
     const avisos = [];
@@ -122,6 +122,8 @@ function clasificarPT(asientos, costosLote = {}) {
                 break;
             case "transformacion": g.transformacion += v; break;
             case "mano_de_obra": g.manoDeObra += v; break;
+            // Precio de la leche corregido con su factura de Zoho: va a la cuenta de leche del proveedor.
+            case "costo_leche": { const p = a.proveedorId || a.ref?.proveedorId || "_"; g.lechePorProveedor[p] = (g.lechePorProveedor[p] || 0) + v; break; }
             case "venta": case "devolucion": g.ventas += v; break;
             case "reposicion": case "merma": g.reposiciones += v; break;
             case "consumo_interno": if (a.subcategoria === "muestras") g.muestras += v; else g.personal += v; break;
@@ -187,6 +189,10 @@ function armarAsiento({ mes, hasta, pt = [], mat = [], costosLote = {}, manoObra
     const prod = {};
     for (const [logId, v] of Object.entries(g.produccionPorLote)) {
         for (const [cta, x] of Object.entries(repartir(v, pesosDeLote(costosLote[logId], lechePorProveedor)))) prod[cta] = (prod[cta] || 0) + x;
+    }
+    for (const [prov, v] of Object.entries(g.lechePorProveedor)) {
+        const cta = cuentaComponente({ tipo: "leche", proveedorId: prov }, lechePorProveedor);
+        prod[cta] = (prod[cta] || 0) + v;
     }
     const emp = g.transformacion + g.empaqueProduccion;
     if (emp) prod[CUENTAS.empaquesEtiquetas.id] = (prod[CUENTAS.empaquesEtiquetas.id] || 0) + emp;
