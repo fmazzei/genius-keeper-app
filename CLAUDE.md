@@ -3253,7 +3253,7 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
 - **En simulación no se manda nada.** «Correo de prueba» (solo máster, acción `asientoMensualCorreoPrueba`): manda el correo del último registro guardado del mes con «[PRUEBA]» en el asunto, sin tocar Zoho.
 - Pruebas: `node tests/asientoMensualCorreo.test.mjs` (17 en verde) y la e2e del asiento (25 en verde: aborto con correo una sola vez, correo de aprobación con enlace e inventario, sin aprobaciones queda en borrador, con aprobaciones queda en aprobación y no se toca, correo de prueba, simulación sin correo).
 
-**Leche de Masparrito (12-nov):** se le factura a Francisco Mazzei Osorio (proveedor en Zoho). La factura CXP 111120262 (id 3576378000008463002, 11-nov, $222,60 = 159 L × $1,40) está en Inventario de materia prima y es la recepción `2YKr0bNTvHuRVcvgEPTU` del lote LCO20261111-1913. Kroma la tenía a $1,60 (el precio del maestro): por el conector se pasó a $1,40 en la recepción y en `recepciones` del lote (`costoUsdLitroAnterior` y `facturaZoho` quedan de constancia; cambios `8sjmOjGn4ArYZMjkm7JU` y `611k6vujbqYb8rFPPg3n`). **El precio del maestro de Masparrito sigue en $1,60: decisión pendiente del dueño.** El flete de Masparrito ($25 por viaje) no tiene factura en Zoho.
+**Leche de Masparrito (12-nov):** se le factura a Francisco Mazzei Osorio (proveedor en Zoho). La factura CXP 111120262 (id 3576378000008463002, 11-nov, $222,60 = 159 L × $1,40) está en Inventario de materia prima y es la recepción `2YKr0bNTvHuRVcvgEPTU` del lote LCO20261111-1913. Kroma la tenía a $1,60 (el precio del maestro): por el conector se pasó a $1,40 en la recepción y en `recepciones` del lote (`costoUsdLitroAnterior` y `facturaZoho` quedan de constancia; cambios `8sjmOjGn4ArYZMjkm7JU` y `611k6vujbqYb8rFPPg3n`). **Maestro de Masparrito a $1,40 (decisión del dueño, 12-nov; cambio `fz7no5QWW6FFpncEU85x`):** el maestro queda como estimación; si la recepción tiene factura en Zoho, manda el precio de la factura (ver «Leche contra su factura de Zoho»). El flete de Masparrito ($25 por viaje) no tiene factura en Zoho.
 - **Cuadre de MP recalculado (datos al 12-nov): −304,98** contra Ajustes de inventario (antes −273,18). El desglose anterior estaba mal: daba la leche de Masparrito por «sin compra en Zoho», y la factura sí está en el saldo de MP. Zoho MP 2.969,57 = 1.559,12 al 31-oct + RECLAS 766,65 + Gilgares 421,20 + Masparrito 222,60. Después de la producción (−1.089,01) queda en 1.880,56, contra Kroma 1.575,58 (materiales 804,18 + leche y flete en proceso 771,40). La diferencia de 304,98 se explica así:
   - 324,73: el saldo de MP de Zoho al 31-oct (1.559,12) está por encima de lo que Kroma cuenta a esa fecha (1.234,39 = conteo del 11-nov 804,18 + 574,21 consumidos en noviembre antes del conteo − 144 de fermentos comprados en noviembre). Una parte puede ser la bobina, pendiente de ajuste por peso.
   - +7,85: factura 1417 (402,04 L facturados, 396 recibidos).
@@ -3280,15 +3280,38 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
   - En el asiento simulado de noviembre entra como «Ajustes y conteos de producto terminado» +92,68.
   - Desde el 30-oct no hay visitas del mercaderista ni facturas de Caracas.
 
+**Otros movimientos del 12-nov (por el conector, aprobados por Francisco):**
+- **Permisos de Zoho renovados** con la lista completa (incluye `ZohoBooks.expenses.READ`): facturas, notas de crédito, gastos, diarios y plan de cuentas se leen bien. La simulación de noviembre ya no avisa de gastos.
+- **Baja de las 10 bolsas de 1 kg del lote LCO20260708-H** (vencidas): salida «Vencido», categoría merma, −$102,86, a «Reposiciones, mermas y producto vencido» (cambios `YimqGpo1WJqVuOh4bTuV` y `JfzIunn2gtnAL3GCfkzz`).
+
+**Leche contra su factura de Zoho (13-nov, rama `claude/leche-factura-zoho`, sin unir):** pedido de Francisco: el cierre de cada noche busca la factura de proveedor de cada recepción de leche y, si el precio por litro es otro, corrige la recepción y el costo del lote y lo avisa.
+- **Reglas** (`functions/handlers/lecheFacturaReglas.js`, puro):
+  - Proveedor de Kroma → contacto de Zoho (`PROVEEDORES_ZOHO`: Los Gilgares → Agropecuaria Los Gilgares `…407036`; Masparrito → Francisco Mazzei Osorio `…410227`; se amplía en `kroma_inv_config/lacteoca.leche.facturas.proveedoresZoho`).
+  - Línea de leche = línea de una factura (no anulada ni borrador) de ese proveedor cuyo texto dice «leche» o que va a una cuenta de leche; litros = cantidad, precio = tarifa.
+  - Se empareja por **proveedor, fecha (±3 días) y litros (±3 %)** (`ventanaDias`, `toleranciaLitrosPct`). Solo un emparejamiento **claro** corrige: la recepción tiene una sola línea candidata y esa línea una sola recepción. Si no, `ambigua` (se avisa y no se toca) o `sin_factura`.
+  - **Mes abierto** (`mesAbierto`): el asiento mensual del mes no está creado ni publicado (`creado`, `sin_cambios`, `ya_publicado`), y el mes no es anterior a `zoho.mensual.primerMes` ni a la apertura. Si la recepción ya alimentó un lote cerrado, el mes del lote también tiene que estar abierto (`mes_cerrado`: no se toca).
+- **Corrección** (`functions/handlers/lecheFacturas.js`, `correrLecheFacturas`):
+  - Recepción: `costoUsdLitro` = precio de la factura; quedan `costoUsdLitroAnterior`, `facturaZoho` y `lecheFactura`.
+  - Lote: la copia en `recepciones` y, si está cerrado con costo, el componente de leche de esa recepción (`costeoCorregido`: queda con `recepcionId` y `origenPrecio: factura_zoho`), `costoBaseTotal` y `costoBasePorKg`. El disparador vuelve a congelar `kroma_inv_costos_lote` con su historial. Un lote en curso solo lleva la copia: el costo se calcula al cerrarlo.
+  - Inventario: la diferencia del lote se reparte como la mano de obra (`estadoGrupo`/`asientosDeGrupo`, ahora con `tipo`, `cat`, `ref`, `extra` y `etiqueta`; mano de obra no cambia). Lo que sigue en planta, en camino o en ACC sube o baja de costo (`costoUnitarioUsd` con `_mov.tipo: costo_leche`, que el libro no anota otra vez como revaluación); la parte de lo que ya salió entra y sale por su categoría (venta, merma…), con la colección de contrapartida `costo_leche`.
+  - Libro: categoría nueva **`costo_leche`** con `proveedorId`, fechada el día de la corrida o, si ya empezó el mes siguiente, el último día del mes del lote. En el asiento mensual va en «Producción» contra la cuenta de leche del proveedor (Masparrito → Leche Masparrito; los demás → Leche de terceros).
+  - **Reversible:** cada documento se escribe con `aplicarOperaciones` del conector (copia previa en `mcp_cambios`) y la corrección queda en `kroma_inv_leche/{recepcionId}` con sus cambios y el prefijo de sus asientos. `revertirCorreccion` aplica la inversa (precio anterior, costo del lote, partidas y libro) y marca la recepción `lecheFactura.noCorregir`: la siguiente corrida la avisa (`no_corregir`) y no la vuelve a corregir.
+- **Modo:** `kroma_inv_config/lacteoca.leche.facturas.modo` = `simulacion` (por defecto: calcula y anota, no cambia nada) o `real`. `activo: false` la apaga.
+- **Reporte diario:** cada corrida queda en `kroma_inv_leche_corridas/{fecha}` y es el **control 10 «Leche contra factura de Zoho»** (aviso, no diferencia: cuadra / corregida / con otro precio / no clara / sin factura / mes cerrado). Avisos en `kroma_alerts` (tipo `leche_factura`; una recepción sin factura avisa a los 7 días); se cierran solos.
+- **Comandos** (`kroma_inv_comandos`): `{accion:'lecheFacturas', modo:'simular'|'ejecutar'}` (simular no guarda nada) y `{accion:'lecheRevertir', recepcionId, modo}`.
+- **Reglas Firestore:** `kroma_inv_leche` y `kroma_inv_leche_corridas`, lectura Kroma/admin, escribe solo el servidor.
+- **Simulación con los datos de noviembre** (las tres recepciones y las tres facturas reales): las tres se emparejan y **cuadran**, no hay nada que corregir. Gilgares 396 L ↔ 1417 (402,04 L a $1,30); Gilgares 326 L ↔ CXP 1112026-1419 (324 L a $1,30); Masparrito 159 L ↔ CXP 111120262 (159 L a $1,40).
+- Pruebas: `node tests/lecheFactura.test.mjs` (33 en verde, con las facturas y recepciones reales) y `npx firebase emulators:exec --only firestore --project demo-gk-leche "node tests/lecheFacturas.e2e.test.mjs"` (30 en verde: simular sin escribir, corregir recepción, lote, granel, camión y libro, copias previas, repetir sin duplicar, revertir, no clara, mes cerrado, asiento del 30-nov en diciembre, control 10). Siguen en verde las e2e de mano de obra, asiento mensual, facturas e inventario.
+
 **Sección 9 — plan de simulación del 1 al 3 de diciembre (12-nov):**
 - **Antes del 30-nov** (pendientes):
   - renovar la conexión de Zoho sumando `ZohoBooks.expenses.READ` (lo que diga el aviso de la simulación);
   - publicar el ARRANQUE-KROMA-2026-10 cuando Francisco lo confirme (sin eso, el control de PT queda en 1.933,82);
   - planta: empaque de la bolsa de 1 kg y ajuste por peso de la bobina (lunes 16-nov);
   - cerrar o envasar el lote del 11-nov;
-  - que Francisco ponga su correo en «Con copia a»;
-  - decidir el precio de Masparrito en el maestro.
-- **Automático, con el cierre de las 23:55**, en este orden: facturas → mano de obra → recalcular → asiento mensual.
+  - ~~que Francisco ponga su correo en «Con copia a»~~ (`lacteoca@lacteoca.com`, 12-nov);
+  - ~~decidir el precio de Masparrito en el maestro~~ ($1,40, 12-nov).
+- **Automático, con el cierre de las 23:55**, en este orden: facturas → mano de obra → leche contra factura → recalcular → asiento mensual.
   - **1 y 2-dic**: el asiento de noviembre espera el cierre de la mano de obra (`esperando`).
   - **3-dic**: se cierra la mano de obra de noviembre con lo real de Zoho y se simula el asiento (`kroma_inv_zoho/2026-11`, estado `simulado` o `abortaria`). No se manda nada a Zoho ni por correo.
 - **4-dic, revisión** (Inventario valorado → Zoho, mes 2026-11):
@@ -3298,6 +3321,7 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
   4. el control posterior de PT y MP;
   5. «Correo de prueba» a María José y a Francisco.
 - **Si todo cuadra y Francisco aprueba:** «Activar modo real». La siguiente noche se crea el borrador `KROMA-INV-2026-11` (sin mandar a aprobación) y sale el correo. María José lo revisa y lo publica en Zoho.
+- **Leche contra factura** (unido el 13-nov, #16): sigue en simulación hasta el 4-dic. Ese día, con el modo real del asiento y si Francisco lo aprueba, `leche.facturas.modo = "real"`. Hasta entonces el control 10 del reporte dice cada noche qué se corregiría.
 - **Pruebas antes de activar:** `node tests/asientoMensual.test.mjs`, `node tests/asientoMensualCorreo.test.mjs`, la e2e del asiento, `node tests/inventarioPerpetuo.test.mjs`, `node tests/inventarioMateriales.test.mjs`, y las e2e de facturas, materiales y mano de obra, todas en verde.
 
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)

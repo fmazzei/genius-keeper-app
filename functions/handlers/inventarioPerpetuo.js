@@ -80,6 +80,7 @@ const CATEGORIAS = [
     { key: "ajuste", label: "Ajustes y conteos" },
     { key: "revaluacion", label: "Revaluación de costo" },
     { key: "mano_de_obra", label: "Mano de obra" },
+    { key: "costo_leche", label: "Precio de la leche (factura de Zoho)" },
     { key: "sin_tipo", label: "Sin tipo (revisar)" },
 ];
 const TIPO_CAT = {
@@ -149,6 +150,8 @@ function estadoDe(coleccion, d) {
     };
 }
 
+const COSTO_CON_ASIENTO_PROPIO = new Set(["mano_de_obra", "costo_leche"]);
+
 function ubicacionDe(coleccion) { return coleccion === COL_PLANTA ? "planta" : "frimaca"; }
 
 /**
@@ -193,9 +196,10 @@ function asientosDeCambio({ coleccion, docId, before, after, fechaHoy }) {
     const costoNuevo = a?.costo ?? b?.costo ?? null;
 
     // Revaluación: el costo cambió sobre lo que YA había.
-    // La mano de obra (sección 6) escribe sus propios asientos: el cambio de
-    // costo de la partida no se anota otra vez como revaluación.
-    if (b && a && cb > 0 && b.costo !== a.costo && mov?.tipo !== "mano_de_obra") {
+    // La mano de obra (sección 6) y la corrección del precio de la leche con su
+    // factura escriben sus propios asientos: el cambio de costo de la partida no
+    // se anota otra vez como revaluación.
+    if (b && a && cb > 0 && b.costo !== a.costo && !COSTO_CON_ASIENTO_PROPIO.has(mov?.tipo)) {
         out.push({
             ...comun, ubicacion: ubicacionDe(coleccion),
             tipo: mov?.tipo === "asignacion_costo" ? "asignacion_costo" : (mov ? mov.tipo : "asignacion_costo"),
@@ -469,7 +473,7 @@ function controlLotes(lotes, fecha, tolerancia = 0.15) {
 }
 
 /** Arma el reporte de un día con todo lo anterior. */
-function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {}, controlZoho = null, facturas = null, diasVencer = 15, materiales = null }) {
+function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {}, controlZoho = null, facturas = null, diasVencer = 15, materiales = null, leche = null }) {
     const hasta = asientos.filter(a => a.fecha <= fecha);
     const sal = saldos(hasta, fecha, precioKg);
     const porUbic = {};
@@ -557,6 +561,7 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
                 nota: materiales.control.estado === "diferencia" ? "Hay consumos de materiales sin costo: revisa la unidad o el costo en el maestro."
                     : materiales.control.estado === "aviso" ? "Hay movimientos de materiales sin tipo: se valoran al promedio y van a ajustes." : null,
                 detalle: materiales.control.detalle },
+        controlLeche(leche),
     ];
     return {
         fecha,
@@ -582,6 +587,30 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
         conDiferencias: controles.filter(c => c.estado === "diferencia").map(c => c.n),
         conAvisos: controles.filter(c => c.estado === "aviso").map(c => c.n),
     };
+}
+
+/**
+ * Control 10: cada recepción de leche contra la línea de su factura de Zoho
+ * (lecheFacturas.js). Aviso, no diferencia: una recepción sin factura todavía,
+ * un emparejamiento no claro (no se corrige) o un precio corregido o por
+ * corregir quedan anotados aquí.
+ */
+function controlLeche(leche) {
+    if (!leche) return { n: 10, nombre: "Leche contra factura de Zoho", estado: "no_aplica", nota: "No hubo revisión de la leche este día." };
+    const filas = leche.resultados || [];
+    const cuenta = (e) => filas.filter(f => f.estado === e).length;
+    const conAviso = filas.filter(f => !["cuadra", "sin_factura"].includes(f.estado));
+    const partes = [];
+    if (cuenta("cuadra")) partes.push(`${cuenta("cuadra")} cuadra(n) con su factura`);
+    if (cuenta("corregida")) partes.push(`${cuenta("corregida")} corregida(s) con el precio de la factura`);
+    if (cuenta("precio_distinto")) partes.push(`${cuenta("precio_distinto")} con otro precio en la factura${leche.simulacion ? " (simulación: no se corrigió)" : ""}`);
+    if (cuenta("ambigua")) partes.push(`${cuenta("ambigua")} sin emparejamiento claro (no se corrige)`);
+    if (cuenta("sin_factura")) partes.push(`${cuenta("sin_factura")} todavía sin factura`);
+    if (cuenta("mes_cerrado")) partes.push(`${cuenta("mes_cerrado")} de un mes cerrado (no se tocan)`);
+    if (cuenta("error")) partes.push(`${cuenta("error")} con error`);
+    return { n: 10, nombre: "Leche contra factura de Zoho", estado: conAviso.length || cuenta("sin_factura") ? "aviso" : "aprobado",
+        nota: partes.join(" · ") || "Sin recepciones de un mes abierto.",
+        detalle: { modo: leche.modo, recepciones: filas, avisos: leche.avisos || [], facturasSinRecepcion: leche.lineasSinRecepcion || [] } };
 }
 
 /** Asigna una salida a los lotes más antiguos primero (FIFO). Puro. */
@@ -813,6 +842,15 @@ exports.inventarioComando = functions.runWith({ timeoutSeconds: 540, memory: "1G
                     pesoNuevo: c.pesoNuevo, tara: c.tara, reemplaza: c.reemplaza, simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
             } else if (c.accion === "materiales") {
                 resultado = await require("./inventarioMateriales")._materiales.abrirMateriales({ simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
+            } else if (c.accion === "lecheFacturas") {
+                // Simular no guarda nada: devuelve lo que haría. Ejecutar corrige (si hay diferencias) y recalcula.
+                const L = require("./lecheFacturas");
+                const ej = c.modo === "ejecutar";
+                resultado = await L.correrLecheFacturas({ simular: !ej, quien: c.quien || "comando", guardar: ej });
+                if (ej) resultado = { ...resultado, recalculo: await recalcularPendientes() };
+            } else if (c.accion === "lecheRevertir") {
+                resultado = await require("./lecheFacturas").revertirCorreccion({ recepcionId: c.recepcionId, simular: c.modo !== "ejecutar", quien: c.quien || "comando" });
+                if (c.modo === "ejecutar") resultado = { ...resultado, recalculo: await recalcularPendientes() };
             } else if (c.accion === "recalcular") {
                 resultado = await recalcularPendientes(/^\d{4}-\d{2}-\d{2}$/.test(c.desde || "") ? c.desde : null);
             } else {
@@ -1001,7 +1039,10 @@ async function generarReporte(fecha) {
     let materiales = null;
     try { materiales = await require("./inventarioMateriales")._materiales.datosReporte(fecha); }
     catch (e) { console.error("datosReporte materiales", e); }
-    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg, facturas, materiales, diasVencer: Number(cfg.diasAvisoVencimiento) || 15,
+    let leche = null;
+    try { leche = await require("./lecheFacturas").datosReporte(fecha); }
+    catch (e) { console.error("datosReporte leche", e); }
+    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg, facturas, materiales, leche, diasVencer: Number(cfg.diasAvisoVencimiento) || 15,
         controlZoho: z?.exists ? (z.data().control || null) : null });
     await db().doc(`${COL_REPORTES}/${fecha}`).set({
         ...JSON.parse(JSON.stringify(rep)), empresaId: EMPRESA,
@@ -1056,6 +1097,12 @@ exports.inventarioCierreDiario = onSchedule({
     try { await require("./manoDeObra").corridaNocturna(); } catch (e) {
         console.error("manoDeObra", e);
         await db().doc(DOC_CONFIG).set({ manoDeObra: { ultimoError: String(e?.message || e).slice(0, 300), ultimoErrorAt: new Date().toISOString() } }, { merge: true }).catch(() => {});
+    }
+    // Leche contra su factura de Zoho: corrige el precio de las recepciones del
+    // mes abierto (en modo real) y lo anota para el reporte del día.
+    try { await require("./lecheFacturas").correrLecheFacturas({ quien: "cierre diario" }); } catch (e) {
+        console.error("lecheFacturas", e);
+        await db().doc(DOC_CONFIG).set({ leche: { facturas: { ultimoError: String(e?.message || e).slice(0, 300), ultimoErrorAt: new Date().toISOString() } } }, { merge: true }).catch(() => {});
     }
     await recalcularPendientes();
     try { await avisarLotesPorVencer(); } catch (e) { console.error("avisarLotesPorVencer", e); }
@@ -1402,7 +1449,7 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
 
 exports._internos = {
     estadoDe, asientosDeCambio, asientosDeRecepcion, saldos, controlIdentidad, controlCuadre, controlLotes,
-    armarReporte, asignarFIFO, asignarFEFO, lotesCaracas, netearConRuta, categoria, subcategoria, bodegaDe, docRuta,
+    armarReporte, controlLeche, asignarFIFO, asignarFEFO, lotesCaracas, netearConRuta, categoria, subcategoria, bodegaDe, docRuta,
     fechaCaracas, diaAnterior, r2, r6, CATEGORIAS,
     procesarCambioPartida, generarReporte, abrir, contar, escribirAsientos, recalcularPendientes, leerAsientos,
     pesoDePresentacion, completarLineaDespacho, repararAperturaTransito, lotesPorVencer, diasEntre, avisarLotesPorVencer,

@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-13-leche-factura",
+    fecha: "2026-11-13",
+    roles: ["master"],
+    titulo: "La leche se revisa contra su factura de Zoho",
+    resumen: "Cada noche Kroma busca la factura de cada recepci\xF3n de leche (Los Gilgares y Masparrito). Si el precio por litro es otro, lo anota en el reporte diario; en modo real corrige la recepci\xF3n y el costo del lote, y se puede revertir. Empieza en simulaci\xF3n."
+  },
+  {
     id: "2026-11-12-asiento-permisos-zoho",
     fecha: "2026-11-12",
     roles: ["master"],

@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-13-leche-factura',
+        fecha: '2026-11-13',
+        roles: ['master'],
+        titulo: 'La leche se revisa contra su factura de Zoho',
+        resumen: 'Cada noche Kroma busca la factura de cada recepción de leche (Los Gilgares y Masparrito). Si el precio por litro es otro, lo anota en el reporte diario; en modo real corrige la recepción y el costo del lote, y se puede revertir. Empieza en simulación.',
+    },
+    {
         id: '2026-11-12-asiento-permisos-zoho',
         fecha: '2026-11-12',
         roles: ['master'],

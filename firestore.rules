@@ -774,6 +774,15 @@ service cloud.firestore {
       allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow write: if false;
     }
+    // Leche contra su factura de Zoho: correcciones y corridas del cierre (solo el servidor escribe).
+    match /kroma_inv_leche/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
+    match /kroma_inv_leche_corridas/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
     match /kroma_compras/{id} {
       allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
