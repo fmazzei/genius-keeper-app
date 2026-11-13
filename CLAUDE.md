@@ -3321,6 +3321,7 @@ Pedido del dueño (11-nov): Kroma es la única fuente del inventario y prepara c
   4. el control posterior de PT y MP;
   5. «Correo de prueba» a María José y a Francisco.
 - **Si todo cuadra y Francisco aprueba:** «Activar modo real». La siguiente noche se crea el borrador `KROMA-INV-2026-11` (sin mandar a aprobación) y sale el correo. María José lo revisa y lo publica en Zoho.
+- **Leche contra factura** (unido el 13-nov, #16): sigue en simulación hasta el 4-dic. Ese día, con el modo real del asiento y si Francisco lo aprueba, `leche.facturas.modo = "real"`. Hasta entonces el control 10 del reporte dice cada noche qué se corregiría.
 - **Pruebas antes de activar:** `node tests/asientoMensual.test.mjs`, `node tests/asientoMensualCorreo.test.mjs`, la e2e del asiento, `node tests/inventarioPerpetuo.test.mjs`, `node tests/inventarioMateriales.test.mjs`, y las e2e de facturas, materiales y mano de obra, todas en verde.
 
 ## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
