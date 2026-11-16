@@ -51,15 +51,30 @@ export const ROLES_NOTIF = [
 // 'sales_manager' y 'director' se configuran como gerencia.
 export const rolDeConfig = (role) => (role === 'sales_manager' || role === 'director') ? 'gerencia' : role;
 
-// Lo que recibe cada rol si el máster no ha dicho otra cosa. Decisión del
-// dueño (16-nov-2026): los REPORTES de visita y los QUIEBRES (anaquel bajo)
-// le llegan a TODOS los usuarios; se apaga por rol o por persona en el centro.
+// Lo que recibe cada rol si el máster no ha dicho otra cosa. Es lo que ya
+// llegaba antes del centro, para que nadie pierda ni gane avisos al publicarlo.
+// Los REPORTES no salen de aquí: los decide la política de Alertas
+// (`settings/notificationsConfig.events.nuevo_reporte`, ver `politicaDeAlertas`).
 export const DEFAULT_ROLES = {
     master:        { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
     gerencia:      { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
-    vendedor:      { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
-    merchandiser:  { anaquel: true,  reporte: true,  agente: false, operacion: true,  novedades: true },
-    administrador: { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
+    vendedor:      { anaquel: true,  reporte: false, agente: true,  operacion: true,  novedades: true },
+    merchandiser:  { anaquel: true,  reporte: false, agente: false, operacion: true,  novedades: true },
+    administrador: { anaquel: false, reporte: false, agente: true,  operacion: true,  novedades: true },
+};
+
+// La política que el máster ya tiene en Configuraciones → Alertas
+// (`settings/notificationsConfig`) manda sobre los valores por defecto: quién
+// recibe el aviso de cada reporte del mercaderista lo dice «Nuevo reporte»
+// (`destinations`, con `enabled`). Devuelve { reporte: [roles] } o {} si no hay
+// política escrita. Corrección del dueño (16-nov-2026): «las notificaciones no
+// son iguales para todos; hay políticas establecidas en las configuraciones».
+export const politicaDeAlertas = (notifConfig) => {
+    const ev = notifConfig?.events?.nuevo_reporte;
+    if (!ev) return {};
+    if (ev.enabled === false) return { reporte: [] };
+    if (!Array.isArray(ev.destinations)) return {};
+    return { reporte: [...new Set(ev.destinations.map(rolDeConfig))] };
 };
 
 // De qué categoría es una notificación vieja que no la trae escrita.
@@ -77,6 +92,8 @@ export const recibeRol = (cfg, role, categoria) => {
     const r = rolDeConfig(role);
     const explicito = cfg?.roles?.[r]?.[categoria];
     if (typeof explicito === 'boolean') return explicito;
+    const politica = cfg?.politica?.[categoria];
+    if (Array.isArray(politica)) return politica.includes(r);
     return DEFAULT_ROLES[r]?.[categoria] === true;
 };
 

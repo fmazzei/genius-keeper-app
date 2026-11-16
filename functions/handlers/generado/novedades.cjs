@@ -29,9 +29,9 @@ var NOVEDADES = [
   {
     id: "2026-11-16-campanita-reportes-quiebres",
     fecha: "2026-11-16",
-    roles: [],
-    titulo: "La campanita trae los reportes y los quiebres",
-    resumen: "Cada reporte de visita y cada punto de venta que queda con el anaquel bajo sin reponer llega a tu campanita. Al tocarlo se abre el reporte."
+    roles: ["master"],
+    titulo: "Avisos seg\xFAn tus pol\xEDticas, y tu tel\xE9fono no se pierde",
+    resumen: "Los avisos de reportes llegan a los roles que marcaste en Alertas \u2192 \xABNuevo reporte\xBB, y los quiebres quedan tambi\xE9n en la campanita. Entrar a Kroma en el mismo tel\xE9fono ya no le quita los avisos al m\xE1ster."
   },
   {
     id: "2026-11-16-editar-reporte-completo",

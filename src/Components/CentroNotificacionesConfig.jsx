@@ -12,7 +12,7 @@ import { RotateCcw, Search } from 'lucide-react';
 import { db } from '@/Firebase/config.js';
 import { useAuth } from '@/context/AuthContext';
 import {
-    CATEGORIAS, ROLES_NOTIF, rolDeConfig, recibe, recibeRol, esPropio, tituloPush,
+    CATEGORIAS, ROLES_NOTIF, rolDeConfig, recibe, recibeRol, esPropio, tituloPush, politicaDeAlertas,
 } from '@/utils/centroNotificaciones.js';
 import { estiloDe } from '@/Components/CategoriaNotif.jsx';
 
@@ -37,13 +37,18 @@ function Interruptor({ on, cat, onClick, chico = false, propio = false, titulo }
 
 export default function CentroNotificacionesConfig() {
     const { user } = useAuth();
-    const [cfg, setCfg] = useState({});
+    const [cfgCentro, setCfgCentro] = useState({});
+    const [alertas, setAlertas] = useState(null);
     const [usuarios, setUsuarios] = useState([]);
     const [busca, setBusca] = useState('');
     const [error, setError] = useState(null);
 
     useEffect(() => onSnapshot(doc(db, 'settings', 'centroNotificaciones'),
-        (s) => setCfg(s.exists() ? s.data() : {}), (e) => setError(e.message)), []);
+        (s) => setCfgCentro(s.exists() ? s.data() : {}), (e) => setError(e.message)), []);
+    // Los reportes los decide la política de Alertas → «Nuevo reporte».
+    useEffect(() => onSnapshot(doc(db, 'settings', 'notificationsConfig'),
+        (s) => setAlertas(s.exists() ? s.data() : null), (e) => setError(e.message)), []);
+    const cfg = useMemo(() => ({ ...cfgCentro, politica: politicaDeAlertas(alertas) }), [cfgCentro, alertas]);
     useEffect(() => onSnapshot(query(collection(db, 'users_metadata'), where('role', 'in', ROLES_GK)),
         (s) => setUsuarios(s.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.active !== false)),
         (e) => setError(e.message)), []);
@@ -56,7 +61,26 @@ export default function CentroNotificacionesConfig() {
         } catch (e) { setError(`No se pudo guardar: ${e.message}`); }
     };
 
-    const cambiarRol = (rol, cat) => guardar({ roles: { [rol]: { [cat]: !recibeRol(cfg, rol, cat) } } });
+    // Reportes por rol: se escriben en la MISMA política de Alertas («Nuevo
+    // reporte»), para que haya un solo lugar que lo decida.
+    const cambiarReporteRol = async (rol) => {
+        const ev = alertas?.events?.nuevo_reporte || {};
+        const actuales = Array.isArray(ev.destinations) ? ev.destinations : [];
+        const nombres = rol === 'gerencia' ? ['sales_manager', 'gerencia', 'director'] : [rol];
+        const prender = !recibeRol(cfg, rol, 'reporte');
+        const sin = actuales.filter(d => !nombres.includes(d));
+        const destinations = prender ? [...sin, rol === 'gerencia' ? 'sales_manager' : rol] : sin;
+        try {
+            await setDoc(doc(db, 'settings', 'notificationsConfig'),
+                { events: { nuevo_reporte: { enabled: ev.enabled !== false, destinations } } }, { merge: true });
+            // Lo que el centro dijera antes para ese rol ya no aplica.
+            if (typeof cfgCentro?.roles?.[rol]?.reporte === 'boolean') await guardar({ roles: { [rol]: { reporte: deleteField() } } });
+            setError(null);
+        } catch (e) { setError(`No se pudo guardar: ${e.message}`); }
+    };
+    const cambiarRol = (rol, cat) => cat === 'reporte'
+        ? cambiarReporteRol(rol)
+        : guardar({ roles: { [rol]: { [cat]: !recibeRol(cfg, rol, cat) } } });
 
     // Tocar a una persona: si queda igual que su rol, se borra lo propio.
     const cambiarPersona = (u, cat) => {
@@ -111,7 +135,11 @@ export default function CentroNotificacionesConfig() {
             {/* Por rol */}
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="font-bold text-slate-800">Por rol</p>
-                <p className="text-xs text-slate-500 mb-3">Lo que recibe cada rol, salvo que a una persona le pongas otra cosa abajo.</p>
+                <p className="text-xs text-slate-500 mb-3">
+                    Lo que recibe cada rol, salvo que a una persona le pongas otra cosa abajo. La columna 📋 Reporte es la misma
+                    política de Alertas → «Nuevo reporte»: cambiarla aquí o allá da lo mismo.
+                    {alertas?.events?.nuevo_reporte?.enabled === false && <span className="text-red-600 font-semibold"> Hoy «Nuevo reporte» está apagado en Alertas: no le llega a nadie.</span>}
+                </p>
                 <div className="overflow-x-auto -mx-4 px-4">
                     <table className="w-full text-sm">
                         <thead>

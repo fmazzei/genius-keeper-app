@@ -5,7 +5,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const C = require('../functions/handlers/generado/centroNotificaciones.cjs');
 const N = require('../functions/handlers/generado/novedades.cjs');
-const { tokensPorDueno, esTokenFcm } = require('../functions/handlers/pushCentral.js');
+const { tokensPorDueno, esTokenFcm, esCuentaGk } = require('../functions/handlers/pushCentral.js');
 const NA = require('../functions/handlers/novedadesApp.js');
 
 let fallas = 0;
@@ -14,11 +14,26 @@ const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas+
 // 1. Lo de siempre, sin configurar nada.
 ok(C.recibe({}, { uid: 'F', role: 'master' }, 'reporte'), 'el máster recibe reportes por defecto');
 ok(C.recibe({}, { uid: 'G', role: 'sales_manager' }, 'reporte'), 'sales_manager se configura como gerencia');
-// Decisión del dueño (16-nov): reportes y quiebres le llegan a TODOS los usuarios.
-ok(['master', 'gerencia', 'vendedor', 'merchandiser', 'administrador'].every(r => C.recibe({}, { uid: 'X', role: r }, 'reporte') && C.recibe({}, { uid: 'X', role: r }, 'anaquel')),
-    'reportes y quiebres le llegan a todos los roles por defecto');
+ok(!C.recibe({}, { uid: 'C', role: 'vendedor' }, 'reporte'), 'el vendedor no recibe reportes por defecto');
+ok(!C.recibe({}, { uid: 'M', role: 'administrador' }, 'anaquel'), 'administración no recibe el anaquel por defecto');
 ok(!C.recibe({}, { uid: 'P', role: 'produccion' }, 'reporte'), 'producción (Kroma) no recibe reportes');
-ok(!C.recibe({ roles: { vendedor: { reporte: false } } }, { uid: 'C', role: 'vendedor' }, 'reporte'), 'el máster puede apagar los reportes a un rol en el centro');
+
+// 1b. La política de Alertas («Nuevo reporte») decide quién recibe los reportes (16-nov).
+{
+    const real = { events: { nuevo_reporte: { enabled: true, destinations: ['master', 'sales_manager'] } } };
+    const pol = C.politicaDeAlertas(real);
+    ok(pol.reporte.join() === 'master,gerencia', 'la política de Alertas se lee en roles del centro (sales_manager = gerencia)');
+    const cfg = { politica: pol };
+    ok(C.recibe(cfg, { uid: 'F', role: 'master' }, 'reporte') && C.recibe(cfg, { uid: 'G', role: 'gerencia' }, 'reporte'), 'con la política real: máster y gerencia reciben reportes');
+    ok(!C.recibe(cfg, { uid: 'C', role: 'vendedor' }, 'reporte') && !C.recibe(cfg, { uid: 'A', role: 'merchandiser' }, 'reporte') && !C.recibe(cfg, { uid: 'M', role: 'administrador' }, 'reporte'),
+        'y el vendedor, el mercaderista y administración no');
+    const conVend = { politica: C.politicaDeAlertas({ events: { nuevo_reporte: { destinations: ['master', 'vendedor'] } } }) };
+    ok(C.recibe(conVend, { uid: 'C', role: 'vendedor' }, 'reporte') && !C.recibe(conVend, { uid: 'G', role: 'gerencia' }, 'reporte'), 'si la política agrega al vendedor y quita a gerencia, así llega');
+    const apagado = { politica: C.politicaDeAlertas({ events: { nuevo_reporte: { enabled: false, destinations: ['master'] } } }) };
+    ok(!C.recibe(apagado, { uid: 'F', role: 'master' }, 'reporte'), '«Nuevo reporte» apagado en Alertas: no le llega a nadie');
+    ok(!C.recibe({ ...cfg, usuarios: { F: { reporte: false } } }, { uid: 'F', role: 'master' }, 'reporte'), 'una persona apagada en el centro manda sobre la política');
+    ok(C.recibe(cfg, { uid: 'F', role: 'master' }, 'agente') && !C.recibe(cfg, { uid: 'M', role: 'administrador' }, 'anaquel'), 'la política de reportes no toca las otras categorías');
+}
 ok(!C.recibe({}, { uid: 'K', role: 'kroma_operario' }, 'operacion'), 'un rol de Kroma no recibe nada de GK');
 ok(!C.recibe({}, { uid: 'X', role: 'master', active: false }, 'agente'), 'un usuario inactivo no recibe nada');
 
@@ -54,6 +69,8 @@ const porUid = tokensPorDueno([
 ]);
 ok((porUid.get('FRAN') || []).length === 1 && !porUid.has('GER'), 'el teléfono de Francisco solo recibe lo del máster');
 ok((porUid.get('CARO') || []).join() === tok(2), 'Carolina conserva su propio teléfono');
+ok(esCuentaGk({ role: 'master' }) && esCuentaGk({ role: 'sales_manager' }) && !esCuentaGk({ role: 'produccion' }) && !esCuentaGk({ role: 'kroma_operario' }),
+    'las cuentas de Kroma (producción) no compiten por el teléfono del máster');
 ok(!esTokenFcm('regChallenge') && !esTokenFcm('authChallenge') && esTokenFcm(tok(3)), 'los desafíos de la huella no son teléfonos');
 
 // 6. Novedades.
