@@ -11,11 +11,10 @@ export const ESTILO = {
     reporte:   { chip: 'bg-blue-100 text-blue-700 border-blue-200',          barra: 'bg-blue-500',    fondo: 'bg-blue-50/50',    punto: 'bg-blue-500' },
     agente:    { chip: 'bg-violet-100 text-violet-700 border-violet-200',    barra: 'bg-violet-500',  fondo: 'bg-violet-50/50',  punto: 'bg-violet-500' },
     operacion: { chip: 'bg-emerald-100 text-emerald-700 border-emerald-200', barra: 'bg-emerald-500', fondo: 'bg-emerald-50/50', punto: 'bg-emerald-500' },
-    kroma:     { chip: 'bg-orange-100 text-orange-800 border-orange-200',   barra: 'bg-orange-500',  fondo: 'bg-orange-50/60',  punto: 'bg-orange-500' },
     novedades: { chip: 'bg-amber-100 text-amber-800 border-amber-300',       barra: 'bg-amber-400',   fondo: 'bg-amber-50/70',   punto: 'bg-amber-500' },
 };
 
-export const ORDEN_CATEGORIAS = ['anaquel', 'reporte', 'agente', 'operacion', 'kroma', 'novedades'];
+export const ORDEN_CATEGORIAS = ['anaquel', 'reporte', 'agente', 'operacion', 'novedades'];
 
 // La categoría de una notificación de la campanita.
 export const categoriaDe = (n) => {

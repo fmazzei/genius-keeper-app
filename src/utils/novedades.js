@@ -21,13 +21,6 @@
 
 export const NOVEDADES = [
     {
-        id: '2026-11-16-avisos-planta-kroma',
-        fecha: '2026-11-16',
-        roles: ['master', 'gerencia', 'administrador'],
-        titulo: 'Los avisos de la planta te llegan al teléfono',
-        resumen: 'Lo de Kroma (producción terminada, stock bajo, faltantes, solicitudes de ajuste, lotes por vencer y temporizadores) llega como «🏭 Planta» a tu teléfono y a tu campanita, junto con los de GK.',
-    },
-    {
         id: '2026-11-16-campanita-reportes-quiebres',
         fecha: '2026-11-16',
         roles: ['master'],

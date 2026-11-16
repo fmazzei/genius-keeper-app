@@ -31,9 +31,6 @@ const sendKromaNotif = async ({ tipo, mensaje, logId, lote, productoNombre, dest
         destinatarios: destinatarios || [],
         leidaPor: [],
         leida: false,
-        // Ya se avisó por GK en la misma llamada: kromaAvisos no lo repite.
-        deServidor: true,
-        empresaId: "lacteoca",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 };

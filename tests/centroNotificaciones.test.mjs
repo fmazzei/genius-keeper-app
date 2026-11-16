@@ -73,28 +73,6 @@ ok(esCuentaGk({ role: 'master' }) && esCuentaGk({ role: 'sales_manager' }) && !e
     'las cuentas de Kroma (producción) no compiten por el teléfono del máster');
 ok(!esTokenFcm('regChallenge') && !esTokenFcm('authChallenge') && esTokenFcm(tok(3)), 'los desafíos de la huella no son teléfonos');
 
-// 5b. Planta (Kroma): máster, gerencia y administración; vendedor y mercaderista no (16-nov).
-{
-    const K = require('../functions/handlers/kromaAvisos.js');
-    ok(['master', 'gerencia', 'sales_manager', 'administrador'].every(r => C.recibe({}, { uid: 'X', role: r }, 'kroma')),
-        'la planta le llega al máster, a gerencia y a administración');
-    ok(!C.recibe({}, { uid: 'C', role: 'vendedor' }, 'kroma') && !C.recibe({}, { uid: 'A', role: 'merchandiser' }, 'kroma'),
-        'y no al vendedor ni al mercaderista');
-    ok(C.recibe({ roles: { vendedor: { kroma: true } } }, { uid: 'C', role: 'vendedor' }, 'kroma'), 'se le puede dar a un vendedor desde el centro');
-    ok(C.tituloPush('kroma', 'Stock bajo · Tinas') === '🏭 Planta · Stock bajo · Tinas', 'llega como «🏭 Planta» en el teléfono');
-    ok(C.categoriaDeTipo('kroma_stock_bajo') === 'kroma', 'un aviso de Kroma es de la categoría planta');
-    const prod = K.avisoKroma('kroma_notifications', { tipo: 'produccion_completada', lote: 'LCO20261111-1913', productoNombre: 'Lacteoca Chèvre Original ', totalKgProducido: 154.335, rendimientoKg: 5.77, operarioNombre: 'Diana Hurtado', destinatarios: ['kroma_gerencial'] });
-    ok(prod && prod.titulo === 'Producción terminada · Lacteoca Chèvre Original' && prod.cuerpo.includes('Lote LCO20261111-1913') && prod.cuerpo.includes('5,77 L/kg') && prod.cuerpo.includes('Diana Hurtado'),
-        `producción terminada con lote, kg, rendimiento y operario (${prod && prod.cuerpo})`);
-    const stock = K.avisoKroma('kroma_alerts', { tipo: 'stock_bajo', empresaId: 'lacteoca', materialNombre: 'Tina Slim 8 (Chèvre) ', mensaje: '⚠ Stock bajo: Tina Slim 8 (Chèvre)  — quedan 72.00 und (mín: 200 und)', active: true });
-    ok(stock && stock.titulo === 'Stock bajo · Tina Slim 8 (Chèvre)' && stock.cuerpo.startsWith('Stock bajo: Tina') && stock.tipo === 'kroma_stock_bajo', 'stock bajo con el material y su mensaje');
-    ok(!K.avisoKroma('kroma_alerts', { tipo: 'stock_bajo', empresaId: 'otra', mensaje: 'x' }), 'lo de otra empresa de Kroma no se avisa');
-    ok(!K.avisoKroma('kroma_notifications', { tipo: 'nuevo_despacho', mensaje: 'x' }) && !K.avisoKroma('kroma_notifications', { tipo: 'general', deServidor: true, mensaje: 'x' }),
-        'lo que el servidor ya mandó por GK (despachos) no llega dos veces');
-    ok(!K.avisoKroma('kroma_alerts', { tipo: 'stock_bajo', active: false, mensaje: 'x' }), 'un aviso ya cerrado no se manda');
-    ok(K.avisoKroma('kroma_notifications', { tipo: 'solicitud_edicion', mensaje: 'Ana solicita ajuste de inventario: Chèvre (Lote 1)' }).titulo === 'Solicitud de ajuste', 'solicitud de ajuste');
-}
-
 // 6. Novedades.
 ok(N.NOVEDADES.length > 0 && new Set(N.NOVEDADES.map(n => n.id)).size === N.NOVEDADES.length, 'las novedades tienen id único');
 ok(N.NOVEDADES.every(n => /^\d{4}-\d{2}-\d{2}$/.test(n.fecha) && n.titulo && n.resumen), 'cada novedad trae fecha, título y resumen');

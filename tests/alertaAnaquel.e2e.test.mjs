@@ -152,21 +152,6 @@ await fs.doc('users_metadata/PROD').delete();
 await fs.doc('settings/centroNotificaciones').delete();
 PC.olvidarCache();
 
-// 7c. Avisos de Kroma (🏭 Planta): máster, gerencia y administración; no vendedor ni mercaderista.
-{
-    pushes.length = 0;
-    const K = require('../functions/handlers/kromaAvisos.js');
-    await K.avisar('kroma_alerts', 'al1', { tipo: 'stock_bajo', empresaId: 'lacteoca', materialNombre: 'Tinas', mensaje: '⚠ Stock bajo: Tinas — quedan 72 und', active: true });
-    const quien = [...new Set(pushes.map(p => p.uid))].sort().join(',');
-    ok(quien === 'FRAN,GER,MJ', `el aviso de la planta llega al teléfono del máster, gerencia y administración (${quien})`);
-    ok(pushes.every(p => p.title.startsWith('🏭 Planta · Stock bajo · Tinas') && p.data.categoria === 'kroma'), 'con el título «🏭 Planta»');
-    const camp = (await fs.collection('notifications').where('categoria', '==', 'kroma').get()).docs.map(d => d.data().userId).sort().join(',');
-    ok(camp === 'FRAN,GER,MJ', `y queda en su campanita (${camp})`);
-    pushes.length = 0;
-    await K.avisar('kroma_notifications', 'n1', { tipo: 'nuevo_despacho', mensaje: 'Despacho', deServidor: true });
-    ok(pushes.length === 0, 'un despacho que ya avisó GK no llega dos veces');
-}
-
 // 8. Novedades: una vez por persona, solo las de su rol, y no de noche.
 pushes.length = 0;
 const lista = [
