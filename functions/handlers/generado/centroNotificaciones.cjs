@@ -66,6 +66,13 @@ var CATEGORIAS = [
     color: "emerald"
   },
   {
+    id: "kroma",
+    emoji: "\u{1F3ED}",
+    nombre: "Planta",
+    que: "Lo de Kroma: producci\xF3n terminada, despachos, stock bajo, faltantes, ajustes y temporizadores de la planta.",
+    color: "orange"
+  },
+  {
     id: "novedades",
     emoji: "\u2728",
     nombre: "Novedades",
@@ -83,11 +90,11 @@ var ROLES_NOTIF = [
 ];
 var rolDeConfig = (role) => role === "sales_manager" || role === "director" ? "gerencia" : role;
 var DEFAULT_ROLES = {
-  master: { anaquel: true, reporte: true, agente: true, operacion: true, novedades: true },
-  gerencia: { anaquel: true, reporte: true, agente: true, operacion: true, novedades: true },
-  vendedor: { anaquel: true, reporte: false, agente: true, operacion: true, novedades: true },
-  merchandiser: { anaquel: true, reporte: false, agente: false, operacion: true, novedades: true },
-  administrador: { anaquel: false, reporte: false, agente: true, operacion: true, novedades: true }
+  master: { anaquel: true, reporte: true, agente: true, operacion: true, kroma: true, novedades: true },
+  gerencia: { anaquel: true, reporte: true, agente: true, operacion: true, kroma: true, novedades: true },
+  vendedor: { anaquel: true, reporte: false, agente: true, operacion: true, kroma: false, novedades: true },
+  merchandiser: { anaquel: true, reporte: false, agente: false, operacion: true, kroma: false, novedades: true },
+  administrador: { anaquel: false, reporte: false, agente: true, operacion: true, kroma: true, novedades: true }
 };
 var politicaDeAlertas = (notifConfig) => {
   const ev = notifConfig?.events?.nuevo_reporte;
@@ -102,6 +109,7 @@ var categoriaDeTipo = (tipo) => {
   if (t === "nuevo_reporte" || t === "reporte") return "reporte";
   if (t === "vigilante" || t.startsWith("aviso")) return "agente";
   if (t === "novedades") return "novedades";
+  if (t.startsWith("kroma")) return "kroma";
   return "operacion";
 };
 var recibeRol = (cfg, role, categoria) => {

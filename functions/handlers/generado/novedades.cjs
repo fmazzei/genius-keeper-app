@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-16-avisos-planta-kroma",
+    fecha: "2026-11-16",
+    roles: ["master", "gerencia", "administrador"],
+    titulo: "Los avisos de la planta te llegan al tel\xE9fono",
+    resumen: "Lo de Kroma (producci\xF3n terminada, stock bajo, faltantes, solicitudes de ajuste, lotes por vencer y temporizadores) llega como \xAB\u{1F3ED} Planta\xBB a tu tel\xE9fono y a tu campanita, junto con los de GK."
+  },
+  {
     id: "2026-11-16-campanita-reportes-quiebres",
     fecha: "2026-11-16",
     roles: ["master"],

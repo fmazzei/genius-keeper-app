@@ -55,17 +55,27 @@ exports.kromaHoldNotifier = onSchedule({
             firedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
-        if (tokensSnap.empty) {
+        // También a quien recibe la PLANTA en el centro (máster, gerencia y
+        // administración por defecto, 16-nov): mismo aviso, cada teléfono una vez.
+        let tokensPlanta = [];
+        try {
+            const pc = require('./pushCentral');
+            const ctx = await pc.contexto(db);
+            const uids = await pc.destinatarios('kroma');
+            tokensPlanta = uids.flatMap(u => ctx.tokensPorUid.get(u) || []);
+        } catch (e) { logger.warn('kromaHoldNotifier: destinatarios de la planta:', e.message); }
+        const tokens = [...new Set([...tokensSnap.docs.map(t => t.id), ...tokensPlanta])];
+
+        if (!tokens.length) {
             logger.warn(`kromaHoldNotifier: sin tokens para usuario ${userId} (log ${logId})`);
             return;
         }
 
-        const tokens = tokensSnap.docs.map(t => t.id);
         const minLabel = (minutoAntes ?? 60) >= 60
             ? `${(minutoAntes ?? 60) / 60}h`
             : `${minutoAntes ?? 60} min`;
 
-        const title = `⏰ ${holdBloque} — finaliza en ${minLabel}`;
+        const title = `🏭 Planta · ⏰ ${holdBloque} — finaliza en ${minLabel}`;
         const body  = `${productoNombre}${lote ? ` · Lote ${lote}` : ""}`;
 
         const message = {
