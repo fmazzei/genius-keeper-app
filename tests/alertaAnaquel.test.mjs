@@ -78,7 +78,7 @@ ok(R.slotRecordatorio(caracas(VIE, 23, 30)).clave === '2026-10-23-17', 'a las 23
 // 13. Quién la recibe.
 ok(R.recibeAlerta({ role: 'vendedor' }), 'vendedor la recibe');
 ok(R.recibeAlerta({ role: 'merchandiser' }) && R.recibeAlerta({ role: 'gerencia' }) && R.recibeAlerta({ role: 'master' }), 'mercaderista, gerencia y máster la reciben');
-ok(!R.recibeAlerta({ role: 'administrador' }), 'administración no la recibe');
+ok(R.recibeAlerta({ role: 'administrador' }), 'administración también la recibe (16-nov: todos)');
 ok(!R.recibeAlerta({ role: 'vendedor', alertaAnaquelBajo: false }), 'apagada por el máster no la recibe');
 ok(!R.recibeAlerta({ role: 'vendedor', active: false }), 'usuario inactivo no la recibe');
 

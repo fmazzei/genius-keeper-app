@@ -124,8 +124,13 @@ const avisarApertura = async (db, datos, cfg) => {
     const c = R.config(cfg);
     const quien = datos.reporterName ? `${datos.reporterName} contó` : 'Se contó';
     const body = `${quien} ${R.textoUnidades(datos.contadas)} y no se repuso. Se cierra al reponer o en ${c.horas} h.`;
-    await enviarPush(uids, datos.posName, body, { tipo: 'anaquel_bajo', link: `/reports/${datos.reportId}`, posId: datos.posId },
-        `abre|${datos.posId}|${datos.desdeReportId}`);
+    // Apertura = aviso al teléfono + entrada en la CAMPANITA de cada persona
+    // (pedido del dueño, 16-nov: la campanita trae los reportes y los quiebres).
+    // Los recordatorios de las 9, 13 y 17 h siguen siendo solo al teléfono.
+    const pc = require('./pushCentral');
+    await Promise.all(uids.map(uid => pc.notificar(uid, { title: datos.posName, body },
+        { tipo: 'anaquel_bajo', categoria: 'anaquel', link: `/reports/${datos.reportId}` })
+        .catch(e => logger.warn(`Alerta anaquel: no se pudo avisar a ${uid}:`, e.message))));
     return uids;
 };
 

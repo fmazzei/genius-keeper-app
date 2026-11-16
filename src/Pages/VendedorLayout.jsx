@@ -11,6 +11,8 @@ import {
 } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
+import { useNotifications } from '@/hooks/useNotifications';
+import { CATEGORIA_POR_ID } from '@/utils/centroNotificaciones.js';
 import NovedadesApp from '@/Components/NovedadesApp.jsx';
 import {
     Home, MapPin, Bell,
@@ -594,12 +596,18 @@ function HomeView({ vendedor, stats, loading, onNavigate, commConfig, estados = 
     );
 }
 
-function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], onMarcarVisto, modo = 'operacion' }) {
+function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], onMarcarVisto, modo = 'operacion', onLeida, onAbrirReporte }) {
     const agente = modo === 'agente';
     // Tocar una alerta abre TODA su información. Los avisos del vigilante traen su
     // detalle completo; las demás alertas muestran su texto entero.
     const [abierta, setAbierta] = useState(null);
     const abrir = (alert) => {
+        // Reporte de visita o quiebre: se abre el reporte completo.
+        if (alert.notifId) {
+            if (!alert.read) onLeida?.(alert.notifId);
+            const m = typeof alert.link === 'string' ? alert.link.match(/^\/reports\/([^/?#]+)/) : null;
+            if (m && onAbrirReporte) { onAbrirReporte(m[1]); return; }
+        }
         const vig = String(alert.id).startsWith('vig:') ? avisosVig.find(a => `vig:${a.id}` === alert.id) : null;
         setAbierta(vig || {
             simple: true, titulo: alert.title, cuerpo: alert.body, abiertoAt: alert.createdAt,
@@ -628,7 +636,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], o
                 <p className="text-slate-400 text-xs mt-0.5">
                     {agente
                         ? 'Lo que el sistema detecta solo en tu cartera y tu ruta. Cada una dice qué hacer.'
-                        : 'Lo del día a día: facturas, despachos y retiros de Frimaca.'}
+                        : 'Reportes de visita, quiebres (anaquel bajo), facturas, despachos y retiros de Frimaca.'}
                 </p>
             </div>
         </div>
@@ -655,8 +663,8 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], o
             {hoja}
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest pt-2">{alertas.length} activa{alertas.length !== 1 ? 's' : ''}</p>
             {alertas.map((alert) => {
-                const isDanger = alert.alertType === 'facturas_venciendo' || alert.alertType === 'vig_critico';
-                const isInfo = alert.alertType === 'despacho_en_transito';
+                const isDanger = alert.alertType === 'facturas_venciendo' || alert.alertType === 'vig_critico' || alert.alertType === 'notif_anaquel';
+                const isInfo = alert.alertType === 'despacho_en_transito' || alert.alertType === 'notif_reporte';
                 const isPicking = alert.alertType === 'picking';
                 const isVig = String(alert.alertType || '').startsWith('vig');
                 const cardClass = isDanger
@@ -676,7 +684,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], o
                 return (
                     <div
                         key={alert.id}
-                        className={`rounded-xl p-4 border flex items-start gap-3 ${cardClass}`}
+                        className={`rounded-xl p-4 border flex items-start gap-3 ${cardClass} ${alert.read ? 'opacity-55' : ''}`}
                     >
                         <button type="button" onClick={() => abrir(alert)} className="flex-1 min-w-0 text-left">
                             <p className={`font-bold text-sm ${titleClass}`}>{alert.title}</p>
@@ -744,6 +752,26 @@ const VendedorLayout = ({ user, onLogout }) => {
         alertType: a.severidad === 'critico' ? 'vig_critico' : a.severidad === 'informativo' ? 'vig_info' : 'vig',
         title: a.titulo, body: textoAviso(a), createdAt: a.abiertoAt,
     })), [avisosVig, user?.uid]);
+    // Campanita: además de facturas, despachos y pickings, los REPORTES de
+    // visita y los QUIEBRES (anaquel bajo) que manda el servidor a
+    // `notifications` (pedido del dueño, 16-nov: todos ven sus alertas).
+    const campana = useNotifications();
+    const [abrirReporte, setAbrirReporte] = useState(null);
+    const alertasCampana = useMemo(() => {
+        const ts = (n) => (n.createdAt?.toDate ? n.createdAt.toDate().getTime() : 0);
+        const notifs = [...campana.notifications]
+            .sort((a, b) => (a.read === b.read ? ts(b) - ts(a) : (a.read ? 1 : -1)))
+            .map(n => {
+                const cat = n.categoria || 'operacion';
+                const c = CATEGORIA_POR_ID[cat] || CATEGORIA_POR_ID.operacion;
+                return {
+                    id: `notif:${n.id}`, notifId: n.id, synthetic: true, read: !!n.read, link: n.link || '',
+                    alertType: cat === 'anaquel' ? 'notif_anaquel' : cat === 'reporte' ? 'notif_reporte' : 'notif',
+                    title: `${c.emoji} ${n.title}`, body: n.body, createdAt: n.createdAt,
+                };
+            });
+        return [...notifs, ...alertas];
+    }, [campana.notifications, alertas]);
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
     const [showNuevaFactura, setShowNuevaFactura]     = useState(false);
@@ -872,6 +900,10 @@ const VendedorLayout = ({ user, onLogout }) => {
         // deja de aparecer; si el problema se cierra y vuelve, vuelve a avisar).
         if (String(alertId).startsWith('vig:')) {
             marcarVistoVig(String(alertId).slice(4));
+            return;
+        }
+        if (String(alertId).startsWith('notif:')) {
+            await campana.deleteNotification(String(alertId).slice(6));
             return;
         }
         // Alertas sintéticas de picking no viven en vendedor_alertas: solo se
@@ -1522,7 +1554,9 @@ const VendedorLayout = ({ user, onLogout }) => {
         if (currentView === 'alertas') {
             return (
                 <AlertasView
-                    alertas={alertas}
+                    alertas={alertasCampana}
+                    onLeida={(id) => campana.markAsRead(id)}
+                    onAbrirReporte={(id) => { setAbrirReporte(p => ({ id, n: (p?.n || 0) + 1 })); navigate('reportesAnaquel'); }}
                     loadingAlertas={loadingAlertas}
                     onDelete={deleteAlerta}
                     uid={user?.uid}
@@ -1535,7 +1569,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         if (currentView === 'reportesAnaquel') {
             return (
                 <div className="flex-1 overflow-y-auto p-4 pb-24">
-                    <ReportesAnaquelView theme="dark" />
+                    <ReportesAnaquelView theme="dark" abrirReporte={abrirReporte} />
                 </div>
             );
         }
@@ -1649,7 +1683,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         );
     };
 
-    const alertCount = alertas.length;
+    const alertCount = alertas.length + campana.notifications.filter(n => !n.read).length;
     const agenteCount = alertasAgente.length;
 
     // Refresh global del perfil del vendedor: re-dispara la carga principal

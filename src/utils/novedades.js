@@ -21,6 +21,27 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-16-campanita-reportes-quiebres',
+        fecha: '2026-11-16',
+        roles: [],
+        titulo: 'La campanita trae los reportes y los quiebres',
+        resumen: 'Cada reporte de visita y cada punto de venta que queda con el anaquel bajo sin reponer llega a tu campanita. Al tocarlo se abre el reporte.',
+    },
+    {
+        id: '2026-11-16-editar-reporte-completo',
+        fecha: '2026-11-16',
+        roles: ['master'],
+        titulo: 'Corriges todo el reporte de visita',
+        resumen: 'En Reportes de anaquel → Editar cambias lotes y cantidades, quiebre, entregas con su factura, retiro, PVP, hora real de la visita, punto de venta, mercaderista, competencia y notas. Cada corrección queda anotada con lo que decía antes.',
+    },
+    {
+        id: '2026-11-16-alertas-agente-detalle',
+        fecha: '2026-11-16',
+        roles: ['master', 'gerencia'],
+        titulo: 'Las alertas del agente se abren completas',
+        resumen: 'Al tocar una alerta del agente sobre el anaquel (sin salida, vencimiento, surtir más, entregas) se abre su detalle: el punto de venta, las visitas, los lotes y qué hacer.',
+    },
+    {
         id: '2026-11-13-leche-factura',
         fecha: '2026-11-13',
         roles: ['master'],

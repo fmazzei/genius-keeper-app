@@ -30,6 +30,9 @@ import ProvisionalGpsModal from '@/Components/ProvisionalGpsModal.jsx';
 import { leerRuta, guardarRuta } from '@/utils/rutaOffline.js';
 import { enviarLatido } from '@/utils/latidoDispositivo.js';
 import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
+import NotificationsBell from '@/Components/NotificationsBell.jsx';
+import { useNotifications } from '@/hooks/useNotifications';
+import { useReportView } from '@/context/ReportViewContext.jsx';
 // Lazy: el mercaderista abre la app casi siempre en 'hub', no en 'planner' —
 // cargar leaflet/react-beautiful-dnd solo cuando navega a esa vista.
 const Planner = lazy(() => import('./Planner/Planner.jsx'));
@@ -88,6 +91,12 @@ const ReporterSelectionScreen = ({ onSelect }) => {
 
 const AppShell = ({ user, role, onLogout }) => {
     useColorBarraEstado('#0f172a');
+    const campana = useNotifications();
+    const { setViewedReportId } = useReportView();
+    const abrirLinkReporte = (link) => {
+        const m = typeof link === 'string' ? link.match(/^\/reports\/([^/?#]+)/) : null;
+        if (m) setViewedReportId(m[1]);
+    };
     const { selectedReporter, setSelectedReporter } = useReporter();
 
     const [currentView, setCurrentView] = useState('hub');
@@ -398,6 +407,18 @@ const AppShell = ({ user, role, onLogout }) => {
                             {pendientes} sin enviar
                         </span>
                     )}
+                    {/* Campanita: reportes de visita, quiebres (anaquel bajo), operación y novedades */}
+                    <div className="ml-2 shrink-0">
+                        <NotificationsBell
+                            notifications={campana.notifications}
+                            unreadCount={campana.unreadCount}
+                            onMarkRead={campana.markAsRead}
+                            onMarkAllRead={campana.markAllAsRead}
+                            onDelete={campana.deleteNotification}
+                            onOpenLink={abrirLinkReporte}
+                            uid={user?.uid}
+                        />
+                    </div>
                 </header>
                 {/* Alerta de anaquel bajo: renglón rojo + panel grande */}
                 <AlertaAnaquelBajo />

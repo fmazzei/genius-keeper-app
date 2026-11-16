@@ -14,8 +14,11 @@ const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas+
 // 1. Lo de siempre, sin configurar nada.
 ok(C.recibe({}, { uid: 'F', role: 'master' }, 'reporte'), 'el máster recibe reportes por defecto');
 ok(C.recibe({}, { uid: 'G', role: 'sales_manager' }, 'reporte'), 'sales_manager se configura como gerencia');
-ok(!C.recibe({}, { uid: 'C', role: 'vendedor' }, 'reporte'), 'el vendedor no recibe reportes por defecto');
-ok(!C.recibe({}, { uid: 'M', role: 'administrador' }, 'anaquel'), 'administración no recibe el anaquel por defecto');
+// Decisión del dueño (16-nov): reportes y quiebres le llegan a TODOS los usuarios.
+ok(['master', 'gerencia', 'vendedor', 'merchandiser', 'administrador'].every(r => C.recibe({}, { uid: 'X', role: r }, 'reporte') && C.recibe({}, { uid: 'X', role: r }, 'anaquel')),
+    'reportes y quiebres le llegan a todos los roles por defecto');
+ok(!C.recibe({}, { uid: 'P', role: 'produccion' }, 'reporte'), 'producción (Kroma) no recibe reportes');
+ok(!C.recibe({ roles: { vendedor: { reporte: false } } }, { uid: 'C', role: 'vendedor' }, 'reporte'), 'el máster puede apagar los reportes a un rol en el centro');
 ok(!C.recibe({}, { uid: 'K', role: 'kroma_operario' }, 'operacion'), 'un rol de Kroma no recibe nada de GK');
 ok(!C.recibe({}, { uid: 'X', role: 'master', active: false }, 'agente'), 'un usuario inactivo no recibe nada');
 

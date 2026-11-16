@@ -30,6 +30,9 @@ import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
 import NovedadesApp from '@/Components/NovedadesApp.jsx';
+import NotificationsBell from '@/Components/NotificationsBell.jsx';
+import { useNotifications } from '@/hooks/useNotifications';
+import { useReportView } from '@/context/ReportViewContext.jsx';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
 
@@ -70,6 +73,12 @@ export default function AdministracionLayout({ user, onLogout }) {
     const [perfil, setPerfil] = useState(null); // null = cargando; {name, modulos}
     // Avisos del vigilante sobre comisiones (administración concilia y paga).
     const { avisos: avisosVig, marcarVisto } = useAvisosVigilante(uid);
+    const campana = useNotifications();
+    const { setViewedReportId } = useReportView();
+    const abrirLinkReporte = (link) => {
+        const m = typeof link === 'string' ? link.match(/^\/reports\/([^/?#]+)/) : null;
+        if (m) setViewedReportId(m[1]);
+    };
     const [vendedores, setVendedores] = useState([]); // cargados UNA vez, compartidos
     const [active, setActive] = useState('pagar'); // pagar | clientes | cartera
     // Flujo guiado de pago: vendedor elegido + paso (conciliar → liquidar).
@@ -143,6 +152,17 @@ export default function AdministracionLayout({ user, onLogout }) {
                         <p className="text-[#FFD600] text-[11px] font-bold uppercase tracking-widest leading-tight">Administración</p>
                         <p className="text-white/50 text-[11px] leading-tight">Lacteoca · Comisiones</p>
                     </div>
+                    {/* Campanita: reportes de visita, quiebres (anaquel bajo), operación y novedades */}
+                    <NotificationsBell
+                        notifications={campana.notifications}
+                        unreadCount={campana.unreadCount}
+                        onMarkRead={campana.markAsRead}
+                        onMarkAllRead={campana.markAllAsRead}
+                        onDelete={campana.deleteNotification}
+                        onOpenLink={abrirLinkReporte}
+                        uid={uid}
+                        oscuro
+                    />
                     <button
                         onClick={() => { setActive('agente'); salirDelPago(); }}
                         className="relative flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors"

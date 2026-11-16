@@ -4546,6 +4546,27 @@ Reporte del dueño con captura del iPhone: cada aviso llegaba **dos veces seguid
   - `node tests/centroNotificaciones.test.mjs`: 28 en verde (roles, persona, interruptor anterior, títulos, dueño del teléfono, novedades).
   - `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"`: 34 en verde. Ahora cubre el teléfono compartido entre dos cuentas, el centro, la etiqueta, las novedades una sola vez y no de noche, y las reglas del centro.
 
+## Reporte editable por completo, campanita ordenada y alertas del agente con detalle (2026-11-16)
+
+Pedido del dueño (16-nov): el máster corrige TODO el reporte del mercaderista sin recurrir a nadie; la campanita trae los reportes y los quiebres y le llega a todos los usuarios; y las alertas del robot se abren con su información.
+
+**Edición completa del reporte (solo máster)** — `src/Components/EditReportForm.jsx` (reescrito) + lógica pura `src/utils/edicionReporte.js`:
+- Se edita: punto de venta, mercaderista, hora real de inicio y fin (en hora de Caracas; sirve cuando el mercaderista carga la visita después), anaquel con producto o vacío, lotes (agregar, quitar, fecha, unidades, dañadas, «sin fecha legible»), total sin lotes (reportes viejos), entregas con factura (número y unidades), lo que entró sin factura, PVP con coma, retiro (unidades, motivo, repuestas), caras, altura, categoría vecina, POP, competencia (precio editable), nuevos entrantes y observaciones.
+- Se recalcula igual que el formulario del mercaderista: `inventoryLevel`, `envasesDanados`, `lotesPorEstado` y `orderQuantity` (= facturas entregadas + sin factura). Si se corrigen los lotes, el conteo «antes/después de reponer» del teléfono deja de aplicar.
+- Solo se escribe lo que cambió (`armarEdicion` compara contra el mismo reporte pasado por el formulario: un precio guardado como texto o un «dañadas» vacío no cuentan como cambio).
+- Constancia: `edicionesMaster` (arrayUnion) con `at`, `por`, `campos` y `antes`; se ve en «Datos del registro» de la hoja del reporte.
+- El retiro se mantiene igual en `devoluciones/visita_<id>` (se crea, se actualiza o se anula con el reporte).
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/edicionReporte.test.mjs` (22 en verde, con el reporte real de Río Av. Blandín).
+
+**Campanita = reportes de visita + quiebres, para todos** (decisión del dueño):
+- `DEFAULT_ROLES` del centro: `reporte` y `anaquel` encendidos para máster, gerencia, vendedor, mercaderista y administración (se apagan por rol o persona en el centro). Regla `centroDaAnaquel`: administración lee `alertas_anaquel` por defecto.
+- La apertura de una alerta de anaquel bajo ahora usa `pushCentral.notificar` (campanita + teléfono, `categoria: 'anaquel'`, enlace al reporte). Antes era solo push y el renglón rojo: los quiebres no quedaban en la campanita. Los recordatorios de las 9, 13 y 17 h siguen solo al teléfono.
+- Campanita en todos los perfiles: máster y gerencia (`ManagerLayout`, igual), **administración** y **mercaderista** (`NotificationsBell` nuevo en `AdministracionLayout` y `AppShell`; un reporte se abre con el visor global `ReportViewContext`) y **vendedor** (la pestaña «Alertas de tu operación» suma las `notifications` a facturas, despachos y pickings; un reporte o quiebre abre el reporte en Rep. Anaquel).
+- Observado el 16-nov antes del cambio: de 6 reportes, solo 2 avisos de reporte (a máster y gerencia); los 4 quiebres abrieron su alerta pero no entraron a ninguna campanita, y ni el vendedor ni administración ni el mercaderista tenían dónde verlos.
+- Pruebas: `node tests/centroNotificaciones.test.mjs`, `node tests/alertaAnaquel.test.mjs` y `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"` (el quiebre queda en la campanita de las 5 personas), en verde.
+
+**Alertas del agente con su detalle:** los avisos del anaquel (`src/utils/avisosAnaquel.js`: sin salida, vencimiento, surtir más, registro de entregas) traen ahora `severidad`, `causa`, `accion` y `detalle` (punto de venta, visitas, lotes, la cuenta) y se abren en `AvisoDetalleSheet`, igual que los del vigilante. El aviso local «el vigilante dejó de correr» también. La hoja respeta los saltos de línea del resumen semanal.
+
 ## Rotación: lo que bajó del anaquel y no fue venta (2026-10-29) ✅
 
 Reclamo del dueño con la hoja de Central Madeirense - Manzanares (26-oct): «salieron 53 en 5 días», 10,6 uds/día, contra un histórico de 1,49. La rotación contaba como VENTA todo lo que bajaba el anaquel entre dos visitas. Revisados los 249 reportes, había dos causas, más una tercera posible:

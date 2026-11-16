@@ -84,9 +84,9 @@ var rolDeConfig = (role) => role === "sales_manager" || role === "director" ? "g
 var DEFAULT_ROLES = {
   master: { anaquel: true, reporte: true, agente: true, operacion: true, novedades: true },
   gerencia: { anaquel: true, reporte: true, agente: true, operacion: true, novedades: true },
-  vendedor: { anaquel: true, reporte: false, agente: true, operacion: true, novedades: true },
-  merchandiser: { anaquel: true, reporte: false, agente: false, operacion: true, novedades: true },
-  administrador: { anaquel: false, reporte: false, agente: true, operacion: true, novedades: true }
+  vendedor: { anaquel: true, reporte: true, agente: true, operacion: true, novedades: true },
+  merchandiser: { anaquel: true, reporte: true, agente: false, operacion: true, novedades: true },
+  administrador: { anaquel: true, reporte: true, agente: true, operacion: true, novedades: true }
 };
 var categoriaDeTipo = (tipo) => {
   const t = String(tipo || "");

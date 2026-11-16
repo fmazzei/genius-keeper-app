@@ -68,8 +68,13 @@ await reporte('r1', 'P1', ahora - 10 * 60000, { inventoryLevel: 4 });
 await Promise.all([A.evaluarPdvTrasReporte('P1'), A.evaluarPdvTrasReporte('P1')]);
 let a = await alerta('P1');
 ok(a && a.estado === 'abierta' && a.contadas === 4 && a.posName === 'Los Pomelos' && a.reportId === 'r1', 'se abre con 4 uds, el nombre del PDV y el reporte');
-ok(quienes() === 'ANAQ,CARO,FRAN,GER', `le llega a máster, gerencia, vendedor y mercaderista (no a administración, apagada ni inactiva): ${quienes()}`);
-ok(pushes.length === 4, `un solo aviso por persona aunque el disparador corra dos veces (${pushes.length})`);
+ok(quienes() === 'ANAQ,CARO,FRAN,GER,MJ', `le llega a todos (16-nov: también administración), menos la apagada y la inactiva: ${quienes()}`);
+ok(pushes.length === 5, `un solo aviso por persona aunque el disparador corra dos veces (${pushes.length})`);
+{
+    const campana = (await fs.collection('notifications').where('categoria', '==', 'anaquel').get()).docs.map(d => d.data());
+    ok(campana.length === 5 && campana.every(n => n.link === '/reports/r1' && n.title === 'Los Pomelos'),
+        `el quiebre queda también en la CAMPANITA de cada persona, con el enlace al reporte (${campana.length})`);
+}
 ok(pushes[0].data.link === '/reports/r1' && pushes[0].title === '🔴 Anaquel bajo · Los Pomelos', 'el aviso abre el reporte');
 
 // 2. Otra visita baja sin reponer: sigue la misma alerta, sin aviso nuevo, y extiende el plazo.
@@ -93,19 +98,19 @@ await reporte('p2a', 'P2', caracas(VIE, 9), { inventoryLevel: null, stockout: tr
 PC.olvidarCache(); let res = await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 9, 30) });
 a = await alerta('P2');
 ok(a && a.estado === 'abierta' && a.contadas === 0, 'el barrido abre la alerta que el disparador no vio (anaquel vacío = 0)');
-ok(pushes.filter(p => p.data.tipo === 'anaquel_bajo').length === 4, 'y avisa al abrirla');
+ok(pushes.filter(p => p.data.tipo === 'anaquel_bajo').length === 5, 'y avisa al abrirla');
 ok(res.recordatorio && res.recordatorio.alertas === 0, 'la recién abierta no entra en el recordatorio de las 9');
 
 // 5. Recordatorio de las 13: una vez; a las 13:40 no se repite; a las 17 sí.
 pushes.length = 0;
 PC.olvidarCache(); res = await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 13, 5) });
 const rec13 = pushes.filter(p => p.data.tipo === 'anaquel_bajo_recordatorio');
-ok(rec13.length === 4 && rec13[0].title.includes('Páramo La Urbina'), `recordatorio de las 13 a las 4 personas (${rec13.length})`);
+ok(rec13.length === 5 && rec13[0].title.includes('Páramo La Urbina'), `recordatorio de las 13 a las 5 personas (${rec13.length})`);
 pushes.length = 0;
 await Promise.all([A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 13, 40) }), A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 13, 41) })]);
 ok(pushes.length === 0, 'el recordatorio de las 13 no se repite, ni con dos barridos a la vez');
 PC.olvidarCache(); await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 17, 2) });
-ok(pushes.filter(p => p.data.tipo === 'anaquel_bajo_recordatorio').length === 4, 'a las 17 sale el siguiente');
+ok(pushes.filter(p => p.data.tipo === 'anaquel_bajo_recordatorio').length === 5, 'a las 17 sale el siguiente');
 a = await alerta('P2');
 ok(a.recordatorioSlot === '2026-10-23-17', 'la alerta anota su último recordatorio');
 
@@ -167,12 +172,12 @@ const q = (uid) => getDocs(query(collection(env.authenticatedContext(uid).firest
 await assertSucceeds(q('CARO')); ok(true, 'el vendedor la lee');
 await assertSucceeds(q('ANAQ')); ok(true, 'el mercaderista la lee');
 await assertSucceeds(getDoc(doc(env.authenticatedContext('GER').firestore(), 'alertas_anaquel/P1'))); ok(true, 'gerencia la lee');
-await assertFails(q('MJ')); ok(true, 'administración no la lee');
+await assertSucceeds(q('MJ')); ok(true, 'administración la lee por defecto (16-nov)');
 await assertFails(getDocs(collection(env.unauthenticatedContext().firestore(), 'alertas_anaquel'))); ok(true, 'sin sesión no se lee');
 await assertFails(setDoc(doc(env.authenticatedContext('FRAN').firestore(), 'alertas_anaquel/P1'), { estado: 'cerrada' })); ok(true, 'ni el máster la escribe desde la app');
 await assertFails(setDoc(doc(env.authenticatedContext('MJ').firestore(), 'settings/centroNotificaciones'), { roles: {} })); ok(true, 'administración no toca el centro de notificaciones');
-await assertSucceeds(setDoc(doc(env.authenticatedContext('FRAN').firestore(), 'settings/centroNotificaciones'), { usuarios: { MJ: { anaquel: true } } })); ok(true, 'el máster sí');
-await assertSucceeds(q('MJ')); ok(true, 'con el anaquel encendido en el centro, administración lo lee');
+await assertSucceeds(setDoc(doc(env.authenticatedContext('FRAN').firestore(), 'settings/centroNotificaciones'), { roles: { administrador: { anaquel: false } } })); ok(true, 'el máster sí');
+await assertFails(q('MJ')); ok(true, 'con el anaquel apagado en el centro, administración no lo lee');
 await env.cleanup();
 
 console.log(fallas ? `\n${fallas} falla(s)` : '\nTodo en verde');

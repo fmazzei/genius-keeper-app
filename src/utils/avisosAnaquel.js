@@ -33,6 +33,17 @@ function semana(s) {
     return `${t.getUTCFullYear()}-W${String(Math.ceil(((t - inicio) / 86400000 + 1) / 7)).padStart(2, '0')}`;
 }
 
+// Detalle para la hoja del aviso (mismo formato que el vigilante: secciones con
+// filas {t, s, v, tono}). Pedido del dueño (16-nov): al tocar el aviso del robot
+// se despliega toda la información que lo sustenta.
+const fila = (t, v = null, s = null, tono = null) => ({ t: String(t), s: s == null ? null : String(s), v: v == null ? null : String(v), tono });
+const seccion = (titulo, filas, nota = null) => ({ titulo, nota, total: filas.length, filas });
+const fichaPdv = (p, nombre) => seccion('El punto de venta', [
+    fila(nombre, null, [p?.chain, p?.zone, p?.city].filter(Boolean).join(' · ') || null),
+    fila('Frecuencia de visita', Number(p?.visitInterval) > 0 ? `cada ${p.visitInterval} días` : '—'),
+]);
+const filasVisitas = (vs) => vs.map(v => fila(fmtVence(diaLocal(v.t)), `${v.inv} en anaquel`, v.rep > 0 ? `entraron ${v.rep}` : null));
+
 const activo = (p) => p && !p.eliminado && p.active !== false && (p.type ? p.type === 'pos' : true);
 
 export function avisosAnaquel({ reports = [], devoluciones = [], facturas = null, posList = [], ahora = new Date() } = {}) {
@@ -74,6 +85,14 @@ export function avisosAnaquel({ reports = [], devoluciones = [], facturas = null
                     id: `anaquel:sin_salida:${posId}:${sem}`, tipo: 'sin_salida', posId, nombre, prioridad: 1,
                     titulo: `${nombre}: sin salida en ${Math.round(dias)} días`,
                     cuerpo: `0 unidades vendidas desde el ${fmtVence(diaLocal(vs[desdeIdx].t))}: el anaquel tenía ${vs[desdeIdx].inv} y en la última visita (${fmtVence(diaLocal(ult.t))}) ${ult.inv}. Decidir: mover el producto, cambiarlo de lugar o dejar de surtir.`,
+                    severidad: 'importante',
+                    causa: 'El anaquel tiene producto y no bajó entre visitas: no se está vendiendo en este punto.',
+                    accion: 'Mover el producto a un PDV que rote más, cambiarlo de lugar en el anaquel o dejar de surtir.',
+                    detalle: [
+                        fichaPdv(pdv[posId], nombre),
+                        seccion('Visitas sin salida', filasVisitas(vs.slice(desdeIdx)).reverse(), `${Math.round(dias)} días sin vender una unidad.`),
+                        seccion('Lotes en la última visita', ult._lotes.map(b => fila(`Vence ${fmtVence(b.expiryDate)}`, `${Number(b.quantity) || 0} ud`))),
+                    ],
                 });
             }
         }
@@ -89,6 +108,16 @@ export function avisosAnaquel({ reports = [], devoluciones = [], facturas = null
                 id: `anaquel:vencimiento:${posId}:${sem}`, tipo: 'vencimiento', posId, nombre, prioridad: 2,
                 titulo: `${nombre}: ${uds} uds ${primero.dias <= 0 ? 'vencidas o por vencer' : `vencen en ${primero.dias} días o menos`}`,
                 cuerpo: `Lote más próximo: vence el ${fmtVence(primero.vence)}. Visto el ${fmtVence(diaLocal(ult.t))}. Decidir: retirar, cambiar o mover a un PDV que rote más.`,
+                severidad: primero.dias <= 0 ? 'critico' : 'importante',
+                causa: 'En la última visita había lotes que vencen pronto o ya vencieron.',
+                accion: 'Retirar o cambiar en la próxima visita, o moverlos a un PDV que rote más.',
+                detalle: [
+                    fichaPdv(pdv[posId], nombre),
+                    seccion('Lotes en riesgo', enRiesgo.map(l => fila(`Vence ${fmtVence(l.vence)}`, `${l.uds} ud`,
+                        l.dias <= 0 ? 'ya vencido' : `faltan ${l.dias} días`, l.dias <= 0 ? 'rojo' : 'ambar'))),
+                    seccion('Última visita', [fila(fmtVence(diaLocal(ult.t)), `${ult.inv} en anaquel`, ult.rep > 0 ? `entraron ${ult.rep}` : null)]),
+                    seccion('Visitas recientes', filasVisitas(vs.slice(-6)).reverse()),
+                ],
             });
         }
     });
@@ -111,6 +140,20 @@ export function avisosAnaquel({ reports = [], devoluciones = [], facturas = null
                 id: `anaquel:surtir:${x.posId}:${sem}`, tipo: 'surtir_mas', posId: x.posId, nombre: x.nombre, prioridad: 3,
                 titulo: `${x.nombre}: conviene surtir más`,
                 cuerpo: `Vende ${fmtNum(x.rotacion)} uds/día y quedaron ${quedo} uds: alcanzan para ${fmtNum(alcanza, 0)} días y la visita es cada ${intervalo}. Faltan unas ${faltan} uds por visita.`,
+                severidad: 'informativo',
+                causa: 'Es de los PDV que más venden y lo que quedó no alcanza hasta la próxima visita.',
+                accion: `Surtir unas ${faltan} unidades más por visita.`,
+                detalle: [
+                    fichaPdv(pdv[x.posId], x.nombre),
+                    seccion('La cuenta', [
+                        fila('Vende', `${fmtNum(x.rotacion)} uds/día`, 'rotación medida entre sus visitas'),
+                        fila('Quedaron en la última visita', `${quedo} ud`, fmtVence(diaLocal(u.t))),
+                        fila('Alcanzan para', `${fmtNum(alcanza, 0)} días`, null, 'ambar'),
+                        fila('La visita es cada', `${intervalo} días`),
+                        fila('Faltan por visita', `${faltan} ud`, null, 'rojo'),
+                    ]),
+                    seccion('Visitas recientes', filasVisitas((porPos[x.posId] || []).slice(-6)).reverse()),
+                ],
             });
         });
     }
@@ -139,6 +182,19 @@ export function avisosAnaquel({ reports = [], devoluciones = [], facturas = null
                 id: `anaquel:registro_entregas:${sem}`, tipo: 'registro_entregas', posId: null, nombre: null, prioridad: 0,
                 titulo: 'Se están registrando menos entregas de las facturadas',
                 cuerpo: `Últimos ${C.DIAS_VENTANA_ENTREGAS} días: anotadas ${reciente.anotado} uds de ${reciente.facturado} facturadas (${fmtNum(reciente.razon * 100, 0)} %). Antes: ${fmtNum(base.razon * 100, 0)} %. Revisar si el equipo está confirmando las entregas en la visita.`,
+                severidad: 'importante',
+                causa: 'Las visitas anotan menos unidades entregadas que las que se facturan a esos PDV.',
+                accion: 'Revisar con el mercaderista que confirme en cada visita las facturas que entregó.',
+                detalle: [
+                    seccion(`Últimos ${C.DIAS_VENTANA_ENTREGAS} días`, [
+                        fila('Facturadas', `${reciente.facturado} ud`), fila('Anotadas como entregadas', `${reciente.anotado} ud`),
+                        fila('Proporción', `${fmtNum(reciente.razon * 100, 0)} %`, null, 'rojo'),
+                    ]),
+                    seccion(`Los ${C.DIAS_BASE_ENTREGAS} días anteriores`, [
+                        fila('Facturadas', `${base.facturado} ud`), fila('Anotadas como entregadas', `${base.anotado} ud`),
+                        fila('Proporción', `${fmtNum(base.razon * 100, 0)} %`),
+                    ]),
+                ],
             });
         }
     }

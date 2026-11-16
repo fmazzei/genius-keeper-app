@@ -51,14 +51,15 @@ export const ROLES_NOTIF = [
 // 'sales_manager' y 'director' se configuran como gerencia.
 export const rolDeConfig = (role) => (role === 'sales_manager' || role === 'director') ? 'gerencia' : role;
 
-// Lo que recibe cada rol si el máster no ha dicho otra cosa. Es lo que ya
-// llegaba antes del centro, para que nadie pierda ni gane avisos al publicarlo.
+// Lo que recibe cada rol si el máster no ha dicho otra cosa. Decisión del
+// dueño (16-nov-2026): los REPORTES de visita y los QUIEBRES (anaquel bajo)
+// le llegan a TODOS los usuarios; se apaga por rol o por persona en el centro.
 export const DEFAULT_ROLES = {
     master:        { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
     gerencia:      { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
-    vendedor:      { anaquel: true,  reporte: false, agente: true,  operacion: true,  novedades: true },
-    merchandiser:  { anaquel: true,  reporte: false, agente: false, operacion: true,  novedades: true },
-    administrador: { anaquel: false, reporte: false, agente: true,  operacion: true,  novedades: true },
+    vendedor:      { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
+    merchandiser:  { anaquel: true,  reporte: true,  agente: false, operacion: true,  novedades: true },
+    administrador: { anaquel: true,  reporte: true,  agente: true,  operacion: true,  novedades: true },
 };
 
 // De qué categoría es una notificación vieja que no la trae escrita.
