@@ -29,6 +29,7 @@ __export(centroNotificaciones_exports, {
   esPropio: () => esPropio,
   etiquetaPush: () => etiquetaPush,
   hashCorto: () => hashCorto,
+  politicaDeAlertas: () => politicaDeAlertas,
   recibe: () => recibe,
   recibeRol: () => recibeRol,
   rolDeConfig: () => rolDeConfig,
@@ -88,6 +89,13 @@ var DEFAULT_ROLES = {
   merchandiser: { anaquel: true, reporte: false, agente: false, operacion: true, novedades: true },
   administrador: { anaquel: false, reporte: false, agente: true, operacion: true, novedades: true }
 };
+var politicaDeAlertas = (notifConfig) => {
+  const ev = notifConfig?.events?.nuevo_reporte;
+  if (!ev) return {};
+  if (ev.enabled === false) return { reporte: [] };
+  if (!Array.isArray(ev.destinations)) return {};
+  return { reporte: [...new Set(ev.destinations.map(rolDeConfig))] };
+};
 var categoriaDeTipo = (tipo) => {
   const t = String(tipo || "");
   if (t.startsWith("anaquel_bajo")) return "anaquel";
@@ -100,6 +108,8 @@ var recibeRol = (cfg, role, categoria) => {
   const r = rolDeConfig(role);
   const explicito = cfg?.roles?.[r]?.[categoria];
   if (typeof explicito === "boolean") return explicito;
+  const politica = cfg?.politica?.[categoria];
+  if (Array.isArray(politica)) return politica.includes(r);
   return DEFAULT_ROLES[r]?.[categoria] === true;
 };
 var recibe = (cfg, user, categoria) => {
@@ -135,6 +145,7 @@ var etiquetaPush = (categoria, clave) => `gk-${categoria}-${hashCorto(clave)}`;
   esPropio,
   etiquetaPush,
   hashCorto,
+  politicaDeAlertas,
   recibe,
   recibeRol,
   rolDeConfig,

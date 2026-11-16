@@ -428,6 +428,17 @@ export function datosDelRegistro(report, omitir = new Set()) {
         fila('avisoConteoIdentico', 'Conteo igual al de la visita anterior', etiquetaDe(RESPUESTAS_CONTEO_IDENTICO, r.avisoConteoIdentico.respuesta),
             'Las mismas fechas y cantidades que la visita anterior; la app le pidió confirmar.', 'aviso');
     }
+    const ed = Array.isArray(r.edicionesMaster) ? r.edicionesMaster : [];
+    if (ed.length) {
+        const u = ed[ed.length - 1];
+        fila('edicionesMaster', 'Corregido por el máster',
+            `${ed.length} ${ed.length === 1 ? 'vez' : 'veces'} · última ${fmtMomentoVE(u.at) || ''}${Array.isArray(u.campos) && u.campos.length ? ` (${u.campos.join(', ')})` : ''}`,
+            'El máster corrigió este reporte después de enviado. Cada corrección guarda qué cambió y qué decía antes.', 'aviso');
+    }
+    if (r.correccionMaster && typeof r.correccionMaster === 'object') {
+        fila('correccionMaster', 'Corregido por el máster', r.correccionMaster.motivo || 'sí',
+            'Corrección hecha por el conector a pedido del máster; guarda lo que decía antes.', 'aviso');
+    }
     fila('datosRutaAt', 'Ruta del teléfono actualizada', fmtMomentoVE(r.datosRutaAt),
         'Última vez que el teléfono descargó los conteos y las facturas por entregar. Si es vieja, el teléfono trabajó con datos de ese momento.');
     if (r.formVersion != null) {

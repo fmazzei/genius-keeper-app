@@ -37,6 +37,10 @@ const msDe = (v) => {
 // En `tokens` también viven los desafíos de la huella (regChallenge…): no son teléfonos.
 const esTokenFcm = (id) => typeof id === 'string' && id.length >= 100 && !/challenge$/i.test(id);
 
+// ¿Es una cuenta de GK (las que reciben avisos del centro)? Las de Kroma
+// (producción, kroma_*) usan sus propios avisos.
+const esCuentaGk = (u) => !!u && Object.prototype.hasOwnProperty.call(C.DEFAULT_ROLES, C.rolDeConfig(u.role));
+
 // Elige el dueño de cada token: la cuenta que lo registró por última vez.
 // filas: [{ uid, token, t }]  →  Map(uid → [tokens])
 function tokensPorDueno(filas) {
@@ -56,8 +60,9 @@ function tokensPorDueno(filas) {
 
 async function contexto(db, { fresco = false } = {}) {
     if (!fresco && cache && Date.now() - cache.at < CACHE_MS) return cache;
-    const [cfgSnap, usersSnap, tokSnap] = await Promise.all([
+    const [cfgSnap, alertasSnap, usersSnap, tokSnap] = await Promise.all([
         db.doc('settings/centroNotificaciones').get().catch(() => null),
+        db.doc('settings/notificationsConfig').get().catch(() => null),
         db.collection('users_metadata').get(),
         db.collectionGroup('tokens').get(),
     ]);
@@ -66,12 +71,19 @@ async function contexto(db, { fresco = false } = {}) {
     tokSnap.docs.forEach(d => {
         const cuenta = d.ref.parent.parent;
         if (!cuenta || cuenta.parent.id !== 'users_metadata' || !usuarios.has(cuenta.id)) return;
+        // Solo las cuentas de GK compiten por el teléfono. Kroma entra con su
+        // cuenta de producción (PIN) dentro de la misma app: si esa cuenta se
+        // quedaba con el teléfono, el máster dejaba de recibir todo (16-nov:
+        // «sin teléfono» del máster del 9 al 11-nov, mientras se usaba Kroma).
+        if (!esCuentaGk(usuarios.get(cuenta.id))) return;
         const t = Math.max(msDe(d.get('ultimaVez')), msDe(d.get('createdAt')), msDe(d.updateTime));
         filas.push({ uid: cuenta.id, token: d.id, t });
     });
+    const cfgCentro = cfgSnap && cfgSnap.exists ? cfgSnap.data() : {};
+    const politica = C.politicaDeAlertas(alertasSnap && alertasSnap.exists ? alertasSnap.data() : null);
     cache = {
         at: Date.now(),
-        cfg: cfgSnap && cfgSnap.exists ? cfgSnap.data() : {},
+        cfg: { ...cfgCentro, politica: { ...politica, ...(cfgCentro.politica || {}) } },
         usuarios,
         tokensPorUid: tokensPorDueno(filas),
     };
@@ -174,4 +186,4 @@ async function notificar(uid, notif, data = {}) {
     });
 }
 
-module.exports = { enviar, notificar, destinatarios, recibe, contexto, olvidarCache, tokensPorDueno, esTokenFcm };
+module.exports = { enviar, notificar, destinatarios, recibe, contexto, olvidarCache, tokensPorDueno, esTokenFcm, esCuentaGk };

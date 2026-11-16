@@ -1149,7 +1149,8 @@ const ReportesAnaquelView = ({ theme = 'light', abrirReporte = null }) => {
                     <div className="p-4">
                         <EditReportForm
                             report={editingReport}
-                            onSave={() => { setEditingReport(null); fetchReports(activeTab === 'recientes' ? 7 : periodDays); }}
+                            posList={posList}
+                            onSave={() => { setEditingReport(null); setDetailReport(null); fetchReports(activeTab === 'recientes' ? 7 : periodDays); }}
                             onClose={() => setEditingReport(null)}
                         />
                     </div>

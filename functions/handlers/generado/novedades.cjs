@@ -27,6 +27,27 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-16-campanita-reportes-quiebres",
+    fecha: "2026-11-16",
+    roles: ["master"],
+    titulo: "Avisos seg\xFAn tus pol\xEDticas, y tu tel\xE9fono no se pierde",
+    resumen: "Los avisos de reportes llegan a los roles que marcaste en Alertas \u2192 \xABNuevo reporte\xBB, y los quiebres quedan tambi\xE9n en la campanita. Entrar a Kroma en el mismo tel\xE9fono ya no le quita los avisos al m\xE1ster."
+  },
+  {
+    id: "2026-11-16-editar-reporte-completo",
+    fecha: "2026-11-16",
+    roles: ["master"],
+    titulo: "Corriges todo el reporte de visita",
+    resumen: "En Reportes de anaquel \u2192 Editar cambias lotes y cantidades, quiebre, entregas con su factura, retiro, PVP, hora real de la visita, punto de venta, mercaderista, competencia y notas. Cada correcci\xF3n queda anotada con lo que dec\xEDa antes."
+  },
+  {
+    id: "2026-11-16-alertas-agente-detalle",
+    fecha: "2026-11-16",
+    roles: ["master", "gerencia"],
+    titulo: "Las alertas del agente se abren completas",
+    resumen: "Al tocar una alerta del agente sobre el anaquel (sin salida, vencimiento, surtir m\xE1s, entregas) se abre su detalle: el punto de venta, las visitas, los lotes y qu\xE9 hacer."
+  },
+  {
     id: "2026-11-13-leche-factura",
     fecha: "2026-11-13",
     roles: ["master"],

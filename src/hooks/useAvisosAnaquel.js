@@ -51,6 +51,9 @@ export function useAvisosAnaquel({ reports, posList, activo }) {
             return {
                 id: a.id, title: a.titulo, body: a.cuerpo, read: !!estado[a.id]?.leido,
                 createdAt: { toDate: () => new Date(visto) }, sintetica: true,
+                // Hoja de detalle (la misma del vigilante): todo lo que sustenta el aviso.
+                aviso: { simple: true, id: a.id, titulo: a.titulo, cuerpo: a.cuerpo, severidad: a.severidad || 'importante',
+                    causa: a.causa || null, accion: a.accion || null, detalle: a.detalle || [], abiertoAt: new Date(visto) },
             };
         });
 

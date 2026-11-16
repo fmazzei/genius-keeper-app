@@ -4546,6 +4546,29 @@ Reporte del dueño con captura del iPhone: cada aviso llegaba **dos veces seguid
   - `node tests/centroNotificaciones.test.mjs`: 28 en verde (roles, persona, interruptor anterior, títulos, dueño del teléfono, novedades).
   - `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"`: 34 en verde. Ahora cubre el teléfono compartido entre dos cuentas, el centro, la etiqueta, las novedades una sola vez y no de noche, y las reglas del centro.
 
+## Reporte editable por completo, campanita ordenada y alertas del agente con detalle (2026-11-16)
+
+Pedido del dueño (16-nov): el máster corrige TODO el reporte del mercaderista sin recurrir a nadie; la campanita trae los reportes y los quiebres, cada usuario según sus políticas; y las alertas del robot se abren con su información.
+
+**Edición completa del reporte (solo máster)** — `src/Components/EditReportForm.jsx` (reescrito) + lógica pura `src/utils/edicionReporte.js`:
+- Se edita: punto de venta, mercaderista, hora real de inicio y fin (en hora de Caracas; sirve cuando el mercaderista carga la visita después), anaquel con producto o vacío, lotes (agregar, quitar, fecha, unidades, dañadas, «sin fecha legible»), total sin lotes (reportes viejos), entregas con factura (número y unidades), lo que entró sin factura, PVP con coma, retiro (unidades, motivo, repuestas), caras, altura, categoría vecina, POP, competencia (precio editable), nuevos entrantes y observaciones.
+- Se recalcula igual que el formulario del mercaderista: `inventoryLevel`, `envasesDanados`, `lotesPorEstado` y `orderQuantity` (= facturas entregadas + sin factura). Si se corrigen los lotes, el conteo «antes/después de reponer» del teléfono deja de aplicar.
+- Solo se escribe lo que cambió (`armarEdicion` compara contra el mismo reporte pasado por el formulario: un precio guardado como texto o un «dañadas» vacío no cuentan como cambio).
+- Constancia: `edicionesMaster` (arrayUnion) con `at`, `por`, `campos` y `antes`; se ve en «Datos del registro» de la hoja del reporte.
+- El retiro se mantiene igual en `devoluciones/visita_<id>` (se crea, se actualiza o se anula con el reporte).
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/edicionReporte.test.mjs` (22 en verde, con el reporte real de Río Av. Blandín).
+
+**Campanita en todos los perfiles; cada uno recibe lo que dicen sus políticas** (corrección del dueño, 16-nov: «las notificaciones no son iguales para todos; hay políticas establecidas en las configuraciones»):
+- **Reportes de visita: los decide Alertas → «Nuevo reporte»** (`settings/notificationsConfig.events.nuevo_reporte`, `destinations` + `enabled`). `politicaDeAlertas` lo traduce a roles del centro (`sales_manager`/`director` = gerencia) y `recibeRol` lo usa antes de `DEFAULT_ROLES`. Hoy: máster y gerencia. Apagado en Alertas = no le llega a nadie. En el centro, la columna 📋 Reporte escribe en esa misma política; lo propio de una persona sigue mandando.
+- Las demás categorías siguen con los valores por rol de siempre (`DEFAULT_ROLES`, sin cambios: administración no recibe el anaquel salvo que se le dé en el centro; regla `centroDaAnaquel` con `false` por defecto).
+- La apertura de una alerta de anaquel bajo ahora usa `pushCentral.notificar` (campanita + teléfono, `categoria: 'anaquel'`, enlace al reporte). Antes era solo push y el renglón rojo: los quiebres no quedaban en la campanita. Los recordatorios de las 9, 13 y 17 h siguen solo al teléfono.
+- Campanita en todos los perfiles: máster y gerencia (`ManagerLayout`, igual), **administración** y **mercaderista** (`NotificationsBell` nuevo en `AdministracionLayout` y `AppShell`; un reporte se abre con el visor global `ReportViewContext`) y **vendedor** (la pestaña «Alertas de tu operación» suma las `notifications` a facturas, despachos y pickings). Cada uno ve solo lo que le toca.
+- **El teléfono del máster ya no se pierde al usar Kroma.** Kroma entra con la cuenta de producción (PIN) dentro de la misma app y `AuthContext` registra el teléfono a nombre de la cuenta abierta: esa cuenta se quedaba con el teléfono y el máster dejaba de recibir todo (en la bitácora del vigilante, «sin_tokens» del máster del 9 al 11-nov). Ahora solo las cuentas de GK (`esCuentaGk` en `pushCentral.js`: roles de `DEFAULT_ROLES`) compiten por un teléfono; los avisos de espera de Kroma leen sus propios tokens y no cambian. Entre cuentas de GK sigue mandando la última que abrió la app.
+- **GK y Kroma no cruzan avisos** (decisión del dueño, 16-nov): los avisos de Kroma quedan en la campana de Kroma (`kroma_notifications`, `kroma_alerts`, avisos de espera) y los de GK en la campanita de GK. No hay categoría de Kroma en el centro de notificaciones de GK.
+- Pruebas: `node tests/centroNotificaciones.test.mjs` (política de Alertas, cuentas de Kroma), `node tests/alertaAnaquel.test.mjs` y `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"` (el quiebre queda en la campanita de las 4 personas que lo reciben; el máster sigue recibiendo después de abrir Kroma en su teléfono), en verde.
+
+**Alertas del agente con su detalle:** los avisos del anaquel (`src/utils/avisosAnaquel.js`: sin salida, vencimiento, surtir más, registro de entregas) traen ahora `severidad`, `causa`, `accion` y `detalle` (punto de venta, visitas, lotes, la cuenta) y se abren en `AvisoDetalleSheet`, igual que los del vigilante. El aviso local «el vigilante dejó de correr» también. La hoja respeta los saltos de línea del resumen semanal.
+
 ## Rotación: lo que bajó del anaquel y no fue venta (2026-10-29) ✅
 
 Reclamo del dueño con la hoja de Central Madeirense - Manzanares (26-oct): «salieron 53 en 5 días», 10,6 uds/día, contra un histórico de 1,49. La rotación contaba como VENTA todo lo que bajaba el anaquel entre dos visitas. Revisados los 249 reportes, había dos causas, más una tercera posible:

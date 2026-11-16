@@ -71,6 +71,11 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 id: 'vig:latido_local', title: 'El vigilante dejó de correr',
                 body: `No revisa la app desde hace ${Math.round((Date.now() - latidoVig) / 3600000)} h. Acción: revisar las funciones programadas.`,
                 read: false, createdAt: { toDate: () => new Date(latidoVig) }, sintetica: true,
+                aviso: { simple: true, id: 'latido_local', titulo: 'El vigilante dejó de correr', severidad: 'critico',
+                    cuerpo: `No revisa la app desde hace ${Math.round((Date.now() - latidoVig) / 3600000)} h.`,
+                    causa: 'La función programada del vigilante no está corriendo (deploy fallido, cuota o error).',
+                    accion: 'Revisar las funciones programadas en Firebase (conciliarZohoAutomatico).',
+                    abiertoAt: new Date(latidoVig), detalle: [] },
             });
         }
         return lista;

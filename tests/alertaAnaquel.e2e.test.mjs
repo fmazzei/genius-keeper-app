@@ -70,6 +70,11 @@ let a = await alerta('P1');
 ok(a && a.estado === 'abierta' && a.contadas === 4 && a.posName === 'Los Pomelos' && a.reportId === 'r1', 'se abre con 4 uds, el nombre del PDV y el reporte');
 ok(quienes() === 'ANAQ,CARO,FRAN,GER', `le llega a máster, gerencia, vendedor y mercaderista (no a administración, apagada ni inactiva): ${quienes()}`);
 ok(pushes.length === 4, `un solo aviso por persona aunque el disparador corra dos veces (${pushes.length})`);
+{
+    const campana = (await fs.collection('notifications').where('categoria', '==', 'anaquel').get()).docs.map(d => d.data());
+    ok(campana.length === 4 && campana.every(n => n.link === '/reports/r1' && n.title === 'Los Pomelos'),
+        `el quiebre queda también en la CAMPANITA de cada persona, con el enlace al reporte (${campana.length})`);
+}
 ok(pushes[0].data.link === '/reports/r1' && pushes[0].title === '🔴 Anaquel bajo · Los Pomelos', 'el aviso abre el reporte');
 
 // 2. Otra visita baja sin reponer: sigue la misma alerta, sin aviso nuevo, y extiende el plazo.
@@ -132,6 +137,18 @@ ok(vecesCompartido === 2, `FRAN recibe por sus dos teléfonos y GER no recibe po
 ok(!alCompartido.some(p => p.uid === 'CARO'), 'el centro apagó el anaquel a los vendedores');
 ok(alCompartido.some(p => p.uid === 'MJ'), 'el centro se lo dio a una persona de administración');
 ok(alCompartido.every(p => p.tag && p.tag.startsWith('gk-anaquel-')), 'cada aviso lleva su etiqueta de tipo');
+// 7b. Kroma entra con la cuenta de producción en el mismo teléfono: no le quita
+//     el teléfono al máster (16-nov).
+pushes.length = 0;
+await fs.doc('users_metadata/PROD').set({ name: 'Producción', role: 'produccion' });
+await fs.doc(`users_metadata/PROD/tokens/${compartido}`).set({ ultimaVez: ts(Date.now() + 60000) });
+PC.olvidarCache();
+{
+    const r = await PC.enviar({ uid: 'FRAN', categoria: 'reporte', titulo: 'Páramo (Chacao)', cuerpo: 'Eduardo Carrillo.' });
+    ok(r.ok && r.enviados === 2, `después de abrir Kroma, el máster sigue recibiendo en su teléfono (${r.enviados})`);
+}
+await fs.doc(`users_metadata/PROD/tokens/${compartido}`).delete();
+await fs.doc('users_metadata/PROD').delete();
 await fs.doc('settings/centroNotificaciones').delete();
 PC.olvidarCache();
 

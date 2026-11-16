@@ -81,7 +81,7 @@ export default function AvisoDetalleSheet({ aviso, uid, onClose, onMarcarVisto, 
                     <h3 className={`text-lg font-black leading-snug ${fuerte}`}>{aviso.titulo}</h3>
 
                     <Bloque titulo="Qué pasa">
-                        <p className={`text-sm leading-relaxed ${fuerte}`}>{aviso.cuerpo || '—'}</p>
+                        <p className={`text-sm leading-relaxed whitespace-pre-line ${fuerte}`}>{aviso.cuerpo || '—'}</p>
                         {(aviso.desde || aviso.abiertoAt) && <p className={`text-xs mt-2 ${tenue}`}>Desde: {fmt(aviso.desde || aviso.abiertoAt)}</p>}
                     </Bloque>
                     {aviso.causa && (
