@@ -920,6 +920,7 @@ Zoho reorganizado (4-oct): TODA la deuda —proveedores y personal— está en f
 - **Se retiró** la lectura de la cuenta 2.1.1.04.01 (`getAccountBalanceByCode` queda exportada, sin uso) y se borra `zohoNomina` en cada conciliación.
 - **Tablero, tarjeta 02**: sub "Personal $X · Proveedores $Y". Hoja: total, tres subtotales, control cruzado, un solo buscador y la lista en tres bloques —Personal – nómina, Personal – destajo, Proveedores— con proveedor, número, fecha, vencimiento, saldo y días vencida; al pie la próxima nómina. La tarjeta 04 (Proveedores de Kroma) solo cruza la deuda de categoría `proveedor`.
 - Simulado con las fichas reales de Zoho (una factura por proveedor con saldo + una pagada y un borrador que deben excluirse): Proveedores 3.788,59 · Nómina 770,00 · Destajo 425,00 · Total 4.983,59 · cruce 0,00.
+- **Un renglón por proveedor (17-nov, pedido del dueño):** dentro de cada bloque (nómina, destajo, proveedores) cada proveedor o persona sale UNA vez con lo que se le debe en total, lo vencido y el atraso mayor; al tocarlo se abren sus facturas (número, fecha, vencimiento, saldo, días vencida). Se agrupa por `zohoVendorId` (sin id, por nombre sin acentos). El buscador encuentra por proveedor o por número de factura y abre los que coinciden. Lógica pura en `src/utils/cxpPorProveedor.js` (`agruparPorProveedor`, `filtrarProveedores`). Prueba: `node --import ./tests/alias.mjs tests/cxpPorProveedor.test.mjs` (5 en verde).
 
 ### Tablero en blanco al abrir + "Volver" en todas las hojas del Dashboard (2026-10) ✅
 

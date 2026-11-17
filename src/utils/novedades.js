@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-17-cxp-por-proveedor',
+        fecha: '2026-11-17',
+        roles: ['master'],
+        titulo: 'Cuentas por pagar: un renglón por proveedor',
+        resumen: 'En el Tablero, Cuentas por pagar muestra cada proveedor o persona una sola vez con lo que se le debe en total. Al tocarlo se abren sus facturas.',
+    },
+    {
         id: '2026-11-16-campanita-reportes-quiebres',
         fecha: '2026-11-16',
         roles: ['master'],
