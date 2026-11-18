@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-18-pdf-rapido',
+        fecha: '2026-11-18',
+        roles: [],
+        titulo: 'Los PDF salen al instante y con nombre',
+        resumen: 'El botón «Descargar PDF» arma el archivo en segundos y en el teléfono abre el menú para guardarlo, mandarlo por WhatsApp o imprimirlo. Cada archivo lleva su nombre, por ejemplo «Lacteoca - Estado de cuenta - 18-11-2026.pdf».',
+    },
+    {
         id: '2026-11-18-cxp-pdf',
         fecha: '2026-11-18',
         roles: ['master', 'gerencia'],

@@ -9,12 +9,14 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer } from 'lucide-react';
+import { X } from 'lucide-react';
 import { fmtDiaVE, fmtMomentoVE, DIAS_FACTURA_ANTES_DE_REPONER, comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL, textoNoVenta, textoDuplicada } from '@/utils/reporteVisita.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { etiquetaAltura, etiquetaCategoria } from '@/utils/anaquelCatalogo.js';
 import { estadoLote, ESTADO_LABEL, labelMotivo } from '@/utils/retiros.js';
 
+import BotonPdf from '@/Components/BotonPdf.jsx';
+import { nombrePdf } from '@/utils/exportarPdf.js';
 const NAVY = '#12386b';
 const VERDE = '#059669';
 const AMBAR = '#b45309';
@@ -133,16 +135,14 @@ export function GraficoRotacionPdf({ intervalos, resaltarId = null, alto = 150 }
 }
 
 /** Marco común: barra de herramientas, hoja carta, encabezado con logo. */
-function Documento({ titulo, subtitulo, derecha, onClose, children }) {
+function Documento({ titulo, subtitulo, derecha, nombre, onClose, children }) {
     return createPortal((
         <div id="gk-rep-portal" style={{ position: 'fixed', inset: 0, zIndex: 140, background: '#e9edf3', overflowY: 'auto', fontFamily: SANS }}>
             <style>{PRINT_CSS}</style>
             <div className="gk-no-print" style={{ position: 'sticky', top: 0, zIndex: 2, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 14px', paddingTop: 'max(10px, env(safe-area-inset-top))' }}>
                 <span style={{ fontWeight: 800, fontSize: 14, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{titulo}</span>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                    <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 13, padding: '8px 14px', borderRadius: 8, border: 0 }}>
-                        <Printer size={15} /> Guardar PDF
-                    </button>
+                    <BotonPdf hoja={'.gk-rep-sheet'} nombre={nombre} />
                     <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,.15)', color: '#fff', fontWeight: 700, fontSize: 13, padding: '8px 12px', borderRadius: 8, border: 0 }}>
                         <X size={15} /> Cerrar
                     </button>
@@ -205,6 +205,7 @@ export function ReporteVisitaDoc({ report, pos, va, vp, ub, registro, historial,
     const lotes = (r.batches || []).filter(b => b);
     return (
         <Documento onClose={onClose} subtitulo="Reporte de visita al anaquel" titulo={r.posName || 'PDV'}
+            nombre={nombrePdf('Reporte de visita', r.posName, va?.t ? fmtDiaVE(va.t) : null)}
             derecha={<>
                 <b style={{ color: '#0f172a' }}>{fechaVis}</b><br />
                 {r.userName || 'Mercaderista'}{dur ? <><br />Visita de {dur}</> : null}<br />
@@ -404,6 +405,7 @@ export function InformePdvDoc({ titulo, informes = [], desde, hasta, onClose }) 
     const dias = informes.reduce((s, i) => s + i.resumen.diasMedidos, 0);
     return (
         <Documento onClose={onClose} subtitulo={varios ? 'Informe del cliente · todos sus puntos de venta' : 'Informe del punto de venta'} titulo={titulo}
+            nombre={nombrePdf('Informe', titulo, `${fmtDiaVE(desde)} al ${fmtDiaVE(hasta)}`)}
             derecha={<><b style={{ color: '#0f172a' }}>{fmtDiaVE(desde)} – {fmtDiaVE(hasta)}</b><br />{varios ? `${informes.length} puntos de venta` : ''}</>}>
             {varios && (<>
                 <Fila>

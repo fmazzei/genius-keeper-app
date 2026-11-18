@@ -10,8 +10,10 @@ import { etiquetaFijo } from '../utils/periodosComision.js';
 import { nombresPlan } from '../utils/piezasComision.js';
 import { compararConHoy } from '../utils/verificarLiquidacion.js';
 import { createPortal } from 'react-dom';
-import { X, Printer } from 'lucide-react';
+import { X } from 'lucide-react';
 
+import BotonPdf from '@/Components/BotonPdf.jsx';
+import { nombrePdf } from '@/utils/exportarPdf.js';
 const money = (n) => `$ ${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const MONO = "'Courier New', 'Consolas', 'Liberation Mono', monospace";
@@ -75,12 +77,7 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                 <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white">
                     <X size={18} /> Cerrar
                 </button>
-                <button
-                    onClick={() => window.print()}
-                    className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm px-4 py-2 rounded-lg"
-                >
-                    <Printer size={16} /> Descargar / Imprimir
-                </button>
+                <BotonPdf hoja={'#gk-comprobante-sheet'} nombre={nombrePdf('Comprobante de pago', vendedorName)} />
             </div>
 
             {/* Hoja */}

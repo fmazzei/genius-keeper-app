@@ -9,10 +9,12 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, Shield, Package, ArrowUpRight, Award, UtensilsCrossed } from 'lucide-react';
+import { X, Shield, Package, ArrowUpRight, Award, UtensilsCrossed } from 'lucide-react';
 import { escalonesBonoNivel } from '@/utils/bloquesRemuneracion.js';
 import { PIEZAS, piezasActivas, simularEsquema, curvaEsquema, completo } from '@/utils/piezasComision.js';
 
+import BotonPdf from '@/Components/BotonPdf.jsx';
+import { nombrePdf } from '@/utils/exportarPdf.js';
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const uds   = (n) => `${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const kg    = (n) => `${String(Math.round((Number(n) || 0) * 10) / 10).replace('.', ',')} kg`;
@@ -69,7 +71,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
         <div id="gk-proposal-portal" className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
             <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">
                 <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white"><X size={18} /> Cerrar</button>
-                <button onClick={() => window.print()} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm px-4 py-2 rounded-lg"><Printer size={16} /> Imprimir / Guardar PDF</button>
+                <BotonPdf hoja={'#gk-proposal-sheet'} nombre={nombrePdf('Propuesta de comisiones', vendedorName)} />
             </div>
 
             <div className="flex-1 p-3 sm:p-6 flex justify-center">

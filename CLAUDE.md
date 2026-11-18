@@ -3108,6 +3108,17 @@ Reporte del dueño: adentro de la Cava decía "250 g 468 ud" y "1 kg 109 ud", y 
 
 Pedido del dueño: en planta se cuenta y se despacha por docena, así que cada partida envasada muestra **unidades Y docenas** ("30 ud · 2 docenas y 6 sueltas"; "36 ud · 3 docenas"; "8 ud · 8 sueltas"). Una sola función, **`enDocenas(unidades)`** en `src/Kroma/inventarioPT.js`, usada en la partida (`PartidaCava`), en las cifras del resumen por presentación (`ResumenCava`) y en la tarjeta del almacén (reemplazó el `formatDocenas` local, que decía "2 doc + 6 sueltas"). Las docenas acompañan a las unidades, nunca las reemplazan; el granel sigue en kg.
 
+### Los PDF se arman en la app, no con la impresión del navegador (2026-11-18) ✅
+
+Reclamo del dueño: al tocar «Descargar / Imprimir» pasaban minutos hasta que salía la hoja de imprimir (el botón parecía muerto), y el archivo no tenía nombre. Causa: `window.print()` en el iPhone con la app instalada procesa la app entera, no solo el informe.
+- **`src/utils/exportarPdf.js`** + **`src/Components/BotonPdf.jsx`** reemplazan `window.print()` en los 16 documentos (`*Doc.jsx`). **Regla: un PDF nuevo usa `<BotonPdf hoja=… nombre={nombrePdf(…)} />`, nunca `window.print()`.**
+- `armarPdf(hoja, nombre)`: copia la hoja a 820 px fuera de la vista; html2canvas dibuja SOLO esa copia (`ignoreElements` deja fuera la app) en tramos de hasta 4.200 px (límite de memoria del iPhone); jsPDF arma carta con márgenes. Las librerías (`html2canvas` 1.4.1, `jspdf` 2.5.2) se cargan solo al exportar.
+- **Cortes de página** (`calcularCortes`, puro): en el final de la última fila, párrafo o sección que cabe; respeta `break-before: page` y no parte un bloque con `break-inside: avoid` que quepa en una página. Se miden en la copia que dibuja html2canvas (una pasada de 1 px con `onclone`), no en la pantalla: medidas de pantalla dejaban filas partidas. En la copia se apaga `font-variant-numeric` (html2canvas separaba «31 /10 /26»).
+- **Entrega** (`entregarPdf`): en el teléfono, menú de compartir (`navigator.share` con el archivo: Archivos, WhatsApp, imprimir); si el teléfono pide otro toque, el botón queda en «Compartir PDF» con el archivo listo. En la computadora, descarga directa.
+- **El botón responde al instante**: «Preparando PDF · 2 de 5».
+- **Nombre** (`nombrePdf`): «Lacteoca - <informe> - <persona o período> - dd-mm-aaaa.pdf», sin caracteres que un sistema de archivos rechace.
+- Prueba: `node --import ./tests/alias.mjs tests/exportarPdf.test.mjs` (8 en verde). Probado en Chromium como computadora y como iPhone 13: cuentas por pagar de 1 y de 3 páginas en menos de 1 s, sin filas partidas. **No probado en un iPhone real** (el menú de compartir).
+
 ## Inventario perpetuo — Etapa 0: lo que descuadraba el inventario (2026-10) ✅
 
 Antes de construir el libro valorado se corrigió lo que la auditoría encontró descuadrando la cava. **Decisiones del dueño (5-oct)**: arranque = día de la puesta en marcha de la Etapa 1, con conteo físico; en Frimaca la SALIDA es el picking (punto de venta opcional); un despacho a otra ciudad (no Caracas) SALE al despachar; lo que Frimaca recibe de menos es merma automática.
