@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-18-cxp-pdf',
+        fecha: '2026-11-18',
+        roles: ['master', 'gerencia'],
+        titulo: 'Cuentas por pagar en PDF',
+        resumen: 'En el Tablero, tarjeta Cuentas por pagar, el botón «Exportar en PDF» descarga la lista completa: personal y proveedores, cada uno con sus facturas, lo vencido y la próxima nómina.',
+    },
+    {
         id: '2026-11-18-cxp-numero-repetido',
         fecha: '2026-11-18',
         roles: ['master'],
