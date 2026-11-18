@@ -16,6 +16,7 @@
 const admin = require("firebase-admin");
 const { listAllBills, listVendorBalances, listRecurringBills, getBillDetail } = require('./zohoApi');
 const { categoriaPorCuentas, esPersonal } = require('./cxpCategoria');
+const { idsDeCuentasPorPagar, numeroDe } = require('./cxpDocId');
 
 // Estatus de Zoho que cuentan como deuda abierta. Lo demás (draft, void, paid…)
 // no se paga.
@@ -112,6 +113,9 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
         diag.unpaid = { error: String(e?.response?.data?.message || e.message).slice(0, 160) };
     }
 
+    // Id por factura: el número, salvo que dos proveedores repitan número.
+    const { ids: idDoc, repetidos } = idsDeCuentasPorPagar(bills);
+    if (repetidos.length) diag.numerosRepetidos = repetidos.slice(0, 20);
     const seen = new Set();
     let escritas = 0, porPagar = 0, vencidas = 0, nAbiertas = 0;
 
@@ -119,9 +123,10 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
         const chunk = bills.slice(i, i + 400);
         const batch = db.batch();
         for (const b of chunk) {
-            const numero = String(b.bill_number || b.reference_number || b.bill_id || '').trim();
+            const numero = numeroDe(b);
             if (!numero) continue;
-            seen.add(numero);
+            const docId = idDoc.get(String(b.bill_id));
+            seen.add(docId);
 
             const estado = b.status === 'paid' ? 'pagada'
                 : b.status === 'void' ? 'anulada'
@@ -140,7 +145,7 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
                 if (venc && venc < hoy) { vencidas += saldo; pc.vencido += saldo; }
             }
 
-            batch.set(db.doc(`cuentas_por_pagar/${numero.replace(/\//g, '-')}`), {
+            batch.set(db.doc(`cuentas_por_pagar/${docId}`), {
                 numero,
                 zohoBillId:   b.bill_id != null ? String(b.bill_id) : null,
                 proveedor:    b.vendor_name || '—',
@@ -169,9 +174,8 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
         const updates = [];
         snap.docs.forEach(d => {
             const f = d.data();
-            const num = String(f.numero || '').trim();
-            if (!num) return;
-            const falta = !seen.has(num);
+            if (!String(f.numero || '').trim()) return;
+            const falta = !seen.has(d.id);
             if (falta && f.ausenteEnZoho !== true) { updates.push({ ref: d.ref, data: { ausenteEnZoho: true } }); ausentes++; }
             else if (!falta && f.ausenteEnZoho === true) updates.push({ ref: d.ref, data: { ausenteEnZoho: false } });
         });
