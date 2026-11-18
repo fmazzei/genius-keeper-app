@@ -14,7 +14,8 @@
 // inventa un cero, que sería peor que no mostrar nada.
 
 const admin = require("firebase-admin");
-const { listAllBills, listVendorBalances, listRecurringBills } = require('./zohoApi');
+const { listAllBills, listVendorBalances, listRecurringBills, getBillDetail } = require('./zohoApi');
+const { categoriaPorCuentas, esPersonal } = require('./cxpCategoria');
 
 // Estatus de Zoho que cuentan como deuda abierta. Lo demás (draft, void, paid…)
 // no se paga.
@@ -82,7 +83,24 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
     // Categoría de cada factura: la de la ficha de su proveedor (por vendor_id).
     const catPorVendor = new Map();
     (proveedores || []).forEach(v => { if (v.vendorId) catPorVendor.set(v.vendorId, v.categoria); });
-    const categoriaDe = (b) => catPorVendor.get(b.vendor_id != null ? String(b.vendor_id) : '') || 'proveedor';
+    const categoriaFicha = (b) => catPorVendor.get(b.vendor_id != null ? String(b.vendor_id) : '') || 'proveedor';
+    // Facturas ABIERTAS del personal: se lee su detalle para clasificarlas por
+    // la cuenta de sus líneas (una persona puede tener quincena y destajo).
+    // Son pocas; si una lectura falla, queda la categoría de la ficha.
+    const catPorBill = new Map();
+    const personalesAbiertas = bills.filter(b => esPersonal(categoriaFicha(b))
+        && ESTATUS_ABIERTOS.includes(String(b.status || '')) && Number(b.balance) > 0.005).slice(0, 60);
+    diag.personalLeidas = 0;
+    for (const b of personalesAbiertas) {
+        try {
+            const det = await getBillDetail({ accessToken, organizationId, dataCenter, billId: b.bill_id });
+            catPorBill.set(String(b.bill_id), categoriaPorCuentas(det?.line_items, categoriaFicha(b)));
+            diag.personalLeidas++;
+        } catch (e) {
+            diag.personalError = String(e?.response?.data?.message || e.message).slice(0, 160);
+        }
+    }
+    const categoriaDe = (b) => catPorBill.get(String(b.bill_id)) || categoriaFicha(b);
     const porCategoria = Object.fromEntries(CATEGORIAS.map(c => [c, { total: 0, facturas: 0, vencido: 0 }]));
 
     // Control: lo que Zoho devuelve con su propio filtro de "sin pagar" tiene

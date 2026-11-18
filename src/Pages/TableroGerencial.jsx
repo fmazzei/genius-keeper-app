@@ -21,8 +21,9 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Wallet, Receipt, Users, Truck, TrendingUp, RotateCcw, ShoppingCart, Factory, FileText,
-    X, AlertTriangle, Search, ChevronRight,
+    X, AlertTriangle, Search, ChevronRight, ChevronDown,
 } from 'lucide-react';
+import { agruparPorProveedor, filtrarProveedores } from '@/utils/cxpPorProveedor.js';
 import { useTableroGerencial, ultimosMeses } from '@/hooks/useTableroGerencial.js';
 import { fechaProduccion } from '@/Kroma/estadoPlanta.js';
 import { SECCIONES_COMPRA } from '@/utils/tableroPlanta.js';
@@ -182,13 +183,59 @@ const Fila = ({ titulo, sub, derecha, subDerecha, tono }) => (
     </div>
 );
 
-// Cuentas por pagar en tres bloques (personal primero). Un solo buscador para
-// los tres; cada bloque con su subtotal y cada factura con sus días vencida.
+// Cuentas por pagar en tres bloques (personal primero). Dentro de cada bloque,
+// UNA fila por proveedor con lo que se le debe en total; al tocarla se abren sus
+// facturas. Un solo buscador (proveedor o número de factura) para los tres.
+const ProveedorCxP = ({ p, bloque, abierto, onToggle }) => {
+    const tono = p.maxDias > 0 ? 'border-l-red-500' : bloque === 'proveedor' ? 'border-l-slate-200' : 'border-l-violet-400';
+    const n = p.facturas.length;
+    return (
+        <div className={`bg-white border border-slate-200 border-l-4 ${tono} rounded-xl`}>
+            <button type="button" onClick={onToggle}
+                className="w-full p-3 flex items-center justify-between gap-3 text-left">
+                <div className="min-w-0 flex items-center gap-2">
+                    <ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${abierto ? '' : '-rotate-90'}`} />
+                    <div className="min-w-0">
+                        <p className="font-bold text-slate-800 text-sm truncate">{p.proveedor}</p>
+                        <p className="text-[11px] text-slate-400">{n} factura{n === 1 ? '' : 's'}</p>
+                    </div>
+                </div>
+                <div className="text-right shrink-0">
+                    <p className="font-black text-slate-800 tabular-nums text-sm whitespace-nowrap">{money(p.total)}</p>
+                    <p className={`text-[11px] whitespace-nowrap ${p.maxDias > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
+                        {p.maxDias > 0
+                            ? (p.vencido + 0.005 < p.total ? `${money(p.vencido)} vencido` : `vencida ${p.maxDias} d`)
+                            : 'vigente'}
+                    </p>
+                </div>
+            </button>
+            {abierto && (
+                <div className="border-t border-slate-100 px-3 py-2 space-y-1.5">
+                    {p.facturas.map(b => (
+                        <div key={b.id} className="flex items-start justify-between gap-3 text-xs">
+                            <div className="min-w-0">
+                                <p className="font-semibold text-slate-700 truncate">{b.numero || 'Sin número'}</p>
+                                <p className="text-[11px] text-slate-400">{fmt(toDate(b.fecha))} · vence {fmt(toDate(b.vencimiento))}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <p className="font-bold text-slate-800 tabular-nums">{money(b.balance)}</p>
+                                <p className={`text-[11px] ${b.dias > 0 ? 'text-red-600' : 'text-slate-400'}`}>{b.dias > 0 ? `vencida ${b.dias} d` : 'vigente'}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const CxPPorCategoria = ({ grupos }) => {
     const [term, setTerm] = useState('');
-    const t = term.trim().toLowerCase();
-    const hoy = new Date();
+    const [abiertos, setAbiertos] = useState(() => new Set());
     const total = grupos.reduce((n, g) => n + g.items.length, 0);
+    const porGrupo = useMemo(() => grupos.map(g => ({ ...g, proveedores: agruparPorProveedor(g.items) })), [grupos]);
+    const toggle = (k) => setAbiertos(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+    const buscando = term.trim().length > 0;
     return (
         <>
             {total > 6 && (
@@ -199,34 +246,28 @@ const CxPPorCategoria = ({ grupos }) => {
                 </div>
             )}
             <div className="space-y-4">
-                {grupos.map(g => {
-                    const items = [...g.items]
-                        .filter(b => !t || `${b.proveedor} ${b.numero}`.toLowerCase().includes(t))
-                        .sort((a, b) => (toDate(a.vencimiento) || 0) - (toDate(b.vencimiento) || 0));
+                {porGrupo.map(g => {
                     if (g.items.length === 0) return null;
+                    const vis = filtrarProveedores(g.proveedores, term);
                     return (
                         <section key={g.id}>
                             <div className="flex items-baseline justify-between gap-3 mb-2 px-1">
                                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                                    {g.nombre} <span className="font-semibold normal-case tracking-normal text-slate-400">· {g.items.length}</span>
+                                    {g.nombre} <span className="font-semibold normal-case tracking-normal text-slate-400">
+                                        · {g.proveedores.length} {g.id === 'proveedor' ? 'proveedor' : 'persona'}{g.proveedores.length === 1 ? '' : (g.id === 'proveedor' ? 'es' : 's')} · {g.items.length} factura{g.items.length === 1 ? '' : 's'}
+                                    </span>
                                 </h3>
                                 <p className="text-sm font-black text-slate-800 tabular-nums">
                                     {money(g.total)}
                                     {g.vencido > 0.005 && <span className="block text-[10px] font-bold text-red-600 text-right">{money(g.vencido)} vencido</span>}
                                 </p>
                             </div>
-                            {items.length === 0
+                            {vis.length === 0
                                 ? <p className="text-xs text-slate-400 px-1">Nada con esa búsqueda.</p>
-                                : <div className="space-y-2">{items.map(b => {
-                                    const v = toDate(b.vencimiento);
-                                    const dias = v && v < hoy ? Math.floor((hoy - v) / 86400000) : 0;
-                                    return (
-                                        <Fila key={b.id} titulo={b.proveedor || '—'}
-                                            sub={`${b.numero} · ${fmt(toDate(b.fecha))} · vence ${fmt(v)}`}
-                                            derecha={money(b.balance)}
-                                            subDerecha={dias > 0 ? `vencida ${dias} d` : 'vigente'}
-                                            tono={dias > 0 ? 'border-l-red-500' : g.id === 'proveedor' ? 'border-l-slate-200' : 'border-l-violet-400'} />
-                                    );
+                                : <div className="space-y-2">{vis.map(p => {
+                                    const k = `${g.id}|${p.id}`;
+                                    return <ProveedorCxP key={k} p={p} bloque={g.id}
+                                        abierto={buscando || abiertos.has(k)} onToggle={() => toggle(k)} />;
                                 })}</div>}
                         </section>
                     );
