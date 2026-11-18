@@ -28,6 +28,7 @@ import { useTableroGerencial, ultimosMeses } from '@/hooks/useTableroGerencial.j
 import { fechaProduccion } from '@/Kroma/estadoPlanta.js';
 import { SECCIONES_COMPRA } from '@/utils/tableroPlanta.js';
 import DossierComercialDoc from '@/Components/DossierComercialDoc.jsx';
+import CuentasPorPagarDoc from '@/Components/CuentasPorPagarDoc.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
 import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
@@ -320,6 +321,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
     }, [refreshKey]);
     const [abierto, setAbierto] = useState(null);   // clave de la hoja abierta
     const [dossier, setDossier] = useState(false);
+    const [pdfCxP, setPdfCxP] = useState(false);
     const k = t.kpis;
 
     // Capital inmovilizado en insumos: el mismo cálculo que el inicio de
@@ -535,6 +537,10 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                         </div>
                     ) : (
                         <>
+                            <button type="button" onClick={() => setPdfCxP(true)}
+                                className="w-full mb-3 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold rounded-xl py-2.5">
+                                <FileText size={15} /> Exportar en PDF
+                            </button>
                             <div className="bg-white border border-slate-200 rounded-xl p-4 mb-3 flex items-center justify-between">
                                 <div>
                                     <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Saldo total por pagar</p>
@@ -735,6 +741,11 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
             )}
 
             {dossier && <DossierComercialDoc onClose={() => setDossier(false)} />}
+            {pdfCxP && (
+                <CuentasPorPagarDoc grupos={k.pagarPorCategoria || []} total={k.porPagar} vencido={k.pagarVencido}
+                    cruce={k.crucePorPagar} proximaNomina={k.proximaNomina} corte={estadoPP?.at}
+                    onClose={() => setPdfCxP(false)} />
+            )}
 
             {abierto === 'produccion' && (
                 <Hoja titulo="Producción" subtitulo="Lotes en proceso y costo de cada lote cerrado (Kroma)" onClose={cerrar}>

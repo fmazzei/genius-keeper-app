@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-18-cxp-pdf",
+    fecha: "2026-11-18",
+    roles: ["master", "gerencia"],
+    titulo: "Cuentas por pagar en PDF",
+    resumen: "En el Tablero, tarjeta Cuentas por pagar, el bot\xF3n \xABExportar en PDF\xBB descarga la lista completa: personal y proveedores, cada uno con sus facturas, lo vencido y la pr\xF3xima n\xF3mina."
+  },
+  {
     id: "2026-11-18-cxp-numero-repetido",
     fecha: "2026-11-18",
     roles: ["master"],
