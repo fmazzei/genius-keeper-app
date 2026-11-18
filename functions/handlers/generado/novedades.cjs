@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-18-cxp-numero-repetido",
+    fecha: "2026-11-18",
+    roles: ["master"],
+    titulo: "Cuentas por pagar: n\xFAmeros repetidos",
+    resumen: "Si dos proveedores usan el mismo n\xFAmero de factura en Zoho, GK ya muestra las dos. Antes la segunda no aparec\xEDa en la lista."
+  },
+  {
     id: "2026-11-18-conciliar-por-comando",
     fecha: "2026-11-18",
     roles: ["master"],

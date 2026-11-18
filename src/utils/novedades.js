@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-18-cxp-numero-repetido',
+        fecha: '2026-11-18',
+        roles: ['master'],
+        titulo: 'Cuentas por pagar: números repetidos',
+        resumen: 'Si dos proveedores usan el mismo número de factura en Zoho, GK ya muestra las dos. Antes la segunda no aparecía en la lista.',
+    },
+    {
         id: '2026-11-18-conciliar-por-comando',
         fecha: '2026-11-18',
         roles: ['master'],
