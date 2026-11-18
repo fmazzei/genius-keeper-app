@@ -13,6 +13,7 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const functionsV1 = require("firebase-functions");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const { getAccessToken, listAllInvoices, listBillsPage, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
@@ -268,6 +269,76 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         await soltarLock();
     }
 });
+
+// ── CONCILIAR POR COMANDO ───────────────────────────────────────────────────
+// Para conciliar sin una sesión en la app (p. ej. desde el conector de Claude):
+// se crea `gk_comandos/{id}` con `{ accion: 'conciliarZoho', vendedorId? }` y
+// el servidor corre la MISMA conciliación del botón, con el mismo candado. El
+// resultado (resumido) queda en el mismo documento: estado pendiente →
+// corriendo → listo | error. Las reglas no dejan a la app crear comandos: solo
+// el servidor y el conector (Admin SDK). Disparador v1: los de Firestore v2
+// piden Eventarc.
+
+// Lo que se guarda del resultado: el resumen, no las listas de facturas.
+function resumenConciliacion(res = {}) {
+    const n = (v) => (typeof v === 'number' ? v : null);
+    const pp = res.porPagar || null;
+    const cu = res.cuadre || null;
+    return {
+        revisadas: n(res.revisadas), creadas: n(res.creadas), marcadasPagadas: n(res.marcadasPagadas),
+        anuladas: n(res.anuladas), borradores: n(res.borradores), ausentes: n(res.ausentes), errores: n(res.errores),
+        porPagar: pp ? {
+            autorizado: pp.autorizado !== false, motivo: pp.motivo || null,
+            total: n(pp.porPagar), facturas: n(pp.nAbiertas), vencido: n(pp.vencidas),
+            porCategoria: pp.porCategoria || null,
+            proximaNomina: pp.proximaNomina ? {
+                monto: n(pp.proximaNomina.monto),
+                perfiles: (pp.proximaNomina.perfiles || []).slice(0, 20),
+            } : null,
+        } : null,
+        cuadre: cu ? {
+            zohoPorCobrar: n(cu.zohoPorCobrar), zohoFacturas: n(cu.zohoFacturas),
+            gkPorCobrar: n(cu.gkPorCobrar), gkFacturas: n(cu.gkFacturas),
+            corregidas: n(cu.corregidas), noCorregidas: Array.isArray(cu.noCorregidas) ? cu.noCorregidas.length : n(cu.noCorregidas),
+        } : null,
+    };
+}
+
+exports.gkComando = functionsV1.runWith({ timeoutSeconds: 540, memory: "1GB" })
+    .firestore.document("gk_comandos/{id}").onCreate(async (snap) => {
+        const ref = snap.ref;
+        // Entrega "al menos una vez": solo corre quien lo toma de "pendiente".
+        const tomado = await admin.firestore().runTransaction(async (tx) => {
+            const d = (await tx.get(ref)).data() || {};
+            if (d.estado && d.estado !== "pendiente") return false;
+            tx.update(ref, { estado: "corriendo", inicioAt: admin.firestore.FieldValue.serverTimestamp() });
+            return true;
+        });
+        if (!tomado) return;
+        const c = snap.data() || {};
+        const t0 = Date.now();
+        try {
+            if (c.accion !== "conciliarZoho") throw new Error(`Acción desconocida: ${c.accion}`);
+            const lock = await tomarLock('comando');
+            if (!lock.ok) throw new Error(`Ya hay una conciliación en curso (${lock.origen}). Crea el comando otra vez cuando termine.`);
+            let res;
+            try {
+                res = await ejecutarConciliacion({ vendedorId: c.vendedorId || null, origen: 'comando' });
+            } finally {
+                await soltarLock();
+            }
+            await ref.update({
+                estado: "listo", segundos: Math.round((Date.now() - t0) / 1000),
+                resultado: JSON.parse(JSON.stringify(resumenConciliacion(res))),
+                finAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (e) {
+            logger.error("gkComando", e);
+            await ref.update({ estado: "error", error: String(e?.message || e).slice(0, 500), finAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+    });
+
+exports._conciliarInternos = { resumenConciliacion };
 
 // ── BARRIDO AUTOMÁTICO ──────────────────────────────────────────────────────
 // Zoho solo avisa de TRES cosas: factura creada, vencida y pagada. NUNCA avisa

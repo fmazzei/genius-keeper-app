@@ -686,6 +686,14 @@ lo que Zoho nunca anuncia.
   ahora sale temprano. El cuadre y la marca de tiempo van en try/catch — son
   diagnóstico, no pueden tumbar una corrida que ya aplicó sus cambios.
 
+### Conciliar por comando, sin abrir la app (2026-11-18) ✅
+
+Pedido del dueño: que Claude pueda conciliar con Zoho cuando él lo pida, sin tener que tocar el botón de Integraciones.
+- **`gk_comandos/{id}`** con `{accion:'conciliarZoho', vendedorId?, quien?}` → el disparador v1 **`gkComando`** (`zohoReconcile.js`) corre `ejecutarConciliacion` (la MISMA del botón y del barrido automático), con el mismo candado (`tomarLock('comando')`). Deja en el documento `estado` (pendiente → corriendo → listo | error), `segundos` y `resultado` = `resumenConciliacion(res)`: revisadas, pagadas, creadas, anuladas, borradores, ausentes, errores, cuentas por pagar (total, facturas, vencido, por categoría, próxima nómina) y el cuadre por cobrar con Zoho. No guarda las listas de facturas. Si ya hay una conciliación corriendo, queda en `error` con el motivo.
+- Lo crean solo el servidor y el conector (Admin SDK). Reglas: leen máster y administración; nadie escribe desde la app.
+- Como cualquier conciliación, estampa `zohoUltimaConciliacion`, así que las pantallas abiertas se releen solas.
+- Pruebas: `node tests/gkComando.test.mjs` (8 en verde) y 4 casos nuevos en `tests/firestore.rules.test.mjs` (72 en verde).
+
 ### El cuadre no veía la diferencia de SALDO, y "Por cobrar" no se podía abrir (2026-09) ✅
 
 Tras la primera conciliación limpia seguía habiendo brecha: Zoho $3.836,84 y GK

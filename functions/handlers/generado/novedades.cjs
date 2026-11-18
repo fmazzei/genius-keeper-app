@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-18-conciliar-por-comando",
+    fecha: "2026-11-18",
+    roles: ["master"],
+    titulo: "Claude puede conciliar con Zoho por ti",
+    resumen: "Cuando le pidas actualizar GK con Zoho, Claude corre la misma conciliaci\xF3n del bot\xF3n de Integraciones y te dice el resultado, sin que tengas que abrir la app."
+  },
+  {
     id: "2026-11-17-cxp-por-proveedor",
     fecha: "2026-11-17",
     roles: ["master"],
