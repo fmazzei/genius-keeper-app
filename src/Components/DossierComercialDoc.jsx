@@ -22,11 +22,13 @@ import { configEnFecha } from '@/utils/periodosComision.js';
 import { createPortal } from 'react-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { Printer, Loader, ArrowLeft } from 'lucide-react';
+import { Loader, ArrowLeft } from 'lucide-react';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { construirDossier, DESDE_VENTAS } from '@/utils/dossierComercial.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 
+import BotonPdf from '@/Components/BotonPdf.jsx';
+import { nombrePdf } from '@/utils/exportarPdf.js';
 const NAVY = '#12386b';
 const SANS = "'Helvetica Neue', Arial, 'Segoe UI', sans-serif";
 const EMPRESA_GK = 'lacteoca';
@@ -159,10 +161,7 @@ export default function DossierComercialDoc({ onClose }) {
                 <button onClick={onClose} className="flex items-center gap-1.5 text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl pl-2 pr-3 py-2 text-sm font-bold">
                     <ArrowLeft size={18} /> Volver
                 </button>
-                <button onClick={() => window.print()} disabled={!d}
-                    className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white font-bold text-sm px-4 py-2 rounded-lg">
-                    <Printer size={16} /> Descargar / Imprimir
-                </button>
+                <BotonPdf hoja={'#gk-dossier-sheet'} nombre={nombrePdf('Dossier comercial')} disabled={!d} />
             </div>
 
             <div className="flex-1 p-3 sm:p-6 flex justify-center">

@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-18-pdf-rapido",
+    fecha: "2026-11-18",
+    roles: [],
+    titulo: "Los PDF salen al instante y con nombre",
+    resumen: "El bot\xF3n \xABDescargar PDF\xBB arma el archivo en segundos y en el tel\xE9fono abre el men\xFA para guardarlo, mandarlo por WhatsApp o imprimirlo. Cada archivo lleva su nombre, por ejemplo \xABLacteoca - Estado de cuenta - 18-11-2026.pdf\xBB."
+  },
+  {
     id: "2026-11-18-cxp-pdf",
     fecha: "2026-11-18",
     roles: ["master", "gerencia"],

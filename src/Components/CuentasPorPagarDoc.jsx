@@ -10,10 +10,12 @@
 
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer } from 'lucide-react';
+import { X } from 'lucide-react';
 import { agruparPorProveedor } from '@/utils/cxpPorProveedor.js';
 import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
+import BotonPdf from '@/Components/BotonPdf.jsx';
+import { nombrePdf } from '@/utils/exportarPdf.js';
 const NAVY = '#12386b';
 const SANS = "'Helvetica Neue', Arial, 'Segoe UI', sans-serif";
 
@@ -56,7 +58,7 @@ export default function CuentasPorPagarDoc({ grupos = [], total = 0, vencido = 0
         <div id="gk-cxp-portal" className="fixed inset-0 z-[110] bg-slate-900/80 flex flex-col overflow-auto">
             <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">
                 <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white"><X size={18} /> Cerrar</button>
-                <button onClick={() => window.print()} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm px-4 py-2 rounded-lg"><Printer size={16} /> Descargar / Imprimir</button>
+                <BotonPdf hoja={'#gk-cxp-sheet'} nombre={nombrePdf('Cuentas por pagar')} />
             </div>
 
             <div className="flex-1 p-3 sm:p-6 flex justify-center">

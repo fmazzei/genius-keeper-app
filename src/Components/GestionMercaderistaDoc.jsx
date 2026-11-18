@@ -6,9 +6,11 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer } from 'lucide-react';
+import { X } from 'lucide-react';
 import { FILAS_INFORME, valorFila } from '@/utils/gestionMercaderista.js';
 
+import BotonPdf from '@/Components/BotonPdf.jsx';
+import { nombrePdf } from '@/utils/exportarPdf.js';
 const NAVY = '#12386b';
 const SANS = "'Helvetica Neue', Arial, 'Segoe UI', sans-serif";
 
@@ -93,9 +95,7 @@ export default function GestionMercaderistaDoc({ informe, onClose }) {
             <div className="gk-no-print" style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', background: NAVY }}>
                 <span style={{ color: '#fff', fontWeight: 800, fontSize: 14 }}>Gestión del mercaderista</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 13, padding: '8px 14px', borderRadius: 8, border: 0 }}>
-                        <Printer size={15} /> Descargar / Imprimir
-                    </button>
+                    <BotonPdf hoja={'.gk-mer-sheet'} nombre={nombrePdf('Gestión del mercaderista', informe?.mesLabel)} />
                     <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,.15)', color: '#fff', fontWeight: 700, fontSize: 13, padding: '8px 12px', borderRadius: 8, border: 0 }}>
                         <X size={15} /> Cerrar
                     </button>

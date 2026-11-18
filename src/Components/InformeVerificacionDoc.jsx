@@ -11,8 +11,10 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer } from 'lucide-react';
+import { X } from 'lucide-react';
 
+import BotonPdf from '@/Components/BotonPdf.jsx';
+import { nombrePdf } from '@/utils/exportarPdf.js';
 const NAVY = '#12386b';
 const n = (v) => Number(v || 0).toLocaleString('es-VE');
 const m = (v) => `$${Number(v || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -78,11 +80,11 @@ export default function InformeVerificacionDoc({ vendedorName = 'Vendedor', perf
         <div id="gk-inf-portal" className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
             <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">
                 <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white"><X size={18} /> Cerrar</button>
-                <button onClick={() => window.print()} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm px-4 py-2 rounded-lg"><Printer size={16} /> Descargar / Imprimir</button>
+                <BotonPdf hoja={'#gk-inf-sheet'} nombre={nombrePdf('Informe de verificación', vendedorName)} />
             </div>
 
             <div className="flex-1 p-3 sm:p-6 flex justify-center">
-                <div className="bg-white w-full max-w-[720px] shadow-2xl self-start px-8 py-8" style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
+                <div id="gk-inf-sheet" className="bg-white w-full max-w-[720px] shadow-2xl self-start px-8 py-8" style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
                     <div className="flex items-center gap-3 mb-4">
                         <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: NAVY }}><span className="text-[#FFD600] font-black text-lg">GK</span></div>
                         <div>
