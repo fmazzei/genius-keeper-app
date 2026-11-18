@@ -170,6 +170,15 @@ await check('permite','MÁSTER corrige el historial',                () => updat
 await check('permite','MÁSTER borra del historial',                 () => deleteDoc(doc(M,'inventario_movimientos','m1')));
 await check('permite','MÁSTER borra un picking',                    () => deleteDoc(doc(M,'pickings','p1')));
 
+// Comandos de GK (conciliar con Zoho): nadie los crea desde la app; leen máster y administración.
+await env.withSecurityRulesDisabled(async (c) => {
+  await setDoc(doc(c.firestore(),'gk_comandos','c1'), { accion:'conciliarZoho', estado:'listo' });
+});
+await check('niega','MÁSTER crea un comando desde la app',        () => setDoc(doc(M,'gk_comandos','c2'), { accion:'conciliarZoho' }));
+await check('niega','ADMINISTRACIÓN crea un comando desde la app', () => setDoc(doc(AD,'gk_comandos','c3'), { accion:'conciliarZoho' }));
+await check('permite','MÁSTER lee un comando',                     () => getDoc(doc(M,'gk_comandos','c1')));
+await check('niega','VENDEDOR lee un comando',                     () => getDoc(doc(V,'gk_comandos','c1')));
+
 console.log(ok.join('\n'));
 if (bad.length) { console.log('\n--- FALLOS ---\n' + bad.join('\n')); process.exitCode = 1; }
 else console.log(`\nTodo correcto: ${ok.length}/${ok.length}`);
