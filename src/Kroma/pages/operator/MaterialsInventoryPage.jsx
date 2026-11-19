@@ -1153,7 +1153,7 @@ export default function MaterialsInventoryPage({ params = null }) {
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="px-5 pt-5 pb-3 shrink-0">
-                <h2 className="text-xl font-bold text-white mb-0.5">Inventario de Insumos</h2>
+                <h2 className="text-xl font-bold text-white mb-0.5">Insumos</h2>
                 <p className="text-slate-400 text-sm">
                     {materials.length} materiales · {Object.keys(inventory).length} con stock registrado
                 </p>
@@ -1172,16 +1172,7 @@ export default function MaterialsInventoryPage({ params = null }) {
             {/* Al operario no: los avisos de stock son de quien compra (19-nov). */}
             {kromaRole !== 'kroma_operario' && <AlertsBanner alerts={alerts} onDismiss={dismissAlert} />}
 
-            {lowCount > 0 && (
-                <div className="mx-5 mb-3 flex items-center gap-3 bg-amber-900/30 border border-amber-700/50 rounded-xl px-4 py-3 shrink-0">
-                    <AlertTriangle size={15} className="text-amber-400 shrink-0" />
-                    <p className="text-amber-300 text-sm flex-1">
-                        <span className="font-bold">{lowCount}</span> {lowCount === 1 ? 'material bajo' : 'materiales bajo'} el mínimo
-                    </p>
-                    <button onClick={() => setStatusFilter('low')} className="text-amber-400 text-xs font-semibold hover:text-amber-300 shrink-0">Ver →</button>
-                </div>
-            )}
-
+            {/* «N bajo el mínimo · Ver» repetía el filtro «Por reponer» de abajo: se quitó. */}
             <div className="px-5 mb-3 shrink-0 space-y-2">
                 <div className="flex gap-2 overflow-x-auto pb-1">
                     {[
@@ -1190,8 +1181,10 @@ export default function MaterialsInventoryPage({ params = null }) {
                         // leyendo como la misma.
                         { id: 'all',  label: 'Todos' },
                         { id: 'low',  label: `⚠ Por reponer (${lowCount})` },
-                        { id: 'none', label: `Sin registro (${noStockCount})` },
-                        ...(sinMinCount > 0 ? [{ id: 'sin_minimo', label: `Sin mínimo (${sinMinCount})` }] : []),
+                        // «Sin registro» y «Sin mínimo» son datos por completar de
+                        // administración: al operario no le dicen qué hacer.
+                        ...(canEditar ? [{ id: 'none', label: `Sin registro (${noStockCount})` }] : []),
+                        ...(canEditar && sinMinCount > 0 ? [{ id: 'sin_minimo', label: `Sin mínimo (${sinMinCount})` }] : []),
                     ].map(f => (
                         <button key={f.id} onClick={() => setStatusFilter(f.id)}
                             className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${

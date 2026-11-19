@@ -81,8 +81,8 @@ export default function EliminarProduccionModal({
                     )}
                     <p className="text-slate-500 text-xs leading-snug">
                         · Sale del almacén <strong className="text-slate-300">todo el producto terminado de
-                        este lote</strong>, empacado o en cava sin envasar, y el lote deja de aparecer como
-                        pendiente de empacar.
+                        este lote</strong>, envasado o a granel en cava, y el lote deja de aparecer en
+                        «Por envasar».
                     </p>
                     <p className="text-slate-500 text-xs leading-snug">
                         · Queda el evento en el <strong className="text-slate-300">libro de movimientos</strong>,

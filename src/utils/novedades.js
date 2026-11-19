@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-19-kroma-fluido',
+        fecha: '2026-11-19',
+        roles: ['master'],
+        titulo: 'Kroma: inicio sin repetidos y botones abajo',
+        resumen: 'Arriba, una alerta por cada producción en proceso que la abre en su paso; «por envasar» es un renglón que se despliega. En el teléfono, botones abajo con las pantallas de cada oficio y «Más».',
+    },
+    {
         id: '2026-11-19-kroma-facil',
         fecha: '2026-11-19',
         roles: ['master'],

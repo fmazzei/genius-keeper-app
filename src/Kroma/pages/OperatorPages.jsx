@@ -1,14 +1,15 @@
 import React from 'react';
 import {
-    Droplets, Package, FlaskConical, Factory, Construction,
+    Droplets, Package, Factory,
     Warehouse, ClipboardList, BookOpen, Tag, Truck, ChevronRight,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useKroma } from '../KromaContext';
-import { litrosEnTanque, esProduccionAbierta, faltaEmpacar } from '../estadoPlanta.js';
+import { esLecheEnTanque, esProduccionAbierta, fechaProduccion, kgProducidos } from '../estadoPlanta.js';
 import AvisosKroma from '../Components/AvisosKroma.jsx';
+import PlantaAhora from '../Components/PlantaAhora.jsx';
 import FichaBuilderPageImpl from './operator/FichaBuilderPage';
 import MaterialsInventoryPageImpl from './operator/MaterialsInventoryPage';
 import MilkInventoryPageImpl from './operator/MilkInventoryPage';
@@ -40,26 +41,25 @@ const COLOR_MAP = {
 
 // ─── Inicio del OPERARIO ──────────────────────────────────────────────────────
 //
-// Antes esto eran tres contadores (leche en tanque, insumos activos, fichas
-// creadas). Un contador es un dato, no una instrucción: el maestro quesero
-// llegaba y no sabía si tenía algo abierto, si un lote en espera ya podía
-// reanudarse, ni qué tocaba hacer ahora. Ahora la pantalla responde la única
-// pregunta que importa al entrar: **¿qué tengo abierto y qué sigue?**
+// Pedido del dueño (19-nov), con la captura del inicio de Diana: la tarjeta
+// «Lacteoca Chèvre Original en curso · Ir a producción» y la lista «Abierto
+// ahora» llevaban al MISMO sitio. Dos cosas que dicen lo mismo no son
+// información: son ruido. Ahora la pantalla tiene, en este orden:
 //
-// Los contadores no se borraron: bajaron a una tira secundaria, que es el lugar
-// que les corresponde.
+//   1. Una ALERTA arriba por cada producción en proceso (casi siempre una). Al
+//      tocarla se abre ESA producción, en el paso donde quedó.
+//   2. Si no hay nada en proceso, una sola acción: arrancar (si hay leche) o
+//      registrar la leche.
+//   3. Los indicadores, cerca y no al fondo.
+//   4. «Por envasar» en UN renglón: al tocarlo se despliegan las producciones
+//      con queso a granel en cava, cada una con su botón «Envasar».
+//
+// Palabras (decisión del dueño): una producción está CERRADA cuando el queso
+// salió —dejó de desuerarse y pasó a la cava, aunque sea a granel—. Lo que
+// queda después es ENVASAR, que es otra cosa. Por eso aquí se dice «en
+// proceso» y «por envasar», nunca «sin cerrar».
 
-function fmtFecha(ts) {
-    const d = ts?.toDate?.() || (ts ? new Date(ts) : null);
-    if (!d || Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
-}
-
-function fmtHoraHold(ts) {
-    const d = ts?.toDate?.() || (ts ? new Date(ts) : null);
-    if (!d || Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
+const fmtKg = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 1 });
 
 export function OperatorHome({ onNavigate }) {
     const { kromaUser, kromaRole } = useKroma();
@@ -74,185 +74,102 @@ export function OperatorHome({ onNavigate }) {
             const vacio = { docs: [] };
             const q = (col) => getDocs(query(collection(db, col), where('empresaId', '==', empresaId))).catch(() => vacio);
             try {
-                const [milkSnap, matSnap, fichasSnap, logsSnap, alertSnap] = await Promise.all([
-                    q('kroma_milk_reception'), q('kroma_inventory_materials'),
-                    q('kroma_fichas'), q('kroma_production_logs'), q('kroma_alerts'),
+                const [milkSnap, fichasSnap, logsSnap, alertSnap] = await Promise.all([
+                    q('kroma_milk_reception'), q('kroma_fichas'), q('kroma_production_logs'), q('kroma_alerts'),
                 ]);
                 if (!vivo) return;
                 const vivos = (snap) => (snap.docs || []).map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false);
 
-                // Definición compartida con la pantalla de Leche. Acá se
-                // calculaba aparte y se olvidaba de excluir las recepciones ya
-                // PROCESADAS: el inicio mostraba 1107 L de leche que no existía
-                // y encima invitaba a producir con ella.
-                const litrosTanque = litrosEnTanque(vivos(milkSnap));
+                // Definición compartida con la pantalla de Leche (ver estadoPlanta.js).
+                const lecheEsperando = vivos(milkSnap).filter(esLecheEnTanque);
 
                 const todosLogs = vivos(logsSnap);
-                const porFecha = (a, b) => (b.fechaInicio?.seconds || 0) - (a.fechaInicio?.seconds || 0);
-                const abiertas = todosLogs.filter(esProduccionAbierta).sort(porFecha);
-                // Terminadas pero sin cerrar: el queso se guardó para empacar
-                // después. Es trabajo pendiente del operario y no aparecía en
-                // ninguna lista de "abierto" — vivía enterrado bajo el historial
-                // dentro del módulo de Producción.
-                const sinEmpacar = todosLogs
-                    .filter(l => !esProduccionAbierta(l) && faltaEmpacar(l))
-                    .sort(porFecha);
+                const enProceso = todosLogs.filter(esProduccionAbierta);
+
+                // Lo producido en el mes: lotes CERRADOS (el queso ya salió).
+                const hoy = new Date();
+                const delMes = todosLogs.filter(l => {
+                    if (esProduccionAbierta(l)) return false;
+                    const f = fechaProduccion(l);
+                    return f && f.getFullYear() === hoy.getFullYear() && f.getMonth() === hoy.getMonth();
+                });
 
                 setData({
-                    litrosTanque,
-                    insumos: vivos(matSnap).length,
-                    fichas:  vivos(fichasSnap).length,
-                    abiertas,
-                    sinEmpacar,
-                    // Más recientes primero: sin ordenar salían en el orden que
-                    // devolviera Firestore, así que un aviso viejo podía tapar
-                    // al de hoy. Se ordena en cliente a propósito — sumar
-                    // orderBy al where exigiría un índice compuesto, y este
-                    // proyecto no despliega índices en CI.
-                    // Se ordenan y recortan en <AvisosKroma>, después de quitar
-                    // los que esta persona ya marcó como listos.
+                    logs: todosLogs,
+                    litrosTanque: lecheEsperando.reduce((s, r) => s + (r.litros || 0), 0),
+                    recepcionesEsperando: lecheEsperando.length,
+                    fichas: vivos(fichasSnap).length,
+                    enProceso,
+                    kgMes: delMes.reduce((s, l) => s + kgProducidos(l), 0),
+                    lotesMes: delMes.length,
                     alertas: vivos(alertSnap),
                 });
-            } catch { if (vivo) setData({ litrosTanque: 0, insumos: 0, fichas: 0, abiertas: [], sinEmpacar: [], alertas: [] }); }
+            } catch {
+                if (vivo) setData({ logs: [], litrosTanque: 0, recepcionesEsperando: 0, fichas: 0, enProceso: [], kgMes: 0, lotesMes: 0, alertas: [] });
+            }
         };
         load();
         return () => { vivo = false; };
     }, [empresaId]);
 
     const cargando = !data;
-    const abiertas   = data?.abiertas || [];
-    const sinEmpacar = data?.sinEmpacar || [];
-    const ahora    = Date.now();
+    const enProceso  = data?.enProceso || [];
 
-    // Un hold cuyo plazo ya venció es lo MÁS urgente: el queso está esperando.
-    const holdVencido = abiertas.find(l => {
-        if (l.estado !== 'en_hold' || !l.holdHasta) return false;
-        const fin = l.holdHasta?.toDate ? l.holdHasta.toDate() : new Date(l.holdHasta);
-        return fin.getTime() <= ahora;
-    });
-
-    // "Lo primero": una sola frase, en orden de urgencia real.
-    let titular, detalle, accion = null;
-    if (cargando) {
-        titular = 'Revisando la planta…';
-    } else if (holdVencido) {
-        titular = `Lote ${holdVencido.lote || holdVencido.productoNombre} ya puede continuar`;
-        detalle = 'Su tiempo de espera se cumplió.';
-        accion  = { label: 'Continuar producción', view: 'production' };
-    } else if (abiertas.length > 0) {
-        const l = abiertas[0];
-        titular = abiertas.length === 1
-            ? `${l.productoNombre} en curso`
-            : `${abiertas.length} producciones en curso`;
-        detalle = abiertas.length === 1
-            ? `Lote ${l.lote || '—'}${l.estado === 'en_hold' ? ' · en espera' : ''}`
-            : 'Retómalas donde las dejaste.';
-        accion  = { label: 'Ir a producción', view: 'production' };
-    } else if (sinEmpacar.length > 0) {
-        // Va antes que "arranca una producción": el queso ya hecho y sin
-        // empacar es trabajo terminado a medias, y ocupa cava.
-        titular = sinEmpacar.length === 1
-            ? `Falta empacar ${sinEmpacar[0].productoNombre}`
-            : `${sinEmpacar.length} producciones sin empacar`;
-        detalle = 'El queso está hecho y guardado, pero la producción no se cerró.';
-        accion  = { label: 'Ir a producción', view: 'production' };
-    } else if (data.fichas === 0) {
-        titular = 'Todavía no hay fichas técnicas';
-        detalle = 'Sin una ficha no se puede arrancar una producción.';
-        accion  = { label: 'Ver puesta en marcha', view: 'puesta_marcha' };
-    } else if (data.litrosTanque > 0) {
-        titular = `${data.litrosTanque} L de leche en tanque`;
-        detalle = 'No tienes nada abierto: puedes arrancar una producción.';
-        accion  = { label: 'Nueva producción', view: 'production' };
-    } else {
-        titular = 'No hay leche esperando por proceso';
-        detalle = 'Registra una recepción para poder producir.';
-        accion  = { label: 'Recepción de leche', view: 'milk' };
+    // Si no hay nada en proceso: UNA acción, la que toca.
+    let siguiente = null;
+    if (!cargando && enProceso.length === 0) {
+        if (data.fichas === 0) {
+            siguiente = { titulo: 'Todavía no hay fichas técnicas', detalle: 'Sin una ficha no se puede arrancar una producción.', label: 'Ver puesta en marcha', view: 'puesta_marcha' };
+        } else if (data.litrosTanque > 0) {
+            siguiente = { titulo: `${fmtKg(data.litrosTanque)} L de leche esperando`, detalle: 'No hay nada en proceso: puedes arrancar.', label: 'Nueva producción', view: 'production', params: { nueva: true } };
+        } else {
+            siguiente = { titulo: 'No hay leche esperando', detalle: 'Registra la leche que llegó para poder producir.', label: 'Registrar leche', view: 'milk' };
+        }
     }
 
     return (
-        <div className="p-6 md:p-8">
-            <h2 className="text-2xl font-bold text-white mb-1">
-                Hola, {kromaUser?.name?.split(' ')[0] || 'Operario'}
-            </h2>
-            <p className="text-slate-400 mb-6">Esto es lo que tienes entre manos.</p>
+        <div className="p-5 md:p-8 space-y-5">
+            <div>
+                <h2 className="text-2xl font-bold text-white">
+                    Hola, {kromaUser?.name?.split(' ')[0] || 'Operario'}
+                </h2>
+                {cargando && <p className="text-slate-500 text-sm mt-1">Revisando la planta…</p>}
+            </div>
 
-            {/* ── Lo primero ── */}
-            <section className={`rounded-2xl border p-5 mb-6 ${
-                holdVencido ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-900 border-slate-800'
-            }`}>
-                <p className={`font-bold text-lg leading-tight ${holdVencido ? 'text-amber-300' : 'text-white'}`}>
-                    {titular}
-                </p>
-                {detalle && <p className="text-slate-400 text-sm mt-1">{detalle}</p>}
-                {accion && (
-                    <button onClick={() => onNavigate?.(accion.view)}
-                        className={`mt-4 inline-flex items-center gap-1.5 font-bold text-sm px-4 py-2.5 rounded-xl transition-colors ${
-                            holdVencido
-                                ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
-                                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                        }`}>
-                        {accion.label} <ChevronRight size={15} />
+            {/* ── 1. En proceso (alerta arriba) y por envasar (un renglón) ── */}
+            {data && <PlantaAhora logs={data.logs} onNavigate={onNavigate} />}
+
+            {/* ── 2. Sin nada en proceso: la siguiente acción ── */}
+            {siguiente && (
+                <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold leading-tight">{siguiente.titulo}</p>
+                        <p className="text-slate-400 text-xs mt-0.5">{siguiente.detalle}</p>
+                    </div>
+                    <button onClick={() => onNavigate?.(siguiente.view, siguiente.params || null)}
+                        className="shrink-0 inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
+                        {siguiente.label} <ChevronRight size={15} />
                     </button>
-                )}
+                </section>
+            )}
+
+            {/* ── 3. Indicadores ── */}
+            <section className="grid grid-cols-3 gap-2.5">
+                {[
+                    { label: 'Leche esperando', value: cargando ? null : `${fmtKg(data.litrosTanque)} L`, Icon: Droplets, view: 'milk' },
+                    { label: 'Producido este mes', value: cargando ? null : `${fmtKg(data.kgMes)} kg`, Icon: Factory, view: 'production' },
+                    { label: 'Lotes este mes', value: cargando ? null : data.lotesMes, Icon: ClipboardList, view: 'production' },
+                ].map(({ label, value, Icon, view }) => (
+                    <button key={label} onClick={() => onNavigate?.(view)}
+                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-3 text-left active:scale-95 transition-transform">
+                        <Icon size={14} className="text-slate-500 mb-1.5" />
+                        <p className="text-lg font-bold text-white font-mono leading-none">
+                            {value === null ? <span className="text-slate-700 text-sm">—</span> : value}
+                        </p>
+                        <p className="text-slate-500 text-[11px] mt-1 leading-tight">{label}</p>
+                    </button>
+                ))}
             </section>
-
-            {/* ── Abierto ahora ── */}
-            {abiertas.length > 0 && (
-                <section className="mb-6">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Abierto ahora</p>
-                    <div className="space-y-2">
-                        {abiertas.slice(0, 5).map(l => {
-                            const enHold = l.estado === 'en_hold';
-                            const fin = enHold && l.holdHasta
-                                ? (l.holdHasta?.toDate ? l.holdHasta.toDate() : new Date(l.holdHasta))
-                                : null;
-                            const vencido = fin && fin.getTime() <= ahora;
-                            return (
-                                <button key={l.id} onClick={() => onNavigate?.('production')}
-                                    className="w-full text-left bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-600/40 rounded-xl p-4 transition-colors flex items-center gap-3">
-                                    <Factory size={16} className={vencido ? 'text-amber-400 shrink-0' : 'text-slate-500 shrink-0'} />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-white font-semibold text-sm truncate">{l.productoNombre}</p>
-                                        <p className="text-slate-500 text-xs mt-0.5">
-                                            Lote {l.lote || '—'}
-                                            {l.fechaInicio && ` · ${fmtFecha(l.fechaInicio)}`}
-                                            {enHold && fin && (vencido
-                                                ? <span className="text-amber-400 font-medium"> · listo para continuar</span>
-                                                : <span> · en espera hasta {fmtHoraHold(fin)}</span>)}
-                                        </p>
-                                    </div>
-                                    <ChevronRight size={15} className="text-slate-600 shrink-0" />
-                                </button>
-                            );
-                        })}
-                    </div>
-                </section>
-            )}
-
-            {/* ── Sin cerrar ── */}
-            {sinEmpacar.length > 0 && (
-                <section className="mb-6">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Sin cerrar · falta empacar</p>
-                    <div className="space-y-2">
-                        {sinEmpacar.slice(0, 5).map(l => (
-                            <button key={l.id} onClick={() => onNavigate?.('production')}
-                                className="w-full text-left bg-slate-900 hover:bg-slate-800 border border-amber-500/30 hover:border-amber-500/50 rounded-xl p-4 transition-colors flex items-center gap-3">
-                                <Package size={16} className="text-amber-400 shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-white font-semibold text-sm truncate">{l.productoNombre}</p>
-                                    <p className="text-slate-500 text-xs mt-0.5">
-                                        Lote {l.lote || '—'}
-                                        {l.fechaInicio && ` · ${fmtFecha(l.fechaInicio)}`}
-                                        {l.disposicion === 'mixto' && ' · empacado a medias'}
-                                    </p>
-                                </div>
-                                <ChevronRight size={15} className="text-slate-600 shrink-0" />
-                            </button>
-                        ))}
-                    </div>
-                </section>
-            )}
 
             {/* ── Avisos del inventario ──
                 Al operario NO se le muestran (pedido del dueño, 19-nov: con los
@@ -264,8 +181,8 @@ export function OperatorHome({ onNavigate }) {
 
             {/* ── Accesos directos (si el máster se los configuró) ── */}
             {shortcuts.length > 0 && (
-                <section className="mb-6">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Accesos Directos</p>
+                <section>
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Accesos directos</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {shortcuts.map(({ label, desc, Icon, color, view }) => {
                             const c = COLOR_MAP[color] || COLOR_MAP.slate;
@@ -285,27 +202,6 @@ export function OperatorHome({ onNavigate }) {
                     </div>
                 </section>
             )}
-
-            {/* ── Los contadores, ahora en su lugar: contexto, no titular ── */}
-            <section>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">De un vistazo</p>
-                <div className="grid grid-cols-3 gap-3">
-                    {[
-                        { label: 'Leche en tanque', value: cargando ? null : `${data.litrosTanque} L`, Icon: Droplets,     view: 'milk' },
-                        { label: 'Insumos',         value: cargando ? null : data.insumos,            Icon: Package,      view: 'materials_inv' },
-                        { label: 'Fichas',          value: cargando ? null : data.fichas,             Icon: FlaskConical, view: 'fichas' },
-                    ].map(({ label, value, Icon, view }) => (
-                        <button key={label} onClick={() => onNavigate?.(view)}
-                            className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-4 text-left transition-colors active:scale-95">
-                            <Icon size={15} className="text-slate-500 mb-2" />
-                            <p className="text-lg font-bold text-white font-mono leading-none">
-                                {value === null ? <span className="text-slate-700 text-sm">—</span> : value}
-                            </p>
-                            <p className="text-slate-500 text-xs mt-1 leading-tight">{label}</p>
-                        </button>
-                    ))}
-                </div>
-            </section>
         </div>
     );
 }

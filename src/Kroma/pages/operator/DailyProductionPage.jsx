@@ -1127,7 +1127,7 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos, catalogPresentacion
                     <div className="space-y-2">
                         {[
                             { id: 'empacar_todo',  label: 'Empacar todo ahora',           desc: 'Toda la producción se empaca y va a cava PT' },
-                            { id: 'guardar_todo',  label: 'Guardar sin envasar',           desc: `${totalKgProducido} kg van a cava sin empacar` },
+                            { id: 'guardar_todo',  label: 'Guardar a granel',           desc: `${totalKgProducido} kg van a cava a granel; se envasan después` },
                             { id: 'mixto',         label: 'Empacar parte · Guardar parte', desc: 'Se empaca hoy, el resto queda sin envasar' },
                         ].map(({ id, label, desc }) => (
                             <button key={id} type="button"
@@ -1249,7 +1249,7 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos, catalogPresentacion
                     ) : (
                         <>
                             <div className="flex justify-between items-center">
-                                <span className="text-slate-500 text-xs">Disponible sin empacar</span>
+                                <span className="text-slate-500 text-xs">Disponible a granel</span>
                                 <span className="text-amber-400 text-xs font-mono">
                                     {Math.max(0, +(totalKgProducido - kgEmpacados).toFixed(3))} kg
                                 </span>
@@ -2151,7 +2151,7 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
                 </div>
                 {/* Header */}
                 <div className="px-5 py-3 border-b border-slate-800 shrink-0">
-                    <p className="text-white font-bold text-base">Finalizar empaque</p>
+                    <p className="text-white font-bold text-base">Envasar</p>
                     <p className="text-slate-500 text-sm">{log.productoNombre}</p>
                     <div className="flex items-center gap-2 mt-1">
                         <Package size={13} className="text-amber-400" />
@@ -2428,13 +2428,25 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     useEffect(() => { loadData(); }, []);
 
     useEffect(() => {
+        if (loading) return;
+        // Desde el inicio: «Nueva producción» entra directo a elegir la ficha.
+        if (params?.nueva && reporteDirigidoRef.current !== params) {
+            reporteDirigidoRef.current = params;
+            if (canProducir) setView('select_ficha');
+            return;
+        }
         const id = params?.logId;
-        if (!id || loading || reporteDirigidoRef.current === id) return;
+        if (!id || reporteDirigidoRef.current === id) return;
         const destino = (log) => {
             reporteDirigidoRef.current = id;
             // Desde el Historial se puede pedir CORREGIR, no solo mirar —
             // y corregir una producción cerrada es SOLO del máster.
             if (params?.editar && isMaster) { abrirParaEditar(log); return; }
+            // Desde la alerta del inicio: se abre la producción en el paso
+            // donde quedó, sin pasar por la lista (pedido del dueño, 19-nov).
+            if (params?.continuar && log.estado !== 'completada' && canProducir) { openLog(log); return; }
+            // Desde «Por envasar»: se abre directo la hoja de envasar.
+            if (params?.envasar && faltaEmpacar(log) && canProducir) { setFinalizarLog(log); return; }
             setReportLog(log);
             setView('report');
         };
@@ -2447,7 +2459,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             .then(snap => { if (snap.exists() && snap.data().active !== false) destino({ id: snap.id, ...snap.data() }); })
             .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [params?.logId, params?.editar, logs, historial, loading]);
+    }, [params, logs, historial, loading]);
 
     async function loadData() {
         setLoading(true); setError(null);
@@ -4130,9 +4142,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             )}
             <div className="px-5 pt-5 pb-3 flex items-start justify-between shrink-0">
                 <div>
-                    <h2 className="text-xl font-bold text-white mb-0.5">Producción Diaria</h2>
+                    <h2 className="text-xl font-bold text-white mb-0.5">Producción</h2>
                     <p className="text-slate-400 text-sm">
-                        {logs.length === 0 ? 'Sin producciones activas' : `${logs.length} ${logs.length === 1 ? 'producción activa' : 'producciones activas'}`}
+                        {logs.length === 0 ? 'Nada en proceso' : `${logs.length} en proceso`}
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4171,7 +4183,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 {logs.length === 0 ? (
                     <div className="text-center py-12">
                         <Factory size={36} className="text-slate-700 mx-auto mb-3" />
-                        <p className="text-slate-500 text-sm">Sin producciones activas</p>
+                        <p className="text-slate-500 text-sm">Nada en proceso</p>
                         {canProducir && (
                             <button onClick={() => setView('select_ficha')}
                                 className="mt-4 text-emerald-400 hover:text-emerald-300 text-sm font-semibold">
@@ -4199,7 +4211,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                             <div className="flex items-center gap-2 mb-3">
                                 <AlertTriangle size={13} className="text-amber-400" />
                                 <span className="text-amber-400 text-xs font-bold uppercase tracking-widest">
-                                    Pendiente de empacar ({pendientes.length})
+                                    Por envasar ({pendientes.length}) · el queso ya está en cava
                                 </span>
                             </div>
                             <div className="space-y-3">
@@ -4227,7 +4239,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                                                 ? 'bg-orange-900/30 border-orange-700/50 text-orange-300'
                                                                 : 'bg-amber-900/30 border-amber-700/50 text-amber-300'
                                                         }`}>
-                                                            {esMixto ? 'Incompleta' : 'Sin envasar'}
+                                                            {esMixto ? 'Envasada en parte' : 'Todo a granel'}
                                                         </span>
                                                         <p className={`text-xs font-mono font-bold ${dias >= 3 ? 'text-red-400' : dias >= 1 ? 'text-amber-400' : 'text-slate-400'}`}>
                                                             {dias === 0 ? 'Hoy' : `${dias}d pendiente`}
@@ -4250,7 +4262,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                                             ? 'border-orange-600/60 bg-orange-900/20 text-orange-300 hover:bg-orange-900/40'
                                                             : 'border-amber-600/60 bg-amber-900/20 text-amber-300 hover:bg-amber-900/40'
                                                     }`}>
-                                                    Finalizar empaque →
+                                                    Envasar →
                                                 </button>
                                             </div>
                                         </div>
@@ -4275,9 +4287,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                 <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
                                     {[
                                         { id: 'todas',       label: 'Todas' },
-                                        { id: 'empacada',    label: 'Empacada' },
-                                        { id: 'sin_envasar', label: 'Sin envasar' },
-                                        { id: 'incompleta',  label: 'Incompleta' },
+                                        { id: 'empacada',    label: 'Envasada' },
+                                        { id: 'sin_envasar', label: 'A granel' },
+                                        { id: 'incompleta',  label: 'Envasada en parte' },
                                     ].map(({ id, label }) => (
                                         <button key={id} type="button"
                                             onClick={() => setHistorialFilter(id)}
@@ -4304,8 +4316,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                             ? (log.disposicion === 'mixto' ? 'bg-orange-900/20 border-orange-700/50 text-orange-300' : 'bg-amber-900/20 border-amber-700/50 text-amber-300')
                                             : 'bg-emerald-900/20 border-emerald-700/50 text-emerald-300';
                                         const badgeLabel = isPending
-                                            ? (log.disposicion === 'mixto' ? 'Incompleta' : 'Sin envasar')
-                                            : 'Empacada';
+                                            ? (log.disposicion === 'mixto' ? 'Envasada en parte' : 'A granel')
+                                            : 'Envasada';
                                         return (
                                             <div key={log.id} className="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden hover:border-slate-600 transition-colors">
                                                 <button type="button"

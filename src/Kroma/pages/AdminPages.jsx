@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
-import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat, Droplets, BookOpen, Tag, Factory, FlaskConical, ChevronRight } from 'lucide-react';
+import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat, Droplets, BookOpen, Tag, Factory, FlaskConical, ChevronRight, ChevronDown } from 'lucide-react';
 import { useKroma } from '../KromaContext';
 import { necesitaReposicion, tieneMinimo, inventarioVigente, esInsumoDeAlmacen } from '@/Kroma/stockInsumos.js';
 import { conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
 import AvisosKroma from '../Components/AvisosKroma.jsx';
+import PlantaAhora from '../Components/PlantaAhora.jsx';
+import { moduloVisible } from '../permisos.js';
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
 import ProductCatalogPageImpl from './admin/ProductCatalogPage';
@@ -93,7 +95,8 @@ function Pendiente({ n, titulo, detalle, tone, view, params, onNavigate }) {
 }
 
 export function AdminHome({ onNavigate }) {
-    const { kromaUser } = useKroma();
+    const { kromaUser, kromaRole } = useKroma();
+    const [verCompletar, setVerCompletar] = useState(false);
     const empresaId = kromaUser?.empresaId || 'lacteoca';
     const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
     const [d, setD] = useState(null);
@@ -189,45 +192,76 @@ export function AdminHome({ onNavigate }) {
           titulo: 'Insumos sin mínimo definido',
           detalle: 'Nunca van a avisar que faltan: no hay umbral contra el cual comparar.' },
     ].filter(x => x.n > 0);
+    // Comprar es lo diario de administración: va a la vista. Lo demás son datos
+    // del maestro por completar, en un renglón que se despliega.
+    const comprar   = pendientes.filter(p => p.titulo === 'Insumos por reponer');
+    const completar = pendientes.filter(p => p.titulo !== 'Insumos por reponer');
 
     return (
-        <div className="p-6 md:p-8">
-            <h2 className="text-2xl font-bold text-white mb-1">
+        <div className="p-5 md:p-8 space-y-5">
+            <h2 className="text-2xl font-bold text-white">
                 Hola, {kromaUser?.name?.split(' ')[0] || 'Administrador'}
             </h2>
-            <p className="text-slate-400 mb-6">Esto es lo que les falta a los datos para que la planta trabaje.</p>
 
-            {/* ── Lo que frena ── */}
-            <section className="mb-7">
-                {cargando ? (
-                    <div className="flex items-center gap-2 text-slate-500 text-sm py-6">
-                        <Loader size={15} className="animate-spin" /> Revisando los datos…
-                    </div>
-                ) : pendientes.length === 0 ? (
-                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5">
-                        <p className="text-emerald-300 font-semibold text-sm">Los datos están completos.</p>
-                        <p className="text-emerald-400/70 text-xs mt-1">
-                            Nada de lo que mantienes está frenando a la planta.
+            {/* ── La planta ahora: en proceso y por envasar (igual en todos los inicios) ── */}
+            <PlantaAhora empresaId={empresaId} onNavigate={onNavigate}
+                verProduccion={moduloVisible(kromaRole, kromaUser?.modulos, 'produccionDiaria')}
+                verAlmacenes={moduloVisible(kromaRole, kromaUser?.modulos, 'almacenes')} />
+
+            {/* ── Los contadores, cerca y no al fondo ── */}
+            <section className="grid grid-cols-3 gap-2.5">
+                {[
+                    { label: 'Proveedores', value: cargando ? null : d.nProveedores, Icon: Truck,   view: 'suppliers'  },
+                    { label: 'Materiales',  value: cargando ? null : d.nMateriales,  Icon: Package, view: 'materials'  },
+                    { label: 'Partidas en cava', value: cargando ? null : d.nPT,     Icon: Archive, view: 'warehouses' },
+                ].map(({ label, value, Icon, view }) => (
+                    <button key={label} onClick={() => onNavigate?.(view)}
+                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-3 text-left transition-colors active:scale-95">
+                        <Icon size={14} className="text-slate-500 mb-1.5" />
+                        <p className="text-lg font-bold text-white font-mono leading-none">
+                            {value === null ? <span className="text-slate-700 text-sm">—</span> : value}
                         </p>
-                    </div>
-                ) : (
-                    <>
-                        <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">
-                            Pendiente de tu parte
-                        </p>
-                        <div className="space-y-2">
-                            {pendientes.map(p => <Pendiente key={p.titulo} {...p} onNavigate={onNavigate} />)}
-                        </div>
-                    </>
-                )}
+                        <p className="text-slate-500 text-[11px] mt-1 leading-tight">{label}</p>
+                    </button>
+                ))}
             </section>
 
+            {/* ── Lo que frena: comprar va a la vista; el resto, en un renglón ── */}
+            {cargando ? (
+                <div className="flex items-center gap-2 text-slate-500 text-sm py-2">
+                    <Loader size={15} className="animate-spin" /> Revisando los datos…
+                </div>
+            ) : (
+                <>
+                    {comprar.map(p => <Pendiente key={p.titulo} {...p} onNavigate={onNavigate} />)}
+                    {completar.length > 0 ? (
+                        <section className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
+                            <button type="button" onClick={() => setVerCompletar(v => !v)}
+                                className="w-full text-left px-4 py-3.5 flex items-center gap-3">
+                                <ClipboardList size={18} className="text-slate-400 shrink-0" />
+                                <p className="flex-1 text-white font-semibold text-sm">
+                                    {completar.reduce((s, p) => s + p.n, 0)} datos por completar
+                                </p>
+                                <ChevronDown size={18} className={`text-slate-400 transition-transform ${verCompletar ? 'rotate-180' : ''}`} />
+                            </button>
+                            {verCompletar && (
+                                <div className="border-t border-slate-800 p-3 space-y-2">
+                                    {completar.map(p => <Pendiente key={p.titulo} {...p} onNavigate={onNavigate} />)}
+                                </div>
+                            )}
+                        </section>
+                    ) : comprar.length === 0 && (
+                        <p className="text-emerald-400/80 text-sm">Los datos están completos: nada de lo tuyo frena a la planta.</p>
+                    )}
+                </>
+            )}
+
             {/* ── Avisos del inventario ── */}
-            <AvisosKroma alertas={d?.alertas || []} userId={kromaUser?.id} className="mb-7" />
+            <AvisosKroma alertas={d?.alertas || []} userId={kromaUser?.id} />
 
             {/* ── Accesos directos ── */}
             {shortcuts.length > 0 && (
-                <section className="mb-7">
+                <section>
                     <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Accesos Directos</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {shortcuts.map(({ label, desc, Icon, color, view }) => {
@@ -249,26 +283,6 @@ export function AdminHome({ onNavigate }) {
                 </section>
             )}
 
-            {/* ── Los contadores, como contexto ── */}
-            <section>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">De un vistazo</p>
-                <div className="grid grid-cols-3 gap-3">
-                    {[
-                        { label: 'Proveedores', value: cargando ? null : d.nProveedores, Icon: Truck,   view: 'suppliers'  },
-                        { label: 'Materiales',  value: cargando ? null : d.nMateriales,  Icon: Package, view: 'materials'  },
-                        { label: 'PT en stock', value: cargando ? null : d.nPT,          Icon: Archive, view: 'warehouses' },
-                    ].map(({ label, value, Icon, view }) => (
-                        <button key={label} onClick={() => onNavigate?.(view)}
-                            className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-4 text-left transition-colors active:scale-95">
-                            <Icon size={15} className="text-slate-500 mb-2" />
-                            <p className="text-lg font-bold text-white font-mono leading-none">
-                                {value === null ? <span className="text-slate-700 text-sm">—</span> : value}
-                            </p>
-                            <p className="text-slate-500 text-xs mt-1 leading-tight">{label}</p>
-                        </button>
-                    ))}
-                </div>
-            </section>
         </div>
     );
 }

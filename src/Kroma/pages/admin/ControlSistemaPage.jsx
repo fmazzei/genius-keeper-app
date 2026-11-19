@@ -75,7 +75,7 @@ const SHORTCUTS_CATALOG = [
 const NOTIF_EVENTS = [
     { id: 'produccionCompletada', label: 'Producción completada',  desc: 'Al cerrar una planilla de producción' },
     { id: 'stockBajo',            label: 'Stock bajo de insumos',  desc: 'Cuando un material supera el umbral de alerta' },
-    { id: 'lotesPendientes',      label: 'Lotes sin envasar',      desc: 'Recordatorio de PT pendiente de empacar' },
+    { id: 'lotesPendientes',      label: 'Lotes sin envasar',      desc: 'Recordatorio de queso a granel por envasar' },
 ];
 
 // Granular action permissions — keyed under permisos.acciones
