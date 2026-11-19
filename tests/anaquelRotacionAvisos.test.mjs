@@ -107,6 +107,23 @@ const V = (posId, haceDias, inv, rep = 0, extra = {}) => ({
     ok(av.every(a => a.id.startsWith('anaquel:') && /W\d\d/.test(a.id)), 'cada aviso tiene id por semana (no se repite dentro de la semana)');
 }
 {
+    // 19-nov: El Marqués avisó "23 uds por vencer" con un conteo del 29-oct (21 días,
+    // PDV semanal) y hoy el anaquel estaba en 0. Un conteo viejo no suma unidades.
+    const pos = [{ id: 'M', name: 'El Marqués', visitInterval: 7 }, { id: 'F', name: 'Al día', visitInterval: 7 }];
+    const vence = new Date(AHORA.getTime() + 6 * D * 1000);
+    const venceStr = `${vence.getFullYear()}-${String(vence.getMonth() + 1).padStart(2, '0')}-${String(vence.getDate()).padStart(2, '0')}`;
+    const lote = (q) => ({ batches: [{ expiryDate: venceStr, quantity: q }] });
+    const reps = [V('M', 29, 6), V('M', 20, 23, 0, lote(23)), V('F', 12, 10), V('F', 3, 10, 0, lote(10))];
+    const av = avisosAnaquel({ reports: reps, posList: pos, ahora: AHORA });
+    const m = av.find(a => a.posId === 'M');
+    ok(m?.tipo === 'vencimiento_sin_visita' && /sin visita desde/.test(m.titulo) && !/23 uds vencen/.test(m.titulo), `conteo de hace 20 días: aviso de visita, no de unidades (${m?.titulo})`);
+    ok(m?.severidad === 'informativo', 'el aviso de conteo viejo es informativo');
+    const f = av.find(a => a.posId === 'F');
+    ok(f?.tipo === 'vencimiento' && /10 uds/.test(f.titulo) && /hace 3 días/.test(f.cuerpo), `conteo al día: sí avisa las unidades y dice de cuándo es (${f?.cuerpo})`);
+    const z = avisosAnaquel({ reports: [...reps, V('M', 0, 0, 0, { stockout: true })], posList: pos, ahora: AHORA });
+    ok(!z.some(a => a.posId === 'M' && a.tipo.startsWith('vencimiento')), 'con la visita de hoy en 0, no queda aviso de vencimiento');
+}
+{
     // Caída en el registro de entregas: antes se anotaba lo facturado, ahora casi nada.
     const pos = [{ id: 'E', name: 'E', zohoCustomerId: 'CE', visitInterval: 7 }];
     const facturas = [];

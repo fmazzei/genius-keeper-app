@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-19-vencimiento-conteo-viejo',
+        fecha: '2026-11-19',
+        roles: ['master', 'gerencia'],
+        titulo: 'El aviso de «por vencer» ya no usa conteos viejos',
+        resumen: 'El robot solo dice «N unidades por vencer» si el punto se contó hace poco (su frecuencia de visita + 3 días). Si el último conteo es más viejo, el aviso dice «sin visita desde…» y no suma unidades, porque no se sabe cuántas quedan.',
+    },
+    {
         id: '2026-11-19-facturado-sin-entrega',
         fecha: '2026-11-19',
         roles: ['master', 'gerencia', 'administrador'],

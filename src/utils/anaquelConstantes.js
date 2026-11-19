@@ -55,6 +55,10 @@ export const VIDA_UTIL_DIAS = 90;
 // (por confirmar con la práctica del equipo). Independiente de DIAS_POR_VENCER.
 export const UMBRAL_ALERTA_VENCIMIENTO_DIAS = 7;
 export const UMBRAL_COBERTURA_ORIENTATIVA_DIAS = 60;
+// Un conteo sirve para avisar "por vencer" mientras el PDV va al día con su
+// visita: frecuencia del PDV (mínimo 7 días) + estos días de gracia. Más viejo,
+// no se sabe cuánto queda: el aviso dice "sin visita", no suma unidades (19-nov).
+export const DIAS_GRACIA_CONTEO_VENCIMIENTO = 3;
 
 // ── Calidad de datos ────────────────────────────────────────────────────────
 export const MIN_VISITAS_PERIODO = 2;   // menos: "PDV con pocas visitas"

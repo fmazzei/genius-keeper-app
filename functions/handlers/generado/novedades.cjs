@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-19-vencimiento-conteo-viejo",
+    fecha: "2026-11-19",
+    roles: ["master", "gerencia"],
+    titulo: "El aviso de \xABpor vencer\xBB ya no usa conteos viejos",
+    resumen: "El robot solo dice \xABN unidades por vencer\xBB si el punto se cont\xF3 hace poco (su frecuencia de visita + 3 d\xEDas). Si el \xFAltimo conteo es m\xE1s viejo, el aviso dice \xABsin visita desde\u2026\xBB y no suma unidades, porque no se sabe cu\xE1ntas quedan."
+  },
+  {
     id: "2026-11-19-facturado-sin-entrega",
     fecha: "2026-11-19",
     roles: ["master", "gerencia", "administrador"],
