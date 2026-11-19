@@ -62,14 +62,4 @@ export function useEnLaMano(activo = true) {
     return { r, error, recargar };
 }
 
-/** Entregas por facturar cuyo día ya pasó: la alerta roja de administración. */
-export function atrasadasPorFacturar(r) {
-    if (!r) return { entregas: [], unidades: 0, desde: null };
-    const hoy = diaCaracas(Date.now());
-    const entregas = (r.porFacturar || []).filter(x => x.dia < hoy);
-    return {
-        entregas,
-        unidades: entregas.reduce((s, x) => s + x.unidades, 0),
-        desde: entregas.length ? entregas.map(x => x.dia).sort()[0] : null,
-    };
-}
+export { atrasadasPorFacturar } from '@/utils/enLaMano.js';

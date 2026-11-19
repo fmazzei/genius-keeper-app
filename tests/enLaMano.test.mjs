@@ -1,7 +1,7 @@
 // Prueba del cruce «en la mano» con los datos REALES del 13 al 19-nov-2026.
 // El mercaderista confirmó el 19-nov que tenía 2 unidades.
 // Correr: TZ=America/Caracas node --import ./tests/alias.mjs tests/enLaMano.test.mjs
-import { calcularEnLaMano, esRetiroMercaderista, unidadesDeVenta, diaRetiro } from '@/utils/enLaMano.js';
+import { calcularEnLaMano, esRetiroMercaderista, unidadesDeVenta, diaRetiro, atrasadasPorFacturar } from '@/utils/enLaMano.js';
 
 let fallas = 0;
 const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
@@ -97,6 +97,30 @@ ok(r3.porFacturar.length === 0 && !r3.sinEntrega.find(x => x.numero === 'INV-001
 // Un punto sin cliente de Zoho lo dice.
 const r4 = calcularEnLaMano({ facturas: [], visitas: [v('RTjKlTzoQuum2oPZGCyb', '2026-11-17T13:24:27Z', 24)], posList: [{ id: 'RTjKlTzoQuum2oPZGCyb', name: 'Mercato' }], desde: '2026-11-13', hasta: '2026-11-19' });
 ok(r4.porFacturar[0]?.motivo?.includes('no está vinculado'), 'un punto sin cliente de Zoho dice por qué no se puede buscar su factura');
+
+// 19-nov: ya están las facturas del 18. Santa Rosa se facturó por 15 y se entregaron 12.
+const f18 = (numero, carnet, unidades, cliente, dia = '2026-11-18') => ({ ...f(numero, carnet, unidades, cliente), fecha: `${dia}T00:00:00.000Z` });
+const conFacturas18 = [...facturas,
+    f18('INV-001821', '3576378000000075423', 24, 'Central Madeirense, C.A. (La Boyera)'),
+    f18('INV-001822', '3576378000005390112', 15, 'INSIDE MARKET, SUPERMERCADO RIO, C.A Lomas'),
+    f18('INV-001823', '3576378000004601055', 15, 'Inversiones Cold 2024, C.A (Libertador)'),
+    f18('INV-001824', '3576378000002524001', 24, 'Automercado La Muralla C.A', '2026-11-19'),
+    f18('INV-001825', '3576378000000314001', 15, 'Automercado Santa Rosa De Lima, C.A.'),
+];
+const r5 = calcularEnLaMano({ movimientos, facturas: conFacturas18, visitas, posList: pos, desde: '2026-11-13', hasta: '2026-11-19', excluidas: new Set(['INV-001814']) });
+ok(r5.porFacturar.length === 0, `con las facturas del 18 y 19 no queda nada por facturar (quedan ${r5.porFacturar.length})`);
+const sr = r5.sinEntrega.find(x => x.numero === 'INV-001825');
+ok(r5.sinEntrega.length === 1 && sr?.unidades === 3 && sr.parcial && sr.facturadas === 15 && sr.entregadas === 12,
+    `Santa Rosa: facturadas 15, entregó 12, sobran 3 (da ${JSON.stringify(sr)})`);
+ok(r5.sinFacturar === -1 && r5.enLaMano === 2, `retirado − facturado = −1 y sigue en 2 en la mano (da ${r5.sinFacturar} y ${r5.enLaMano})`);
+const al = atrasadasPorFacturar(r5);
+ok(al.facturas.length === 1 && al.unidadesFacturas === 3 && al.entregas.length === 0 && al.total === 1,
+    'la factura con unidades de más es alerta roja de inmediato');
+const sinNada = atrasadasPorFacturar({ porFacturar: [], sinEntrega: [
+    { numero: 'X1', dia: '2099-01-01', unidades: 12, parcial: false },
+    { numero: 'X2', dia: '2026-01-01', unidades: 12, parcial: false },
+] });
+ok(sinNada.facturas.map(x => x.numero).join() === 'X2', 'una factura sin ninguna entrega se espera 2 días antes de ponerse roja');
 
 console.log(fallas ? `${fallas} falla(s)` : 'Todo en verde');
 process.exit(fallas ? 1 : 0);

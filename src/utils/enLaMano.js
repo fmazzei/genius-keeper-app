@@ -206,8 +206,14 @@ export function calcularEnLaMano({
             });
         }
     }
+    // Facturado sin entrega anotada. `parcial`: el cliente sí recibió, pero
+    // menos de lo facturado (la factura tiene unidades de más o la visita está
+    // mal anotada).
     const sinEntrega = facts.filter(f => f.resto > 0 && f.dia <= hasta)
-        .map(f => ({ numero: f.numero, dia: f.dia, cliente: f.cliente, unidades: f.resto }));
+        .map(f => ({
+            numero: f.numero, dia: f.dia, cliente: f.cliente, unidades: f.resto,
+            facturadas: f.unidades, entregadas: f.unidades - f.resto, parcial: f.resto < f.unidades,
+        }));
 
     // 5. Día por día.
     const lista = [...dias.values()].sort((a, b) => a.dia.localeCompare(b.dia));
@@ -231,5 +237,27 @@ export function calcularEnLaMano({
         devoluciones,                      // retiradas de anaquel para el camión
         porFacturar: porFacturar.sort((a, b) => a.dia.localeCompare(b.dia) || a.posName.localeCompare(b.posName)),
         sinEntrega,
+    };
+}
+
+/**
+ * La alerta roja de administración (pedido del dueño, 19-nov). Dos casos:
+ *  · entregas sin factura cuyo día ya pasó;
+ *  · facturas sin entrega anotada: si el cliente recibió menos de lo facturado,
+ *    de una vez; si no recibió nada, cuando pasaron los 2 días en que la
+ *    entrega todavía se podía cruzar con esa factura.
+ */
+export function atrasadasPorFacturar(r) {
+    if (!r) return { entregas: [], unidades: 0, desde: null, facturas: [], unidadesFacturas: 0, total: 0 };
+    const hoy = diaCaracas(Date.now());
+    const entregas = (r.porFacturar || []).filter(x => x.dia < hoy);
+    const facturas = (r.sinEntrega || []).filter(x => x.parcial || x.dia <= sumarDias(hoy, -2));
+    return {
+        entregas,
+        unidades: entregas.reduce((s, x) => s + x.unidades, 0),
+        desde: entregas.length ? entregas.map(x => x.dia).sort()[0] : null,
+        facturas,
+        unidadesFacturas: facturas.reduce((s, x) => s + x.unidades, 0),
+        total: entregas.length + facturas.length,
     };
 }
