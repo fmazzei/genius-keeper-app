@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-19-factura-recien-llegada",
+    fecha: "2026-11-19",
+    roles: ["master"],
+    titulo: "Una factura reci\xE9n emitida ya no sale como \xABborrada en Zoho\xBB",
+    resumen: "Si Mar\xEDa Jos\xE9 emit\xEDa una factura justo mientras GK revisaba Zoho, GK la marcaba como \xABya no existe en Zoho\xBB y la sacaba de la cartera hasta la siguiente revisi\xF3n. Ahora espera a la siguiente revisi\xF3n antes de juzgarla."
+  },
+  {
     id: "2026-11-19-en-la-mano",
     fecha: "2026-11-19",
     roles: ["master", "gerencia", "administrador"],
