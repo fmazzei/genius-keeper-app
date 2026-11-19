@@ -67,7 +67,7 @@ const Contador = ({ label, value, onChange, max, t }) => (
     </div>
 );
 
-const StockAdjustSheet = ({ item, puedeAjustar = false, onClose, onSave, onNotifyAdmin, onVerTrazabilidad, theme = 'light' }) => {
+const StockAdjustSheet = ({ item, puedeAjustar = false, onClose, onSave, onNotifyAdmin, onVerTrazabilidad, onIrAPicking = null, theme = 'light' }) => {
     const t = THEME[theme] || THEME.light;
     const current = Number(item?.unidades) || 0;
     const unit    = item?.unit || 'ud';
@@ -103,9 +103,14 @@ const StockAdjustSheet = ({ item, puedeAjustar = false, onClose, onSave, onNotif
         : modo === 'salida' ? r2(Math.max(0, current - value))
         : r2(current + value);
 
+    // Un retiro del mercaderista NO es un descuento: el descuento cuenta como
+    // merma en el inventario, y el retiro es un traslado a la ruta (19-nov:
+    // dos pickings anotados así dejaron $860 de merma que no existía).
+    const pareceRetiro = modo === 'salida' && /picking|mercaderista|retir/i.test(notas);
     const invalido = saving
         || (modo === 'correccion' ? Number(value) === current : !(Number(value) > 0))
-        || (modo === 'salida' && !notas.trim());
+        || (modo === 'salida' && !notas.trim())
+        || pareceRetiro;
 
     const handleSave = async () => {
         if (invalido) return;
@@ -200,6 +205,20 @@ const StockAdjustSheet = ({ item, puedeAjustar = false, onClose, onSave, onNotif
                                     Corregir
                                 </button>
                             </div>
+
+                            {modo === 'salida' && onIrAPicking && !cerrado && (
+                                <div className={`rounded-xl px-3 py-3 mb-3 ${pareceRetiro ? 'bg-red-500/10 border border-red-500/40' : t.notice}`}>
+                                    <p className="text-xs font-semibold leading-snug">
+                                        {pareceRetiro
+                                            ? 'Esto es un retiro del mercaderista: no se descuenta, se registra como picking. Si se descuenta, el inventario lo cuenta como merma.'
+                                            : '¿Lo retiró el mercaderista para la ruta? Entonces no es un descuento: es un picking.'}
+                                    </p>
+                                    <button type="button" onClick={() => onIrAPicking(item)}
+                                        className="mt-2 w-full py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white active:scale-[0.99]">
+                                        Registrar como picking
+                                    </button>
+                                </div>
+                            )}
 
                             {cerrado && (
                                 <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 mb-3 ${t.notice}`}>

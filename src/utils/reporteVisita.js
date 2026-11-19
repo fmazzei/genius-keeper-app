@@ -404,7 +404,7 @@ export function datosDelRegistro(report, omitir = new Set()) {
     const ret = r.retiroVisita;
     if (ret && typeof ret === 'object') {
         fila('retiroVisita', 'Retiro en la visita',
-            `${uds(Number(ret.unidades) || 0)} retiradas${ret.motivo ? ` (${etiquetaDe(MOTIVOS_RETIRO, ret.motivo).toLowerCase()})` : ''}${Number(ret.repuestas) > 0 ? ` · ${ret.repuestas} repuestas en el acto` : ''}`,
+            `${uds(Number(ret.unidades) || 0)} retiradas${ret.motivo ? ` (${etiquetaDe(MOTIVOS_RETIRO, ret.motivo).toLowerCase()})` : ''}${Number(ret.repuestas) > 0 ? ` · ${ret.repuestas} repuestas en el acto` : ''}${ret.destino === 'devolucion' ? ' · se las llevó para devolver (camión)' : ret.destino === 'otro_pdv' ? ` · las puso en otro punto${ret.destinoPosNombre ? ` (${ret.destinoPosNombre})` : ''}` : ''}`,
             'Producto que sacó del anaquel en esta visita; queda también en Devoluciones.', 'aviso');
     }
     const ad = r.conteoAntesDespues;

@@ -45,7 +45,7 @@ const pad = (n) => String(n).padStart(2, '0');
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const fmtQty = (n, unit) => unit === 'kg' ? `${r2(n)}` : `${Math.round(n)}`;
 
-export default function PickingSheet({ item, actor, theme = 'light', onClose, onDone, onError }) {
+export default function PickingSheet({ item, actor, preguntarQuien = false, theme = 'light', onClose, onDone, onError }) {
     const t = THEME[theme] || THEME.light;
     const stock = Number(item?.unidades) || 0;
     const unit  = item?.unit || 'ud';
@@ -83,6 +83,25 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
         return () => { vivo = false; };
     }, []);
     const pdv = pdvs.find(p => p.id === pdvId) || null;
+    // Cuando lo anota administración (el mercaderista avisa por WhatsApp), se
+    // dice QUIÉN retiró: con eso se sabe qué tiene cada uno en la mano.
+    const [mercaderistas, setMercaderistas] = useState([]);
+    const [quienId, setQuienId] = useState('');
+    useEffect(() => {
+        if (!preguntarQuien) return undefined;
+        let vivo = true;
+        getDocs(collection(db, 'reporters')).then(snap => {
+            if (!vivo) return;
+            const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .filter(r => r.active !== false)
+                .map(r => ({ id: r.id, nombre: r.name || r.id }))
+                .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+            setMercaderistas(lista);
+            if (lista.length === 1) setQuienId(lista[0].id);
+        }).catch(() => {});
+        return () => { vivo = false; };
+    }, [preguntarQuien]);
+    const quien = mercaderistas.find(m => m.id === quienId) || null;
 
     const clamp = (n) => {
         const v = esKg ? r2(n) : Math.round(n);
@@ -103,7 +122,7 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
         onClose?.();
 
         // 2) Persistencia en segundo plano, en una transacción.
-        registrarPicking(db, { itemId: item.id, cantidad: qty, fecha, hora, actor: actorLabel, pdv })
+        registrarPicking(db, { itemId: item.id, cantidad: qty, fecha, hora, actor: actorLabel, pdv, retiradoPor: quien })
             .catch(e => onError?.('No se pudo registrar el picking: ' + (e?.message || '')));
     };
 
@@ -196,6 +215,17 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                                 className={`block w-full min-w-0 max-w-full appearance-none px-2 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.field}`} />
                         </div>
                     </div>
+
+                    {preguntarQuien && (
+                        <div className="mb-4">
+                            <p className={`text-xs font-semibold mb-1 ${t.label}`}>¿Quién lo retiró?</p>
+                            <select value={quienId} onChange={e => setQuienId(e.target.value)}
+                                className={`block w-full min-w-0 px-2 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.field}`}>
+                                <option value="">Elige al mercaderista</option>
+                                {mercaderistas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                            </select>
+                        </div>
+                    )}
 
                     <div className="mb-4">
                         <p className={`text-xs font-semibold mb-1 ${t.label}`}>¿Para qué punto de venta? <span className="opacity-60">(opcional)</span></p>

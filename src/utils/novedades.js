@@ -21,6 +21,20 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-19-en-la-mano',
+        fecha: '2026-11-19',
+        roles: ['master', 'gerencia', 'administrador'],
+        titulo: 'Lo que el mercaderista tiene en la mano',
+        resumen: 'Nueva pantalla «En la mano» (Mercaderistas, y pestaña en Administración): cruza lo retirado de Frimaca, lo entregado según sus visitas y lo facturado en Zoho, y lista las entregas que faltan por facturar; si una entrega de un día anterior no tiene factura, Administración ve una alerta roja. Un retiro del mercaderista ya no se anota con «Descontar»: se registra como picking, diciendo quién lo retiró.',
+    },
+    {
+        id: '2026-11-19-retiro-destino',
+        fecha: '2026-11-19',
+        roles: ['merchandiser'],
+        titulo: 'Qué hiciste con lo que retiraste',
+        resumen: 'Cuando retiras producto de un anaquel, la visita te pregunta si te lo llevas para devolver (va al camión) o si lo pusiste en otro punto de venta.',
+    },
+    {
         id: '2026-11-19-kroma-fluido',
         fecha: '2026-11-19',
         roles: ['master'],

@@ -15,7 +15,7 @@ import { marcaMov } from './movInventario.js';
 
 const r3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1000) / 1000;
 
-export async function registrarPicking(db, { itemId, cantidad, fecha, hora, actor = {}, pdv = null }) {
+export async function registrarPicking(db, { itemId, cantidad, fecha, hora, actor = {}, pdv = null, retiradoPor = null }) {
     const qty = r3(cantidad);
     if (!(qty > 0)) throw new Error('Indica cuánto retiras.');
     const actorLabel = { id: actor.id || '', nombre: actor.nombre || '', role: actor.role || '' };
@@ -47,7 +47,7 @@ export async function registrarPicking(db, { itemId, cantidad, fecha, hora, acto
             tipo: 'picking', cantidad: -qty, unidadesAntes: stock, unidadesDespues: despues,
             unit, ref: { itemId, pickingId: pickRef.id, ...(destino || {}) },
             actorId: actorLabel.id, actorNombre: actorLabel.nombre, actorRole: actorLabel.role,
-            nota: `Picking ${fecha} ${hora}${destino ? ` · ${destino.posNombre}` : ''}`, createdAt: serverTimestamp(),
+            nota: `Picking ${fecha} ${hora}${retiradoPor?.nombre ? ` · retiró ${retiradoPor.nombre}` : ''}${destino ? ` · ${destino.posNombre}` : ''}`, createdAt: serverTimestamp(),
         });
         tx.set(pickRef, {
             almacenId: item.almacenId || null, almacenNombre: item.almacenNombre || '',
@@ -57,7 +57,12 @@ export async function registrarPicking(db, { itemId, cantidad, fecha, hora, acto
             unit, cantidad: qty, fecha, hora,
             stockAntes: stock, stockDespues: despues,
             ...(destino || {}),
-            mercaderistaId: actorLabel.id, mercaderistaNombre: actorLabel.nombre, mercaderistaRole: actorLabel.role,
+            // Quién RETIRÓ (el mercaderista) y quién lo ANOTÓ (administración,
+            // cuando él avisa por WhatsApp). Sin `retiradoPor`, lo retiró quien anota.
+            mercaderistaId: retiradoPor?.id || actorLabel.id,
+            mercaderistaNombre: retiradoPor?.nombre || actorLabel.nombre,
+            mercaderistaRole: retiradoPor ? 'mercaderista' : actorLabel.role,
+            ...(retiradoPor ? { anotadoPorId: actorLabel.id, anotadoPorNombre: actorLabel.nombre } : {}),
             estado: 'aplicado', createdAt: serverTimestamp(),
         });
         resultado = { pickingId: pickRef.id, unidades: despues };
