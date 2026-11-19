@@ -53,12 +53,14 @@ const AL_RETOMAR = {
     cuajado: {
         titulo: 'Al sacar la cuajada',
         ph: { key: 'phSalida', label: 'pH de la cuajada', def: () => 6.2 },
-        tiempo: { key: 'tiempoCoagulacionReal', unidad: (p) => p.unidadTiempoCoagulacion || 'h', texto: 'Coaguló' },
+        temp: { key: 'tempSalidaCuajada', label: 'Temperatura de la cuajada (°C)', def: (p) => p.tempCoagulacion ?? 22 },
+        tiempo: { key: 'tiempoCoagulacionReal', unidad: (p) => p.unidadTiempoCoagulacion || 'h', texto: 'Coaguló', label: 'Tiempo que coaguló' },
     },
     desuerado: {
         titulo: 'Al terminar el desuerado',
         ph: { key: 'phPost', label: 'pH al terminar el desuerado', def: (p) => p.phPost ?? 5.8 },
-        tiempo: { key: 'tiempo', unidad: () => 'h', texto: 'Desueró' },
+        temp: { key: 'tempPost', label: 'Temperatura del queso (°C)', def: (p) => p.temperaturaAmbiente ?? 18 },
+        tiempo: { key: 'tiempo', unidad: () => 'h', texto: 'Desueró', label: 'Tiempo que desueró' },
     },
 };
 
@@ -204,12 +206,68 @@ function SecLabel({ children }) {
     );
 }
 
+// El plan de la ficha, plegado: la instrucción corta del paso ya va arriba
+// (InstruccionPaso). Pedido del dueño (19-nov): la quesera no se llena de datos.
 function RefCard({ children }) {
+    const [abierto, setAbierto] = useState(false);
     return (
-        <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-3 divide-y divide-slate-700/40">
-            {children}
+        <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl">
+            <button type="button" onClick={() => setAbierto(a => !a)}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-slate-400 text-xs font-semibold">
+                <span>Ver el plan de la ficha</span>
+                <ChevronDown size={14} className={`transition-transform ${abierto ? 'rotate-180' : ''}`} />
+            </button>
+            {abierto && <div className="px-3 pb-3 divide-y divide-slate-700/40">{children}</div>}
         </div>
     );
+}
+
+// Lo que la planilla de papel no pide: queda a mano, plegado.
+function MasDatos({ children, titulo = 'Más datos (opcional)' }) {
+    const [abierto, setAbierto] = useState(false);
+    return (
+        <div className="border border-slate-700/60 rounded-xl">
+            <button type="button" onClick={() => setAbierto(a => !a)}
+                className="w-full flex items-center justify-between px-3 py-3 text-slate-400 text-sm font-semibold">
+                <span>{titulo}</span>
+                <ChevronDown size={16} className={`transition-transform ${abierto ? 'rotate-180' : ''}`} />
+            </button>
+            {abierto && <div className="px-3 pb-4 space-y-4">{children}</div>}
+        </div>
+    );
+}
+
+// Una línea con lo que pide la ficha en este paso, para que la quesera sepa qué
+// hacer sin abrir la tabla del plan. Puro sobre los parámetros de la ficha.
+function instruccionDelPaso(bloque) {
+    const p = bloque?.params || {};
+    const n = (v) => (v == null || v === '' ? null : String(v).replace('.', ','));
+    const partes = [];
+    switch (bloque?.tipo) {
+        case 'pasteurizacion':
+            if (n(p.tempMax)) partes.push(`Calienta a ${n(p.tempMax)} °C`);
+            if (n(p.tiempoSostenimiento)) partes.push(`sostén ${n(p.tiempoSostenimiento)} ${p.unidadTiempo || 'min'}`);
+            if (n(p.tempSalidaMin) && n(p.tempSalidaMax)) partes.push(`enfría a ${n(p.tempSalidaMin)}–${n(p.tempSalidaMax)} °C`);
+            break;
+        case 'cuajado':
+            if (n(p.tempPreCuajado)) partes.push(`Leche a ${n(p.tempPreCuajado)} °C`);
+            if (n(p.tiempoCoagulacion)) partes.push(`coagula ${n(p.tiempoCoagulacion)} ${p.unidadTiempoCoagulacion || 'h'}${n(p.tempCoagulacion) ? ` a ${n(p.tempCoagulacion)} °C` : ''}`);
+            break;
+        case 'desuerado':
+            if (n(p.tiempo)) partes.push(`Desuera ${n(p.tiempo)} ${p.unidadTiempo || 'h'}${n(p.temperaturaAmbiente) ? ` a ${n(p.temperaturaAmbiente)} °C` : ''}`);
+            break;
+        case 'salado':
+            if (n(p.cantidadSal)) partes.push(`${n(p.cantidadSal)} g de sal por kg de queso`);
+            break;
+        case 'maduracion':
+            if (n(p.temperatura)) partes.push(`Cava a ${n(p.temperatura)} °C`);
+            if (n(p.duracion)) partes.push(`${n(p.duracion)} ${p.unidadDuracion || 'días'}`);
+            break;
+        default: break;
+    }
+    if (!partes.length) return null;
+    const t = partes.join(', ');
+    return t.charAt(0).toUpperCase() + t.slice(1) + '.';
 }
 
 function RefRow({ label, value }) {
@@ -626,6 +684,38 @@ function PasteurizacionEditor({ bloque, litrosIngresados, reg, onChange, rutaLec
 
     return (
         <div className="space-y-5">
+            <div>
+                <SecLabel>Merma en pasteurizador (8–15 L)</SecLabel>
+                <div className="grid grid-cols-8 gap-1.5 mb-3">
+                    {[8,9,10,11,12,13,14,15].map(v => (
+                        <button key={v} type="button"
+                            onClick={() => onChange({ ...reg, merma: v, litrosNetos: litrosIngresados - v })}
+                            className={`py-3 rounded-xl text-sm font-bold ${
+                                merma === v ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                            }`}>
+                            {v}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center justify-between bg-orange-900/20 border border-orange-700/40 rounded-xl px-4 py-3">
+                    <span className="text-slate-400 text-sm">Litros netos</span>
+                    <span className="text-orange-300 font-bold font-mono text-lg">{litrosNetos} L</span>
+                </div>
+            </div>
+
+            <RefCard>
+                <SecLabel>Plan de referencia</SecLabel>
+                <RefRow label="Método" value={p.metodo?.toUpperCase()} />
+                <RefRow label="Temp máxima" value={`${p.tempMax ?? 72} °C`} />
+                <RefRow label="Temp salida" value={`${p.tempSalidaMin}–${p.tempSalidaMax} °C`} />
+                <RefRow label="Tiempo sostenimiento" value={`${p.tiempoSostenimiento} ${p.unidadTiempo}`} />
+            </RefCard>
+
+            <MasDatos titulo="Temperaturas y leche del tanque (opcional)">
+                <NumStepper label="Temp máx alcanzada (°C)" value={reg.tempMax ?? p.tempMax ?? 72}
+                    onChange={v => onChange({ ...reg, tempMax: v })} unit="°C" step={0.1} />
+                <NumStepper label="Temp de salida (°C)" value={reg.tempSalida ?? ((p.tempSalidaMin + p.tempSalidaMax) / 2) ?? 6}
+                    onChange={v => onChange({ ...reg, tempSalida: v })} unit="°C" step={0.1} />
             {rutaLeche === 'tanque' && (
                 <div className="space-y-3">
                     <div className="flex items-center gap-2">
@@ -645,37 +735,7 @@ function PasteurizacionEditor({ bloque, litrosIngresados, reg, onChange, rutaLec
                     <div className="h-px bg-slate-700/60" />
                 </div>
             )}
-            <RefCard>
-                <SecLabel>Plan de referencia</SecLabel>
-                <RefRow label="Método" value={p.metodo?.toUpperCase()} />
-                <RefRow label="Temp máxima" value={`${p.tempMax ?? 72} °C`} />
-                <RefRow label="Temp salida" value={`${p.tempSalidaMin}–${p.tempSalidaMax} °C`} />
-                <RefRow label="Tiempo sostenimiento" value={`${p.tiempoSostenimiento} ${p.unidadTiempo}`} />
-            </RefCard>
-
-            <NumStepper label="Temp máx alcanzada (°C)" value={reg.tempMax ?? p.tempMax ?? 72}
-                onChange={v => onChange({ ...reg, tempMax: v })} unit="°C" step={0.1} />
-            <NumStepper label="Temp de salida (°C)" value={reg.tempSalida ?? ((p.tempSalidaMin + p.tempSalidaMax) / 2) ?? 6}
-                onChange={v => onChange({ ...reg, tempSalida: v })} unit="°C" step={0.1} />
-
-            <div>
-                <SecLabel>Merma en pasteurizador (8–15 L)</SecLabel>
-                <div className="grid grid-cols-8 gap-1.5 mb-3">
-                    {[8,9,10,11,12,13,14,15].map(v => (
-                        <button key={v} type="button"
-                            onClick={() => onChange({ ...reg, merma: v, litrosNetos: litrosIngresados - v })}
-                            className={`py-3 rounded-xl text-sm font-bold ${
-                                merma === v ? 'bg-orange-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                            }`}>
-                            {v}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex items-center justify-between bg-orange-900/20 border border-orange-700/40 rounded-xl px-4 py-3">
-                    <span className="text-slate-400 text-sm">Litros netos</span>
-                    <span className="text-orange-300 font-bold font-mono text-lg">{litrosNetos} L</span>
-                </div>
-            </div>
+            </MasDatos>
         </div>
     );
 }
@@ -1283,7 +1343,9 @@ function GenericEditor({ bloque, reg, onChange }) {
             </>}
 
             {tipo === 'desuerado' && <>
-                <NumStepper label="Temperatura real (°C)" value={reg.temperatura ?? p.temperaturaAmbiente ?? 18} onChange={v => onChange({ ...reg, temperatura: v })} unit="°C" step={0.5} />
+                <MasDatos>
+                    <NumStepper label="Temperatura del cuarto (°C)" value={reg.temperatura ?? p.temperaturaAmbiente ?? 18} onChange={v => onChange({ ...reg, temperatura: v })} unit="°C" step={0.5} />
+                </MasDatos>
                 {!esPasoLargo(bloque) && <>
                     <NumStepper label="Tiempo real (h)" value={reg.tiempo ?? p.tiempo ?? 12} onChange={v => onChange({ ...reg, tiempo: v })} unit="h" step={0.5} />
                     <NumStepper label="pH post desuerado" value={reg.phPost ?? p.phPost ?? 5.8} onChange={v => onChange({ ...reg, phPost: v })} step={0.01} />
@@ -1378,16 +1440,21 @@ function AlRetomar({ bloqueAnterior, idxAnterior, bloquesData, iniciadoAt, onUpd
     }, [medido]);
 
     return (
-        <div className="bg-violet-950/40 border border-violet-700/50 rounded-2xl p-4 space-y-3 mb-5">
+        <div className="bg-violet-950/40 border border-violet-700/50 rounded-2xl p-4 space-y-4 mb-5">
             <p className="text-violet-200 font-bold text-base">{cfg.titulo}</p>
-            {medido != null && (
-                <p className="text-violet-300/90 text-sm">
-                    {cfg.tiempo.texto} <strong className="text-white">{String(medido).replace('.', ',')} {unidad}</strong> · lo midió la app
-                </p>
-            )}
             <CampoNumero label={cfg.ph.label} step={0.01}
                 value={regAnt[cfg.ph.key] ?? cfg.ph.def(p)}
                 onChange={v => guardar({ [cfg.ph.key]: v })} />
+            <CampoNumero label={cfg.temp.label} step={0.5} unit="°C"
+                value={regAnt[cfg.temp.key] ?? cfg.temp.def(p)}
+                onChange={v => guardar({ [cfg.temp.key]: v })} />
+            {/* El tiempo lo regula la quesera: la app propone lo que midió
+                (desde que cerró el paso hasta que abrió este) y ella lo corrige
+                si sacó la cuajada antes o después de abrir la app. */}
+            <CampoNumero label={cfg.tiempo.label} step={unidad === 'min' ? 5 : 0.5} unit={unidad} min={0}
+                value={regAnt[cfg.tiempo.key] ?? medido ?? 0}
+                onChange={v => guardar({ [cfg.tiempo.key]: v })}
+                ayuda={medido != null ? `La app midió ${String(medido).replace('.', ',')} ${unidad} desde que cerraste el paso. Corrígelo si hace falta.` : null} />
         </div>
     );
 }
@@ -1397,8 +1464,19 @@ function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloqu
     const onChange = newReg => onUpdate(String(idx), { ...(bloquesData[String(idx)] || {}), registros: newReg });
     const props = { bloque, reg, onChange };
     const retomar = bloqueAnterior && esPasoLargo(bloqueAnterior) && AL_RETOMAR[bloqueAnterior.tipo];
-    const editor = <EditorDelPaso bloque={bloque} props={props} litrosIngresados={litrosIngresados} litrosNetos={litrosNetos}
+    const instruccion = instruccionDelPaso(bloque);
+    const editorSolo = <EditorDelPaso bloque={bloque} props={props} litrosIngresados={litrosIngresados} litrosNetos={litrosNetos}
         materialsMap={materialsMap} rutaLeche={rutaLeche} catalogPresentaciones={catalogPresentaciones} />;
+    const editor = (
+        <>
+            {instruccion && (
+                <p className="text-cyan-200 text-base font-semibold bg-cyan-950/40 border border-cyan-800/50 rounded-xl px-4 py-3 mb-5">
+                    {instruccion}
+                </p>
+            )}
+            {editorSolo}
+        </>
+    );
     if (!retomar) return editor;
     return (
         <>
@@ -1613,6 +1691,7 @@ function ReportBlockSummary({ bloque, data, litrosNetos = 0 }) {
             if (reg.tiempoCoagulacionReal != null) rows.push({ l: `Tiempo coagulación real`,     v: `${reg.tiempoCoagulacionReal} ${p.unidadTiempoCoagulacion || 'h'}`, hi: true });
             if (p.tiempoCoagulacion       != null) rows.push({ l: `Tiempo coagulación teórico`,  v: `${p.tiempoCoagulacion} ${p.unidadTiempoCoagulacion || 'h'}` });
             if (reg.phSalida              != null) rows.push({ l: 'pH de la cuajada al sacarla', v: reg.phSalida, hi: true });
+            if (reg.tempSalidaCuajada     != null) rows.push({ l: 'Temperatura de la cuajada al sacarla', v: `${reg.tempSalidaCuajada} °C` });
             break;
         }
         case 'salado':
@@ -1625,9 +1704,10 @@ function ReportBlockSummary({ bloque, data, litrosNetos = 0 }) {
             }
             break;
         case 'desuerado':
-            if (reg.temperatura != null) rows.push({ l: 'Temperatura', v: `${reg.temperatura} °C` });
+            if (reg.temperatura != null) rows.push({ l: 'Temperatura del cuarto', v: `${reg.temperatura} °C` });
             if (reg.tiempo != null)      rows.push({ l: 'Tiempo de desuerado', v: `${reg.tiempo} h` });
             if (reg.phPost != null)      rows.push({ l: 'pH al terminar', v: reg.phPost, hi: true });
+            if (reg.tempPost != null)    rows.push({ l: 'Temperatura al terminar', v: `${reg.tempPost} °C` });
             break;
         case 'moldeado':
             if (reg.phPostMoldeado) rows.push({ l: 'pH post-moldeado', v: reg.phPostMoldeado });

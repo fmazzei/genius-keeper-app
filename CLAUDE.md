@@ -2288,6 +2288,11 @@ Pedido del dueño: «para que la gente use la app tiene que ser tan fácil como 
 - **La quesera no ve avisos de insumos**: ni en su inicio (`AvisosKroma`), ni en Insumos (`AlertsBanner`), ni en el proceso (stock bajo / faltó inventario, tampoco como notificación del navegador). Se siguen escribiendo en `kroma_alerts` para administración.
 - **El teléfono recuerda quién entró** (`KromaContext`): la persona elegida se guarda en `localStorage` (antes `sessionStorage`: en el iPhone había que elegirse cada vez que se abría la app) con el uid de la cuenta de la empresa (`authUid`; otra cuenta no la hereda) y sin `pinHash`. Al abrir se relee `kroma_users/{id}` en segundo plano: rol, módulos y permisos al día, y si la persona se dio de baja vuelve al selector. «Cambiar usuario» la borra.
 - Prueba: el control en un iPhone 13 emulado (un toque suma 0,01; el dedo puesto corre; «6,45» con coma queda 6,45; 534 L escritos).
+- **Cada paso pide lo de la planilla de papel** (respuesta del dueño, 19-nov: la planilla es lo que hay en la carga por planilla; el proceso SIEMPRE va por pasos, con sus tiempos, y **los tiempos los regula la quesera**):
+  - Arriba de cada paso, una línea con lo que pide la ficha (`instruccionDelPaso`: «Calienta a 65 °C, sostén 15 seg, enfría a 22–27 °C.», «Leche a 25 °C, coagula 24 h a 23 °C.»).
+  - El plan de la ficha queda plegado («Ver el plan de la ficha», `RefCard`). Lo que el papel no pide va en «Más datos (opcional)» (`MasDatos`): temperaturas del pasteurizador, parámetros de la leche del tanque y la temperatura del cuarto de desuerado. La merma va primero.
+  - «Al sacar la cuajada» y «Al terminar el desuerado» (los puntos de 24 h y 72 h de la curva del papel) piden pH y temperatura (`tempSalidaCuajada`, `tempPost`) y el tiempo: la app propone lo que midió y la quesera lo corrige.
+- **Decisiones del dueño (19-nov):** Luis no usa la app (los despachos los carga María José); María José no necesita Producción si Diana la usa.
 
 ### Kroma: correcciones del 11-oct ✅
 
