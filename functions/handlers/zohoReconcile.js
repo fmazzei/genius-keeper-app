@@ -447,6 +447,10 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
     if (!organizationId) throw new HttpsError("failed-precondition", "Falta el ID de organización Zoho (Integraciones).");
 
     let accessToken, invoices, complete;
+    // Momento en que se empieza a leer Zoho: una factura que entra a GK después
+    // (por el webhook, mientras el barrido corre) no puede salir en el listado y
+    // no es una «ausente» (caso real: INV-001824 e INV-001825, 19-nov).
+    const listadoDesdeMs = Date.now() - 60 * 1000;
     try {
         accessToken = await getAccessToken(creds);
         ({ invoices, complete } = await listAllInvoices({ accessToken, organizationId, dataCenter: creds.dataCenter }));
@@ -794,7 +798,9 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
             const num = String(f.numero || '').trim();
             if (!num) return;
             gkNumeros.add(num);
-            const ausente = !seen.has(num);
+            const creadaMs = f.createdAt?.toMillis?.() ?? (f.createdAt ? Date.parse(f.createdAt) : NaN);
+            const llegoDespues = Number.isFinite(creadaMs) && creadaMs >= listadoDesdeMs;
+            const ausente = !seen.has(num) && !llegoDespues;
 
             // 1) Marcado de ausentes (solo si el barrido fue COMPLETO: si se cortó
             //    por el tope de páginas, marcaríamos falsos ausentes).
@@ -810,6 +816,7 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
             // 2) Cuadre: ¿GK la cuenta como por cobrar y Zoho no?
             const gkAbierta = f.estado !== 'anulada' && f.estado !== 'borrador' && f.estado !== 'pagada';
             if (!gkAbierta) return;
+            if (!seen.has(num) && llegoDespues) return; // llegó después del listado: la mira el próximo barrido
             const saldoGk = Number(f.balance != null ? f.balance : f.monto) || 0;
             const z = zohoByNumero.get(num);
             let motivo = null;

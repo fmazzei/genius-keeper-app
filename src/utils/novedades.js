@@ -28,6 +28,13 @@ export const NOVEDADES = [
         resumen: 'Si una factura lleva más unidades de las que el mercaderista entregó, o ninguna visita registra su entrega, Administración ve la franja roja igual que con una entrega sin factura, y en «En la mano» se dice cuántas sobran.',
     },
     {
+        id: '2026-11-19-factura-recien-llegada',
+        fecha: '2026-11-19',
+        roles: ['master'],
+        titulo: 'Una factura recién emitida ya no sale como «borrada en Zoho»',
+        resumen: 'Si María José emitía una factura justo mientras GK revisaba Zoho, GK la marcaba como «ya no existe en Zoho» y la sacaba de la cartera hasta la siguiente revisión. Ahora espera a la siguiente revisión antes de juzgarla.',
+    },
+    {
         id: '2026-11-19-en-la-mano',
         fecha: '2026-11-19',
         roles: ['master', 'gerencia', 'administrador'],
