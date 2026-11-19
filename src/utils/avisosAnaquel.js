@@ -6,7 +6,8 @@
 //  1. Sin salida prolongada — el anaquel no bajó en DIAS_SIN_SALIDA días o más,
 //     con producto adentro.
 //  2. Riesgo de vencimiento — en la última visita hay lotes que vencen en
-//     UMBRAL_ALERTA_VENCIMIENTO_DIAS (7) días o menos, o ya vencidos.
+//     UMBRAL_ALERTA_VENCIMIENTO_DIAS (7) días o menos, o ya vencidos. Solo con
+//     un conteo al día; con uno viejo el aviso es "sin visita" y no suma uds.
 //  3. Rotación alta: conviene surtir más — PDV del cuartil alto de rotación cuyo
 //     producto no alcanza hasta la próxima visita.
 //  4. Caída en el registro de entregas — lo anotado como entregado, frente a lo
@@ -98,27 +99,53 @@ export function avisosAnaquel({ reports = [], devoluciones = [], facturas = null
         }
 
         // 2. Riesgo de vencimiento en la última visita.
+        //    Solo se afirma "N uds por vencer" con un conteo al día (dentro de la
+        //    frecuencia del PDV + gracia). Con un conteo viejo no se sabe cuánto
+        //    queda: el aviso dice que falta la visita y no suma unidades (19-nov:
+        //    El Marqués avisó 23 uds contadas el 29-oct y el anaquel estaba en 0).
         const enRiesgo = ult._lotes
             .map(b => ({ vence: b.expiryDate, uds: Number(b.quantity) || 0, dias: diasParaVencer(b.expiryDate, ahora) }))
             .filter(l => l.dias != null && l.dias <= C.UMBRAL_ALERTA_VENCIMIENTO_DIAS);
         if (enRiesgo.length) {
             const uds = enRiesgo.reduce((s, l) => s + l.uds, 0);
             const primero = enRiesgo.sort((a, b) => a.dias - b.dias)[0];
-            avisos.push({
-                id: `anaquel:vencimiento:${posId}:${sem}`, tipo: 'vencimiento', posId, nombre, prioridad: 2,
-                titulo: `${nombre}: ${uds} uds ${primero.dias <= 0 ? 'vencidas o por vencer' : `vencen en ${primero.dias} días o menos`}`,
-                cuerpo: `Lote más próximo: vence el ${fmtVence(primero.vence)}. Visto el ${fmtVence(diaLocal(ult.t))}. Decidir: retirar, cambiar o mover a un PDV que rote más.`,
-                severidad: primero.dias <= 0 ? 'critico' : 'importante',
-                causa: 'En la última visita había lotes que vencen pronto o ya vencieron.',
-                accion: 'Retirar o cambiar en la próxima visita, o moverlos a un PDV que rote más.',
-                detalle: [
-                    fichaPdv(pdv[posId], nombre),
-                    seccion('Lotes en riesgo', enRiesgo.map(l => fila(`Vence ${fmtVence(l.vence)}`, `${l.uds} ud`,
-                        l.dias <= 0 ? 'ya vencido' : `faltan ${l.dias} días`, l.dias <= 0 ? 'rojo' : 'ambar'))),
-                    seccion('Última visita', [fila(fmtVence(diaLocal(ult.t)), `${ult.inv} en anaquel`, ult.rep > 0 ? `entraron ${ult.rep}` : null)]),
-                    seccion('Visitas recientes', filasVisitas(vs.slice(-6)).reverse()),
-                ],
-            });
+            const frecuencia = Math.max(Number(pdv[posId]?.visitInterval) || 0, 7);
+            const diasConteo = Math.floor((hoy - ult.t) / DIA);
+            const conteoAlDia = diasConteo <= frecuencia + C.DIAS_GRACIA_CONTEO_VENCIMIENTO;
+            const fechaConteo = fmtVence(diaLocal(ult.t));
+            const lotes = seccion(conteoAlDia ? 'Lotes en riesgo' : `Lotes contados el ${fechaConteo}`,
+                enRiesgo.map(l => fila(`Vence ${fmtVence(l.vence)}`, `${l.uds} ud`,
+                    l.dias <= 0 ? 'ya vencido' : `faltan ${l.dias} días`, l.dias <= 0 ? 'rojo' : 'ambar')));
+            const visitas = seccion('Visitas recientes', filasVisitas(vs.slice(-6)).reverse());
+            if (conteoAlDia) {
+                avisos.push({
+                    id: `anaquel:vencimiento:${posId}:${sem}`, tipo: 'vencimiento', posId, nombre, prioridad: 2,
+                    titulo: `${nombre}: ${uds} uds ${primero.dias <= 0 ? 'vencidas o por vencer' : `vencen en ${primero.dias} días o menos`}`,
+                    cuerpo: `Contadas el ${fechaConteo} (hace ${diasConteo} ${diasConteo === 1 ? 'día' : 'días'}). Lote más próximo: vence el ${fmtVence(primero.vence)}. Decidir: retirar, cambiar o mover a un PDV que rote más.`,
+                    severidad: primero.dias <= 0 ? 'critico' : 'importante',
+                    causa: 'En la última visita había lotes que vencen pronto o ya vencieron.',
+                    accion: 'Retirar o cambiar en la próxima visita, o moverlos a un PDV que rote más.',
+                    detalle: [fichaPdv(pdv[posId], nombre), lotes,
+                        seccion('Última visita', [fila(fechaConteo, `${ult.inv} en anaquel`, ult.rep > 0 ? `entraron ${ult.rep}` : null)]),
+                        visitas],
+                });
+            } else {
+                avisos.push({
+                    id: `anaquel:vencimiento_sin_visita:${posId}:${sem}`, tipo: 'vencimiento_sin_visita', posId, nombre, prioridad: 3,
+                    titulo: `${nombre}: sin visita desde el ${fechaConteo} (${diasConteo} días)`,
+                    cuerpo: `El último conteo (${fechaConteo}) tenía ${uds} uds con vencimiento ${primero.dias <= 0 ? 'ya pasado' : `el ${fmtVence(primero.vence)}`}. No se sabe cuántas quedan hoy: pueden haberse vendido o retirado. Hace falta una visita.`,
+                    severidad: 'informativo',
+                    causa: `El punto se visita cada ${frecuencia} días y lleva ${diasConteo} sin conteo: el dato de lotes es viejo.`,
+                    accion: 'Visitar el punto y contar. Si quedan unidades por vencer, retirarlas o moverlas.',
+                    detalle: [fichaPdv(pdv[posId], nombre), lotes,
+                        seccion('Por qué no se cuenta como "por vencer"', [
+                            fila('Último conteo', `${diasConteo} días`, fechaConteo),
+                            fila('Frecuencia de visita', `cada ${frecuencia} días`),
+                            fila('Se considera al día hasta', `${frecuencia + C.DIAS_GRACIA_CONTEO_VENCIMIENTO} días`),
+                        ]),
+                        visitas],
+                });
+            }
         }
     });
 
