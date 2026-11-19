@@ -31,6 +31,14 @@ export const MOTIVOS_RETIRO = [
     { id: 'calidad', label: 'Calidad' },
 ];
 
+// ¿Qué hizo el mercaderista con lo que retiró del anaquel? (pedido del dueño,
+// 19-nov). Cuenta para saber con cuánto queda en la mano: una devolución no es
+// vendible y va al camión; lo reubicado en otro punto sí sale de su mano allá.
+export const DESTINOS_RETIRO = [
+    { id: 'devolucion', label: 'Me lo llevo para devolver', detalle: 'Va al camión de regreso a Barinas' },
+    { id: 'otro_pdv', label: 'Lo puse en otro punto de venta', detalle: 'Para darle salida en otro anaquel' },
+];
+
 // Control de conteo: ¿se contó antes o después de reponer?
 export const RESPUESTAS_ANTES_DESPUES = [
     { id: 'antes', label: 'Antes de reponer' },

@@ -10,6 +10,7 @@ import { db } from '@/Firebase/config.js';
 import { ChevronLeft, ChevronRight, FileDown, Info, Building2, User, MapPinOff, X } from 'lucide-react';
 import { informeMercaderistas, FILAS_INFORME, valorFila } from '@/utils/gestionMercaderista.js';
 import GestionMercaderistaDoc from '@/Components/GestionMercaderistaDoc.jsx';
+import EnLaManoView from '@/Components/EnLaManoView.jsx';
 
 const EMPRESA = '__empresa__';
 
@@ -74,6 +75,11 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
                     <button onClick={() => setDoc(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold text-sm px-4 py-2.5 rounded-xl shrink-0">
                         <FileDown size={16} /> Informe PDF
                     </button>
+                </div>
+
+                {/* Lo que tiene en la mano y lo entregado sin factura */}
+                <div className="bg-slate-100/70 border border-slate-200 rounded-2xl p-4">
+                    <EnLaManoView />
                 </div>
 
                 {/* Mes */}

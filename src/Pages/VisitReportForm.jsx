@@ -11,7 +11,7 @@ import { estadoLote, resumenLotes } from '@/utils/retiros.js';
 import {
     FORM_VERSION, MOTIVOS_CORRECCION_CONTEO, RESPUESTAS_DUPLICADO, RESPUESTAS_CONTEO_IDENTICO,
     MOTIVOS_SIN_FECHA, GPS_TIEMPO_MAX_MS, ETIQUETAS, firmaLotes, leerPrecio, horaVisitaMs,
-    diaLocalMs, distanciaM, conteoIdentico, OPCIONES_ENTREGA, MOTIVOS_RETIRO, RESPUESTAS_ANTES_DESPUES,
+    diaLocalMs, distanciaM, conteoIdentico, OPCIONES_ENTREGA, MOTIVOS_RETIRO, DESTINOS_RETIRO, RESPUESTAS_ANTES_DESPUES,
     totalEntregado, pareceContadoDespues, corregirAntes,
 } from '@/utils/visitaOla1.js';
 import { facturasPorEntregarDe, ultimoConteoDe, anotarVisitaEnRuta, leerRuta, guardarRuta } from '@/utils/rutaOffline.js';
@@ -463,7 +463,7 @@ const Step1_Inventory = ({ report, setReport, isReadOnly: soloLectura, conteoBlo
     );
 };
 
-const Step2_Sales = ({ report, setReport, isReadOnly, facturas = [] }) => {
+const Step2_Sales = ({ report, setReport, isReadOnly, facturas = [], posId = null }) => {
     // Precio: texto con teclado decimal. Con type="number" y teclado en español,
     // "10,25" deja el campo inválido y el valor se pierde.
     const precioMal = String(report.price ?? '') !== '' && leerPrecio(report.price) === null;
@@ -476,6 +476,10 @@ const Step2_Sales = ({ report, setReport, isReadOnly, facturas = [] }) => {
     }));
     const r = report.retiro || {};
     const setRetiro = (cambio) => setReport(prev => ({ ...prev, retiro: { ...(prev.retiro || {}), ...cambio } }));
+    // Los PDV de la copia de la ruta en el teléfono (funciona sin señal).
+    const otrosPdv = (r.destino === 'otro_pdv' ? (leerRuta().pos || []) : [])
+        .filter(p => p && p.id !== posId && p.active !== false && p.eliminado !== true && p.type !== 'depot')
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
     const entregadoHoy = totalEntregado(entregasDeFormulario(facturas, report.entregas), report.sinFactura);
     const inputCls = "w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500";
 
@@ -562,6 +566,27 @@ const Step2_Sales = ({ report, setReport, isReadOnly, facturas = [] }) => {
                                 <label className="block text-sm font-medium text-slate-700">¿Cuántas repusiste en el acto?</label>
                                 <input type="text" inputMode="numeric" value={r.repuestas ?? ''} placeholder="0"
                                     onChange={e => setRetiro({ repuestas: soloDigitos(e.target.value) })} className={inputCls} />
+                            </div>
+                            {/* Qué hizo con lo que retiró: así se sabe con cuánto
+                                queda en la mano y qué va al camión. No bloquea. */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700">¿Qué hiciste con lo que retiraste?</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+                                    {DESTINOS_RETIRO.map(d => (
+                                        <button key={d.id} type="button" onClick={() => setRetiro({ destino: d.id })}
+                                            className={`text-left px-3 py-2.5 rounded-lg border-2 ${r.destino === d.id ? 'bg-brand-blue border-brand-blue text-white' : 'bg-white border-slate-200 text-slate-700'}`}>
+                                            <span className="block text-sm font-bold">{d.label}</span>
+                                            <span className={`block text-xs ${r.destino === d.id ? 'text-white/80' : 'text-slate-500'}`}>{d.detalle}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                {r.destino === 'otro_pdv' && (
+                                    <select value={r.destinoPosId || ''} onChange={e => setRetiro({ destinoPosId: e.target.value })}
+                                        className={`${inputCls} mt-2`}>
+                                        <option value="">¿En cuál punto de venta? (opcional)</option>
+                                        {otrosPdv.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </select>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1101,7 +1126,12 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             entregaSinFactura: sinFactura,
             facturasEnTelefono: facturas.length,
             datosRutaAt: leerRuta().datosRutaAt || null,
-            retiroVisita: r.activo && retiradas > 0 ? { unidades: retiradas, motivo: r.motivo || null, repuestas } : null,
+            retiroVisita: r.activo && retiradas > 0 ? {
+                unidades: retiradas, motivo: r.motivo || null, repuestas,
+                destino: r.destino || null,
+                destinoPosId: r.destino === 'otro_pdv' ? (r.destinoPosId || null) : null,
+                destinoPosNombre: r.destino === 'otro_pdv' && r.destinoPosId ? ((leerRuta().pos || []).find(p => p.id === r.destinoPosId)?.name || null) : null,
+            } : null,
             stockout: report.stockout || false,
             batches: report.batches || [],
             shelfLocation: report.shelfLocation || null,
@@ -1141,6 +1171,9 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             unidadesRepuestas: repuestas,
             montoNotaCredito: null, notaCreditoNumero: null, notaCreditoFecha: null,
             notas: 'Declarado en la visita', reporteOrigenId: null,
+            destinoRetiro: finalReportData.retiroVisita.destino,
+            destinoPosId: finalReportData.retiroVisita.destinoPosId,
+            destinoPosNombre: finalReportData.retiroVisita.destinoPosNombre,
         } : null;
 
         // SIEMPRE primero al teléfono: con red mala nunca queda colgado en
@@ -1209,7 +1242,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             case 1: return <Step1_Inventory {...stepProps}
                 conteoBloqueado={!isReadOnly && conteoBloqueado}
                 onCorregirConteo={(motivo) => setCorreccionConteo({ motivo, at: new Date().toISOString() })} />;
-            case 2: return <Step2_Sales {...stepProps} facturas={facturas} />;
+            case 2: return <Step2_Sales {...stepProps} facturas={facturas} posId={pos?.id || null} />;
             case 3: return <Step3_Execution {...stepProps} />;
             case 4: return <Step4_Intel
                 {...stepProps}

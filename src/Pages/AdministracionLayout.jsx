@@ -18,7 +18,7 @@ import { db } from '@/Firebase/config.js';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
-import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2, Bot, Warehouse } from 'lucide-react';
+import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2, Bot, Warehouse, Hand } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
@@ -26,6 +26,7 @@ import CarteraManager from '@/Components/CarteraManager.jsx';
 import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } from '@/Pages/AdminPanel.jsx';
 import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
+import EnLaManoView from '@/Components/EnLaManoView.jsx';
 import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
@@ -121,6 +122,8 @@ export default function AdministracionLayout({ user, onLogout }) {
         // Almacén (inventario de Caracas): recibe el camión, ajusta (entrada, descuento,
         // corrección, lotes cerrados) y hace pickings, con el alcance del máster.
         ...(modOn('almacenComercial') ? [{ id: 'inventario', label: 'Almacén', Icon: Warehouse }] : []),
+        // Lo que el mercaderista tiene en la mano y lo entregado sin factura.
+        ...(modOn('almacenComercial') ? [{ id: 'enLaMano', label: 'En la mano', Icon: Hand }] : []),
     ];
     // Alertas del agente: su propia pestaña (con punto rojo), separada del
     // trabajo de pagar. Administración solo recibe avisos del agente (comisiones).
@@ -224,6 +227,8 @@ export default function AdministracionLayout({ user, onLogout }) {
                     <ListaMaestraPdv />
                 ) : activeTab?.id === 'cartera' ? (
                     <CarteraAdmin vendedores={vendedores} />
+                ) : activeTab?.id === 'enLaMano' ? (
+                    <div className="max-w-4xl mx-auto p-4"><EnLaManoView /></div>
                 ) : activeTab?.id === 'inventario' ? (
                     <AlmacenComercialPage canPicking actor={{ id: uid || '', nombre: perfil.name || authUser?.email || '', role: 'administrador' }} />
                 ) : (

@@ -616,6 +616,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                     onSave={handleAdjustSave}
                     onNotifyAdmin={handleNotifyAdmin}
                     onVerTrazabilidad={(it) => setTraceItem(it)}
+                    onIrAPicking={canPicking ? (it) => { setAdjustItem(null); setPickItem(it); } : null}
                     theme={theme}
                 />
             )}
@@ -646,6 +647,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                 <PickingSheet
                     item={pickItem}
                     actor={actorLabel}
+                    preguntarQuien={puedeAjustar}
                     theme={theme}
                     onClose={() => setPickItem(null)}
                     onDone={patchItem}
