@@ -9,16 +9,11 @@
 // «En la mano»), que es quien factura: por eso arriba van las entregas por
 // facturar.
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDoc, getDocs, query, where, Timestamp } from 'firebase/firestore';
-import { db } from '@/Firebase/config.js';
+import React, { useState } from 'react';
+import { useEnLaMano } from '@/hooks/useEnLaMano.js';
 import { Hand, Receipt, Truck, ChevronDown, AlertTriangle, RefreshCw, Loader } from 'lucide-react';
-import { calcularEnLaMano, diaCaracas } from '@/utils/enLaMano.js';
+import { diaCaracas } from '@/utils/enLaMano.js';
 
-// Punto de partida del cruce: el conteo físico de Caracas del 12-nov dejó al
-// mercaderista con 0 en la mano. Se puede mover desde settings/appConfig
-// (`enLaManoDesde`, `enLaManoInicial`) cuando se haga otro conteo.
-const DESDE_POR_DEFECTO = '2026-11-13';
 
 const fmtDia = (d) => {
     if (!d) return '';
@@ -44,56 +39,17 @@ function Cifra({ Icon, titulo, valor, nota, tono = 'slate' }) {
     );
 }
 
-export default function EnLaManoView() {
-    const [datos, setDatos] = useState(null);
-    const [error, setError] = useState(null);
-    const [recarga, setRecarga] = useState(0);
+export default function EnLaManoView({ datos: dado = null }) {
+    const propio = useEnLaMano(!dado);
+    const { r, error, recargar } = dado || propio;
     const [abierto, setAbierto] = useState(null);
-
-    useEffect(() => {
-        let vivo = true;
-        setError(null);
-        (async () => {
-            try {
-                const cfg = await getDoc(doc(db, 'settings', 'appConfig')).then(s => s.data() || {}).catch(() => ({}));
-                const desde = cfg.enLaManoDesde || DESDE_POR_DEFECTO;
-                const inicial = Number(cfg.enLaManoInicial) || 0;
-                const [y, m, d] = desde.split('-').map(Number);
-                const corte = Timestamp.fromDate(new Date(y, m - 1, d - 2));
-                const vacio = { docs: [] };
-                const [movs, facts, visitas, pos, excl] = await Promise.all([
-                    getDocs(collection(db, 'inventario_movimientos')),
-                    getDocs(query(collection(db, 'facturas_vendedor'), where('fecha', '>=', corte))),
-                    getDocs(query(collection(db, 'visit_reports'), where('createdAt', '>=', corte))),
-                    getDocs(collection(db, 'pos')),
-                    // Facturas que no salen de la ruta de Caracas (despachos a otra
-                    // ciudad, ventas en planta): las marca el inventario de Kroma.
-                    getDocs(query(collection(db, 'kroma_inv_facturas'), where('empresaId', '==', 'lacteoca'), where('estado', '==', 'excluida'))).catch(() => vacio),
-                ]);
-                if (!vivo) return;
-                const lista = (s) => s.docs.map(x => ({ id: x.id, ...x.data() }));
-                setDatos({
-                    desde, inicial,
-                    movimientos: lista(movs).filter(mv => /caracas/i.test(mv.almacenNombre || '')),
-                    facturas: lista(facts),
-                    visitas: lista(visitas),
-                    posList: lista(pos),
-                    excluidas: new Set(excl.docs.map(x => x.data().numero).filter(Boolean)),
-                });
-            } catch (e) {
-                if (vivo) setError(e.message || String(e));
-            }
-        })();
-        return () => { vivo = false; };
-    }, [recarga]);
-
-    const r = useMemo(() => (datos ? calcularEnLaMano({ ...datos, hasta: diaCaracas(Date.now()) }) : null), [datos]);
+    const hoy = diaCaracas(Date.now());
 
     if (error) {
         return (
             <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm">
                 No se pudo armar el cruce: {error}
-                <button onClick={() => setRecarga(n => n + 1)} className="ml-2 underline font-semibold">Reintentar</button>
+                <button onClick={recargar} className="ml-2 underline font-semibold">Reintentar</button>
             </div>
         );
     }
@@ -114,7 +70,7 @@ export default function EnLaManoView() {
                         Desde el {fmtDia(r.desde)}: retiró {r.retirado} de Frimaca, entregó {r.entregado}{r.repuesto ? ` y repuso ${r.repuesto}` : ''} según sus visitas, y se facturaron {r.facturado}.
                     </p>
                 </div>
-                <button onClick={() => { setDatos(null); setRecarga(n => n + 1); }} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0" title="Actualizar">
+                <button onClick={recargar} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0" title="Actualizar">
                     <RefreshCw size={16} />
                 </button>
             </div>
@@ -133,8 +89,10 @@ export default function EnLaManoView() {
             </p>
 
             {r.porFacturar.length > 0 && (
-                <section className="bg-white border border-amber-200 rounded-2xl overflow-hidden">
-                    <p className="px-4 py-3 text-sm font-bold text-amber-800 bg-amber-50 border-b border-amber-200">Entregas por facturar</p>
+                <section className={`bg-white border rounded-2xl overflow-hidden ${r.porFacturar.some(x => x.dia < hoy) ? 'border-red-300' : 'border-amber-200'}`}>
+                    <p className={`px-4 py-3 text-sm font-bold border-b ${r.porFacturar.some(x => x.dia < hoy) ? 'text-red-700 bg-red-50 border-red-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
+                        Entregas por facturar{r.porFacturar.some(x => x.dia < hoy) ? ' · facturar hoy: ya pasó el día de la entrega' : ''}
+                    </p>
                     <div className="divide-y divide-slate-100">
                         {r.porFacturar.map((x, i) => (
                             <div key={i} className="px-4 py-2.5 flex items-start gap-3">
@@ -143,7 +101,7 @@ export default function EnLaManoView() {
                                     <p className="text-xs text-slate-500">Entregado el {fmtDia(x.dia)}{x.quien ? ` · ${x.quien}` : ''}</p>
                                     {x.motivo && <p className="text-xs text-amber-700 mt-0.5">{x.motivo}</p>}
                                 </div>
-                                <p className="text-lg font-black text-amber-700 shrink-0">{x.unidades}</p>
+                                <p className={`text-lg font-black shrink-0 ${x.dia < hoy ? 'text-red-600' : 'text-amber-700'}`}>{x.unidades}</p>
                             </div>
                         ))}
                     </div>

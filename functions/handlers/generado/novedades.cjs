@@ -31,7 +31,7 @@ var NOVEDADES = [
     fecha: "2026-11-19",
     roles: ["master", "gerencia", "administrador"],
     titulo: "Lo que el mercaderista tiene en la mano",
-    resumen: "Nueva pantalla \xABEn la mano\xBB (Mercaderistas, y pesta\xF1a en Administraci\xF3n): cruza lo retirado de Frimaca, lo entregado seg\xFAn sus visitas y lo facturado en Zoho, y lista las entregas que faltan por facturar. Un retiro del mercaderista ya no se anota con \xABDescontar\xBB: se registra como picking, diciendo qui\xE9n lo retir\xF3."
+    resumen: "Nueva pantalla \xABEn la mano\xBB (Mercaderistas, y pesta\xF1a en Administraci\xF3n): cruza lo retirado de Frimaca, lo entregado seg\xFAn sus visitas y lo facturado en Zoho, y lista las entregas que faltan por facturar; si una entrega de un d\xEDa anterior no tiene factura, Administraci\xF3n ve una alerta roja. Un retiro del mercaderista ya no se anota con \xABDescontar\xBB: se registra como picking, diciendo qui\xE9n lo retir\xF3."
   },
   {
     id: "2026-11-19-retiro-destino",

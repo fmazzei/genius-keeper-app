@@ -27,6 +27,7 @@ import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } fr
 import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import EnLaManoView from '@/Components/EnLaManoView.jsx';
+import { useEnLaMano, atrasadasPorFacturar } from '@/hooks/useEnLaMano.js';
 import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
@@ -74,6 +75,9 @@ export default function AdministracionLayout({ user, onLogout }) {
     const [perfil, setPerfil] = useState(null); // null = cargando; {name, modulos}
     // Avisos del vigilante sobre comisiones (administración concilia y paga).
     const { avisos: avisosVig, marcarVisto } = useAvisosVigilante(uid);
+    // Entregas del mercaderista sin factura (alerta roja, pedido del dueño 19-nov).
+    const enLaMano = useEnLaMano(!!uid);
+    const atrasadas = atrasadasPorFacturar(enLaMano.r);
     const campana = useNotifications();
     const { setViewedReportId } = useReportView();
     const abrirLinkReporte = (link) => {
@@ -123,7 +127,7 @@ export default function AdministracionLayout({ user, onLogout }) {
         // corrección, lotes cerrados) y hace pickings, con el alcance del máster.
         ...(modOn('almacenComercial') ? [{ id: 'inventario', label: 'Almacén', Icon: Warehouse }] : []),
         // Lo que el mercaderista tiene en la mano y lo entregado sin factura.
-        ...(modOn('almacenComercial') ? [{ id: 'enLaMano', label: 'En la mano', Icon: Hand }] : []),
+        ...(modOn('almacenComercial') ? [{ id: 'enLaMano', label: 'En la mano', Icon: Hand, dot: atrasadas.entregas.length }] : []),
     ];
     // Alertas del agente: su propia pestaña (con punto rojo), separada del
     // trabajo de pagar. Administración solo recibe avisos del agente (comisiones).
@@ -186,6 +190,17 @@ export default function AdministracionLayout({ user, onLogout }) {
             {/* Anaquel bajo (si el centro de notificaciones se lo da) y novedades */}
             <AlertaAnaquelBajo />
             <NovedadesApp />
+            {/* Alerta ROJA: el mercaderista entregó y no hay factura en Zoho. */}
+            {modOn('almacenComercial') && atrasadas.unidades > 0 && activeTab?.id !== 'enLaMano' && (
+                <button type="button" onClick={() => { setActive('enLaMano'); salirDelPago(); }}
+                    className="shrink-0 w-full text-left bg-red-600 text-white px-4 py-2.5 flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
+                    <span className="flex-1 min-w-0 text-sm font-semibold leading-snug">
+                        {atrasadas.unidades} unidades entregadas sin factura ({atrasadas.entregas.length} entrega{atrasadas.entregas.length !== 1 ? 's' : ''} desde el {atrasadas.desde?.split('-').reverse().slice(0, 2).join('/')}). Hay que facturarlas.
+                    </span>
+                    <span className="text-xs font-bold underline shrink-0">Ver</span>
+                </button>
+            )}
 
             {/* ── Tabs (scroll horizontal en móvil) ── */}
             <nav className="shrink-0 bg-white border-b border-slate-200 px-2 sm:px-4 flex gap-1 overflow-x-auto">
@@ -200,7 +215,7 @@ export default function AdministracionLayout({ user, onLogout }) {
                             }`}
                         >
                             <Icon size={16} /> {label}
-                            {dot > 0 && <span className="w-2.5 h-2.5 bg-red-500 rounded-full" aria-label="Alerta nueva del agente" />}
+                            {dot > 0 && <span className="w-2.5 h-2.5 bg-red-500 rounded-full" aria-label="Alerta" />}
                         </button>
                     );
                 })}
@@ -228,7 +243,7 @@ export default function AdministracionLayout({ user, onLogout }) {
                 ) : activeTab?.id === 'cartera' ? (
                     <CarteraAdmin vendedores={vendedores} />
                 ) : activeTab?.id === 'enLaMano' ? (
-                    <div className="max-w-4xl mx-auto p-4"><EnLaManoView /></div>
+                    <div className="max-w-4xl mx-auto"><EnLaManoView datos={enLaMano} /></div>
                 ) : activeTab?.id === 'inventario' ? (
                     <AlmacenComercialPage canPicking actor={{ id: uid || '', nombre: perfil.name || authUser?.email || '', role: 'administrador' }} />
                 ) : (
