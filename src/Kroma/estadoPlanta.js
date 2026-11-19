@@ -28,14 +28,15 @@ export const esLecheEnTanque = (r) =>
 export const litrosEnTanque = (recepciones = []) =>
     recepciones.filter(esLecheEnTanque).reduce((s, r) => s + (r.litros || 0), 0);
 
-/** Producción que todavía se está corriendo (activa o en espera). */
+/** Producción EN PROCESO: el queso todavía no salió a la cava (activa o en espera). */
 export const esProduccionAbierta = (l) => l?.estado !== 'completada';
 
 /**
- * Producción TERMINADA pero sin cerrar: se guardó el queso para empacar
- * después (`guardar_todo`) o se empacó solo una parte (`mixto`). Sigue siendo
- * trabajo pendiente del operario, aunque el proceso ya no esté "activo" — y
- * justo por eso no aparecía en ninguna lista de "abierto".
+ * Producción CERRADA y POR ENVASAR. Cerrada = el queso salió (dejó de
+ * desuerarse y pasó a la cava, aunque sea a granel); envasar es otra cosa y
+ * viene después (decisión del dueño, 19-nov). Aplica cuando se guardó todo a
+ * granel (`guardar_todo`) o se envasó solo una parte (`mixto`). Es trabajo
+ * pendiente aunque la producción ya no esté en proceso.
  */
 export const faltaEmpacar = (l) =>
     !l?.empaqueFinalizado && (l?.disposicion === 'guardar_todo' || l?.disposicion === 'mixto');

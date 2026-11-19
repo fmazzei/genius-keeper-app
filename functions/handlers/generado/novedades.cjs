@@ -27,6 +27,12 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-19-kroma-fluido",
+    roles: ["master"],
+    titulo: "Kroma: inicio sin repetidos y botones abajo",
+    resumen: "Arriba, una alerta por cada producci\xF3n en proceso que la abre en su paso; \xABpor envasar\xBB es un rengl\xF3n que se despliega. En el tel\xE9fono, botones abajo con las pantallas de cada oficio y \xABM\xE1s\xBB."
+  },
+  {
     id: "2026-11-19-kroma-facil",
     fecha: "2026-11-19",
     roles: ["master"],

@@ -800,7 +800,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                             <p className="text-slate-500 text-[11px] leading-snug mt-1.5">
                                 {String(sinEnvasar).trim() === ''
                                     ? `Vacío = lo que no aparece envasado (${fmtNum(kgSinEnvasarSug, 3)} kg). Escribe 0 si no queda nada.`
-                                    : 'Entra a cava y la producción queda en "Pendiente de empacar" hasta que se envase.'}
+                                    : 'Entra a cava a granel y la producción queda en «Por envasar» hasta que se envase.'}
                             </p>
                             {kgSinEnvasarNum > 0 && (
                                 <div className="mt-2.5">

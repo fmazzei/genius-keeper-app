@@ -185,43 +185,6 @@ function MiniReceptionCard({ rec, paramConfig }) {
     );
 }
 
-// ─── KPI Detail Modal ─────────────────────────────────────────────────────────
-
-function KpiModal({ title, receptions, paramConfig, onClose }) {
-    const total = receptions.reduce((s, r) => s + (r.litros || 0), 0);
-    return (
-        <div className="fixed inset-0 z-50 bg-black/70 flex flex-col justify-end" onClick={onClose}>
-            <div className="bg-slate-900 rounded-t-2xl max-h-[75vh] flex flex-col"
-                onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 shrink-0">
-                    <div>
-                        <p className="text-white font-semibold">{title}</p>
-                        {receptions.length > 0 && (
-                            <p className="text-slate-400 text-xs mt-0.5">
-                                {receptions.length} {receptions.length === 1 ? 'entrada' : 'entradas'} · {total.toLocaleString('es-VE')} L totales
-                            </p>
-                        )}
-                    </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
-                        <X size={18} />
-                    </button>
-                </div>
-                <div className="overflow-y-auto px-5 py-4 space-y-2">
-                    {receptions.length === 0 ? (
-                        <div className="text-center py-10">
-                            <Droplets size={28} className="text-slate-700 mx-auto mb-2" />
-                            <p className="text-slate-500 text-sm">Sin entradas en este estado</p>
-                        </div>
-                    ) : (
-                        receptions.map(r => (
-                            <MiniReceptionCard key={r.id} rec={r} paramConfig={paramConfig} />
-                        ))
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // ─── Param Config Panel (master only) ────────────────────────────────────────
 
@@ -531,7 +494,9 @@ export default function MilkInventoryPage({ onNavigate }) {
     // Views: 'list' | 'form' | 'config'
     const [view, setView]           = useState('list');
     const [tab, setTab]             = useState('activas');
-    const [activeModal, setActiveModal] = useState(null); // null | 'tanque' | 'proceso'
+    // Las dos cifras de arriba FILTRAN la lista de abajo (antes abrían una hoja
+    // con las mismas recepciones que ya mostraba la lista: dos caminos a lo mismo).
+    const [filtro, setFiltro] = useState(null); // null | 'tanque' | 'proceso'
     const [editingRec, setEditingRec]   = useState(null);
     const [step, setStep]           = useState(0);
     const [saving, setSaving]       = useState(false);
@@ -611,12 +576,16 @@ export default function MilkInventoryPage({ onNavigate }) {
 
     const activas   = allReceptions.filter(r => r.status !== 'completada');
     const historial = allReceptions.filter(r => r.status === 'completada');
-    const displayed = tab === 'activas' ? activas : historial;
 
     const recepcionesEnTanque = allReceptions.filter(esLecheEnTanque);
     const litrosEnTanque = recepcionesEnTanque.reduce((s, r) => s + (r.litros || 0), 0);
 
     const recepcionesEnProceso = allReceptions.filter(r => r.status === 'en_proceso');
+    const displayed = tab === 'historial' ? historial
+        : filtro === 'tanque' ? recepcionesEnTanque
+        : filtro === 'proceso' ? recepcionesEnProceso
+        : activas;
+    const filtrar = (f) => { setTab('activas'); setFiltro(x => (x === f ? null : f)); };
 
     // Misma fórmula que gerencia y que la producción (costeoLote.js).
     function milkPriceFor(provId) {
@@ -947,24 +916,6 @@ export default function MilkInventoryPage({ onNavigate }) {
     return (
         <div className="flex flex-col h-full overflow-hidden">
 
-            {/* KPI detail modal */}
-            {activeModal === 'tanque' && (
-                <KpiModal
-                    title="Leche en Tanque de Enfriamiento"
-                    receptions={recepcionesEnTanque}
-                    paramConfig={paramConfig}
-                    onClose={() => setActiveModal(null)}
-                />
-            )}
-            {activeModal === 'proceso' && (
-                <KpiModal
-                    title="Leche en Proceso Activo"
-                    receptions={recepcionesEnProceso}
-                    paramConfig={paramConfig}
-                    onClose={() => setActiveModal(null)}
-                />
-            )}
-
             {/* Header */}
             <div className="px-5 pt-5 pb-3 flex items-start justify-between shrink-0">
                 <div>
@@ -990,23 +941,23 @@ export default function MilkInventoryPage({ onNavigate }) {
             {/* KPI Cards — interactive */}
             <div className="px-5 mb-4 shrink-0">
                 <div className="flex gap-3">
-                    <button onClick={() => setActiveModal('tanque')}
-                        className="flex-1 min-w-0 bg-blue-950/50 border border-blue-800/40 hover:border-blue-600/60 active:scale-95 rounded-2xl px-4 py-3 text-left transition-all">
+                    <button onClick={() => filtrar('tanque')}
+                        className={`flex-1 min-w-0 bg-blue-950/50 border hover:border-blue-600/60 active:scale-95 rounded-2xl px-4 py-3 text-left transition-all ${filtro === 'tanque' ? 'border-blue-400 ring-1 ring-blue-400' : 'border-blue-800/40'}`}>
                         <p className="text-blue-300 text-lg font-bold font-mono truncate">
                             {litrosEnTanque.toLocaleString('es-VE')} L
                         </p>
-                        <p className="text-blue-400/70 text-xs font-semibold mt-0.5">En Tanque</p>
-                        <p className="text-slate-600 text-xs mt-0.5">{recepcionesEnTanque.length} entrada{recepcionesEnTanque.length !== 1 ? 's' : ''} · toca para ver</p>
+                        <p className="text-blue-400/70 text-xs font-semibold mt-0.5">Esperando en tanque</p>
+                        <p className="text-slate-600 text-xs mt-0.5">{recepcionesEnTanque.length} entrada{recepcionesEnTanque.length !== 1 ? 's' : ''}{filtro === 'tanque' ? ' · mostrando' : ''}</p>
                     </button>
 
-                    <button onClick={() => setActiveModal('proceso')}
-                        className="flex-1 min-w-0 bg-purple-950/50 border border-purple-800/40 hover:border-purple-600/60 active:scale-95 rounded-2xl px-4 py-3 text-left transition-all">
+                    <button onClick={() => filtrar('proceso')}
+                        className={`flex-1 min-w-0 bg-purple-950/50 border hover:border-purple-600/60 active:scale-95 rounded-2xl px-4 py-3 text-left transition-all ${filtro === 'proceso' ? 'border-purple-400 ring-1 ring-purple-400' : 'border-purple-800/40'}`}>
                         <p className="text-purple-300 text-lg font-bold font-mono">
                             {recepcionesEnProceso.length}
                         </p>
-                        <p className="text-purple-400/70 text-xs font-semibold mt-0.5">En Proceso</p>
+                        <p className="text-purple-400/70 text-xs font-semibold mt-0.5">En una producción</p>
                         <p className="text-slate-600 text-xs mt-0.5">
-                            {recepcionesEnProceso.reduce((s, r) => s + (r.litros || 0), 0)} L activos · toca para ver
+                            {recepcionesEnProceso.reduce((s, r) => s + (r.litros || 0), 0)} L{filtro === 'proceso' ? ' · mostrando' : ''}
                         </p>
                     </button>
                 </div>
@@ -1028,7 +979,7 @@ export default function MilkInventoryPage({ onNavigate }) {
                     { id: 'activas',   label: `Activas (${activas.length})` },
                     { id: 'historial', label: `Historial (${historial.length})` },
                 ].map(t => (
-                    <button key={t.id} onClick={() => setTab(t.id)}
+                    <button key={t.id} onClick={() => { setTab(t.id); setFiltro(null); }}
                         className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${
                             tab === t.id ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'
                         }`}>

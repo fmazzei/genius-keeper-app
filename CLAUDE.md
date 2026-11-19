@@ -2294,6 +2294,20 @@ Pedido del dueño: «para que la gente use la app tiene que ser tan fácil como 
   - «Al sacar la cuajada» y «Al terminar el desuerado» (los puntos de 24 h y 72 h de la curva del papel) piden pH y temperatura (`tempSalidaCuajada`, `tempPost`) y el tiempo: la app propone lo que midió y la quesera lo corrige.
 - **Decisiones del dueño (19-nov):** Luis no usa la app (los despachos los carga María José); María José no necesita Producción si Diana la usa.
 
+### Kroma fluido: inicio sin repetidos, «en proceso» vs «por envasar» y botones abajo (2026-11-19) ✅ (rama `claude/kroma-fluido`)
+
+Reclamo del dueño con la captura del inicio de Diana: la tarjeta «… en curso · Ir a producción» y la lista «Abierto ahora» llevaban al mismo sitio.
+- **Palabras (decisión del dueño):** una producción está **cerrada** cuando el queso salió (dejó de desuerarse y pasó a la cava, aunque sea a granel). Lo que sigue es **envasar**, que es otra cosa. En pantalla se dice «en proceso» y «por envasar»; nunca «sin cerrar» ni «pendiente de empacar». «Finalizar empaque» pasó a «Envasar»; «Guardar sin envasar» a «Guardar a granel».
+- **`src/Kroma/Components/PlantaAhora.jsx`**, igual en los tres inicios (operario, administración, gerencia/máster): una **alerta** por cada producción en proceso (paso actual, hasta cuándo espera, ámbar si ya puede continuar) que abre ESA producción en su paso (`onNavigate('production', {logId, continuar:true})`), y un **renglón** «N producciones por envasar · X kg a granel en cava» que se despliega; cada una abre directo la hoja de envasar (`{logId, envasar:true}`). Quien no ve Producción ve la alerta sin enlace, y «por envasar» lo lleva a Almacenes. `estadoDeLogs(logs)` es puro.
+- **Producción** (`DailyProductionPage`, efecto de `params`): `continuar` → `openLog`; `envasar` → `setFinalizarLog`; `nueva` → elegir ficha. Título «Producción», «N en proceso».
+- **Inicio del operario:** alerta + renglón, una sola acción si no hay nada en proceso (arrancar con la leche que espera o registrar leche) e indicadores cerca: leche esperando, kg producidos y lotes del mes (lotes cerrados).
+- **Inicio de administración:** la planta, los contadores arriba, «Insumos por reponer» a la vista y el resto de los datos por completar en un renglón «N datos por completar» que se despliega.
+- **Inicio de gerencia/máster:** la planta arriba; se quitó la tarjeta «Lotes por envasar» y su hoja (repetían el renglón).
+- **Barra de abajo en el teléfono** (`KromaShell`, `TABS_POR_ROL`): operario Inicio · Producción · Leche · Insumos; administración Inicio · Almacenes · Despachos · Insumos; gerencia Inicio · Almacenes · KPIs · Historial; máster Inicio · Producción · Almacenes · Despachos; y **Más**, que abre el menú. Solo las pantallas que la persona ve. El ☰ de arriba se quitó en el teléfono.
+- **Leche:** las cifras «Esperando en tanque» y «En una producción» filtran la lista (antes abrían otra hoja con las mismas recepciones).
+- **Insumos:** se quitó el aviso «N bajo el mínimo · Ver», que repetía el filtro «Por reponer». Al operario no se le muestran los filtros «Sin registro» y «Sin mínimo» (son datos por completar de administración). Título «Insumos».
+- Probado en un iPhone simulado con datos de ejemplo (la alerta y el renglón). No probado con la cuenta de producción.
+
 ### Kroma: correcciones del 11-oct ✅
 
 - **PIN de empresa con freno** (ver "Freno a la adivinanza del PIN" arriba).

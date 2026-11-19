@@ -26,6 +26,7 @@ import {
     RENDIMIENTO_FALLBACK_L_PER_KG,
 } from '../costeoLote.js';
 import { leerSello, fmtSello } from '../selloDatos.js';
+import PlantaAhora from '../Components/PlantaAhora.jsx';
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 
@@ -430,6 +431,13 @@ export function ManagerHome({ onNavigate }) {
                         </button>
                     </div>
 
+                    {/* La planta ahora: en proceso y por envasar (igual en todos los inicios) */}
+                    <div className="mb-5">
+                        <PlantaAhora empresaId={kromaUser?.empresaId || 'lacteoca'} onNavigate={onNavigate}
+                            verProduccion={moduloVisible(kromaRole, kromaUser?.modulos, 'produccionDiaria')}
+                            verAlmacenes={moduloVisible(kromaRole, kromaUser?.modulos, 'almacenes')} />
+                    </div>
+
                     {/* Shortcuts */}
                     {shortcuts.length > 0 && (
                         <section className="mb-6">
@@ -492,9 +500,6 @@ export function ManagerHome({ onNavigate }) {
                             sub={c.costoXkg != null ? `Prom. ponderado · ${rango.etiqueta.toLowerCase()}` : 'Sin lotes costeables en el período'}
                             Icon={FlaskConical} color="violet"
                             onClick={() => setModal('costo_kg')} />
-                        <KpiCard label="Lotes sin envasar"     value={c.sinEmpacar} sub={c.sinEmpacar > 0 ? 'Requiere atención' : 'Al día'}
-                            Icon={Package} color={c.sinEmpacar > 0 ? 'amber' : 'slate'}
-                            onClick={() => setModal('sin_envasar')} />
                         <DualValueCard
                             label="Inventario PT"
                             value1={c.capitalPT > 0 ? `$${c.capitalPT.toFixed(0)}` : '—'}
@@ -1042,64 +1047,6 @@ export function ManagerHome({ onNavigate }) {
                         );
                     })()}
 
-                    {/* Sin envasar */}
-                    {modal === 'sin_envasar' && data && (() => {
-                        const sinEnvLogs = data.logs
-                            .filter(l => !l.empaqueFinalizado && (l.disposicion === 'guardar_todo' || l.disposicion === 'mixto'))
-                            .sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? da - db_ : 0; });
-                        const now = new Date();
-                        return (
-                            <KpiModal title="Lotes Pendientes de Envasar" onClose={close}>
-                                <div className="space-y-3">
-                                    {sinEnvLogs.length === 0 ? (
-                                        <div className="text-center py-8">
-                                            <CheckCircle size={32} className="text-emerald-400 mx-auto mb-2" />
-                                            <p className="text-emerald-400 font-semibold">¡Al día! Sin lotes pendientes.</p>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <p className="text-amber-400 text-sm">{sinEnvLogs.length} lote{sinEnvLogs.length !== 1 ? 's' : ''} pendiente{sinEnvLogs.length !== 1 ? 's' : ''} de empacar</p>
-                                            <div className="divide-y divide-slate-700/50">
-                                                {sinEnvLogs.map(log => {
-                                                    const d = logDate(log);
-                                                    const daysAgo = d ? Math.floor((now - d) / 86400000) : null;
-                                                    // Un lote de hace 89 días no es trabajo pendiente: es un lote
-                                                    // que quedó colgado. La lista tiene que LLEVAR a él para poder
-                                                    // cerrarlo, no solo mostrarlo. El destino es Producción —
-                                                    // el Historial filtra `estado === 'completada'` y estos no
-                                                    // siempre lo están — y solo si el rol ve ese módulo.
-                                                    const destino = veProduccion ? 'production' : null;
-                                                    return (
-                                                        <button key={log.id} type="button"
-                                                            onClick={() => { if (!destino) return; close(); onNavigate?.(destino, { logId: log.id }); }}
-                                                            disabled={!destino}
-                                                            title={destino ? undefined : 'Se abre desde Producción'}
-                                                            className={`w-full text-left py-3 flex items-center gap-3 rounded-lg transition-colors ${
-                                                                destino ? 'hover:bg-slate-700/30 active:bg-slate-700/50' : 'cursor-default'
-                                                            }`}>
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
-                                                                <p><Lote>{(log.lote || log.id).slice(0, 20)}</Lote></p>
-                                                            </div>
-                                                            <div className="shrink-0 text-right text-xs">
-                                                                <p className="text-slate-400">{fmtL(log.litrosIngresados || 0)}</p>
-                                                                {daysAgo != null && (
-                                                                    <p className={daysAgo > 3 ? 'text-rose-400' : 'text-amber-400'}>
-                                                                        hace {daysAgo} día{daysAgo !== 1 ? 's' : ''}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                            {destino && <ChevronRight size={14} className="text-slate-600 shrink-0" />}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            </KpiModal>
-                        );
-                    })()}
                 </div>
             )}
         </Shell>

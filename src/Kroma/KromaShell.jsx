@@ -73,6 +73,18 @@ const ALL_NAV_ITEMS = [
     { id: 'quality',       label: 'Calidad',             Icon: ShieldCheck,   modulo: 'dashboardsGerenciales', section: 'Gerencial' },
 ];
 
+// ─── Barra de abajo en el teléfono (pedido del dueño, 19-nov) ────────────────
+// Las 3 o 4 pantallas de cada oficio, a un toque, y «Más» abre el menú
+// completo. Solo se muestran las que la persona puede ver.
+const TABS_POR_ROL = {
+    kroma_operario:  ['home', 'production', 'milk', 'materials_inv'],
+    kroma_admin:     ['home', 'warehouses', 'despacho', 'materials_inv'],
+    kroma_gerencial: ['home', 'warehouses', 'kpis', 'history'],
+    master:          ['home', 'production', 'warehouses', 'despacho'],
+    kroma_owner:     ['home', 'production', 'warehouses', 'despacho'],
+};
+const TAB_CORTO = { production: 'Producción', milk: 'Leche', materials_inv: 'Insumos', warehouses: 'Almacenes', despacho: 'Despachos', kpis: 'KPIs', history: 'Historial', home: 'Inicio' };
+
 const ROLE_LABELS = {
     master:          'Master',
     kroma_owner:     'Dueño',
@@ -252,6 +264,11 @@ function KromaInner({ onExitKroma }) {
         ? currentView
         : 'home';
     const activeNavLabel = visibleNavItems.find(n => n.id === activeView)?.label || 'Inicio';
+    const tabs = (TABS_POR_ROL[kromaRole] || TABS_POR_ROL.kroma_admin)
+        .map(id => visibleNavItems.find(n => n.id === id))
+        .filter(Boolean)
+        .slice(0, 4);
+    const enTab = tabs.some(t => t.id === activeView);
 
     // onNavigate = called from home tiles/shortcuts → track return path.
     // El 2º argumento lleva a DÓNDE exactamente: p. ej. abrir una producción
@@ -298,7 +315,7 @@ function KromaInner({ onExitKroma }) {
             {/* ── Top Header ── */}
             <header className="box-content h-14 pt-safe bg-slate-900 border-b border-slate-800 flex items-center px-4 shrink-0 z-20">
                 {/* Mobile hamburger (hidden when back button is shown) */}
-                {!prevView && (
+                {!prevView && tabs.length === 0 && (
                     <button
                         className="md:hidden mr-3 text-slate-400 hover:text-white p-1 rounded"
                         onClick={() => setSidebarOpen(s => !s)}
@@ -477,6 +494,33 @@ function KromaInner({ onExitKroma }) {
                     {renderPage(activeView, kromaRole, kromaUser, onNavigate, navParams)}
                 </main>
             </div>
+
+            {/* ── Barra de abajo (teléfono) ── */}
+            {tabs.length > 0 && (
+                <nav className="md:hidden shrink-0 bg-slate-900 border-t border-slate-800 pb-safe z-20">
+                    <div className="flex">
+                        {tabs.map(({ id, Icon }) => {
+                            const activo = activeView === id && !sidebarOpen;
+                            return (
+                                <button key={id} onClick={() => handleNav(id)}
+                                    className={`flex-1 flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-semibold ${
+                                        activo ? 'text-emerald-400' : 'text-slate-500'
+                                    }`}>
+                                    <Icon size={22} />
+                                    {TAB_CORTO[id] || id}
+                                </button>
+                            );
+                        })}
+                        <button onClick={() => setSidebarOpen(o => !o)}
+                            className={`flex-1 flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-semibold ${
+                                sidebarOpen || !enTab ? 'text-emerald-400' : 'text-slate-500'
+                            }`}>
+                            <Menu size={22} />
+                            Más
+                        </button>
+                    </div>
+                </nav>
+            )}
         </div>
     );
 }
