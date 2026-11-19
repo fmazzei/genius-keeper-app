@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-19-kroma-facil",
+    fecha: "2026-11-19",
+    roles: ["master"],
+    titulo: "Kroma m\xE1s f\xE1cil para la planta",
+    resumen: "En Producci\xF3n y Leche, dejar el dedo en + o \u2212 hace correr la cantidad y tocar el n\xFAmero abre el teclado (acepta coma). Cada paso dice en una l\xEDnea lo que pide la ficha y el resto queda plegado. El pH y la temperatura de la cuajada se anotan al sacarla, con el tiempo que midi\xF3 la app (se puede corregir). A la quesera ya no le aparecen avisos de insumos (siguen llegando a administraci\xF3n), y el tel\xE9fono recuerda qui\xE9n entr\xF3."
+  },
+  {
     id: "2026-11-18-pdf-rapido",
     fecha: "2026-11-18",
     roles: [],

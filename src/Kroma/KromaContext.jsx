@@ -5,6 +5,26 @@ import { defaultEditar, efectivo, puedeVerCostos } from './permisos.js';
 
 const KromaContext = createContext(undefined);
 
+// Quién está usando Kroma en este teléfono. localStorage (y no sessionStorage)
+// para que sobreviva al cerrar la app; todo en try/catch porque en algunos
+// WebViews el almacenamiento está apagado y no puede impedir entrar.
+const CLAVE = 'kromaActiveUser';
+function leerGuardado() {
+    try {
+        const t = localStorage.getItem(CLAVE) || sessionStorage.getItem(CLAVE);
+        return t ? JSON.parse(t) : null;
+    } catch { return null; }
+}
+function guardar(user) {
+    const conCuenta = { ...user, authUid: auth.currentUser?.uid || user.authUid || null };
+    try { localStorage.setItem(CLAVE, JSON.stringify(conCuenta)); } catch { /* sin almacenamiento */ }
+    try { sessionStorage.removeItem(CLAVE); } catch { /* idem */ }
+}
+function borrarGuardado() {
+    try { localStorage.removeItem(CLAVE); } catch { /* idem */ }
+    try { sessionStorage.removeItem(CLAVE); } catch { /* idem */ }
+}
+
 export const KromaProvider = ({ children }) => {
     const [kromaUser, setKromaUser] = useState(null);
     // true mientras se revisa si la cuenta de GK autenticada es una cuenta
@@ -14,14 +34,30 @@ export const KromaProvider = ({ children }) => {
     useEffect(() => {
         let cancelled = false;
 
-        try {
-            const saved = sessionStorage.getItem('kromaActiveUser');
-            if (saved) {
-                setKromaUser(JSON.parse(saved));
-                setKromaLoading(false);
-                return;
+        // La persona queda RECORDADA en el teléfono (pedido del dueño, 19-nov:
+        // entrar tiene que ser tan fácil como mandar un WhatsApp). Antes se
+        // guardaba en sessionStorage y en el iPhone había que elegirse de nuevo
+        // cada vez que se abría la app. Solo vale para la misma cuenta de la
+        // empresa, y su rol y permisos se releen en segundo plano para que un
+        // cambio del máster (o una baja) se aplique sin pedir nada.
+        const saved = leerGuardado();
+        const uidAuth = auth.currentUser?.uid || null;
+        if (saved && (!saved.authUid || !uidAuth || saved.authUid === uidAuth)) {
+            setKromaUser(saved);
+            setKromaLoading(false);
+            if (saved.viaPicker && saved.id) {
+                getDoc(doc(db, 'kroma_users', saved.id)).then(snap => {
+                    if (cancelled) return;
+                    const d = snap.exists() ? snap.data() : null;
+                    if (!d || d.active === false) { borrarGuardado(); setKromaUser(null); return; }
+                    const { pinHash, ...resto } = d; // eslint-disable-line no-unused-vars
+                    const fresco = { ...saved, ...resto, id: saved.id, viaPicker: true };
+                    setKromaUser(fresco);
+                    guardar(fresco);
+                }).catch(() => { /* sin señal: se queda con lo guardado */ });
             }
-        } catch {}
+            return () => { cancelled = true; };
+        }
 
         // Sin sesión guardada: si la cuenta de GK autenticada es una cuenta
         // real de Kroma (creada vía crearEmpresaConUsuario/crearUsuarioEmpresa,
@@ -45,7 +81,7 @@ export const KromaProvider = ({ children }) => {
                     };
                     if (!cancelled) {
                         setKromaUser(user);
-                        try { sessionStorage.setItem('kromaActiveUser', JSON.stringify(user)); } catch {}
+                        guardar(user);
                     }
                 }
             } catch {
@@ -60,14 +96,15 @@ export const KromaProvider = ({ children }) => {
     }, []);
 
     const selectUser = (user) => {
-        const withPicker = { ...user, viaPicker: true };
+        const { pinHash, ...sinPin } = user || {}; // eslint-disable-line no-unused-vars
+        const withPicker = { ...sinPin, viaPicker: true };
         setKromaUser(withPicker);
-        try { sessionStorage.setItem('kromaActiveUser', JSON.stringify(withPicker)); } catch {}
+        guardar(withPicker);
     };
 
     const clearUser = () => {
         setKromaUser(null);
-        try { sessionStorage.removeItem('kromaActiveUser'); } catch {}
+        borrarGuardado();
     };
 
     const kromaRole = kromaUser?.role || null;
