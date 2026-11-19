@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-19-kroma-facil',
+        fecha: '2026-11-19',
+        roles: ['master'],
+        titulo: 'Kroma más fácil para la planta',
+        resumen: 'En Producción y Leche, dejar el dedo en + o − hace correr la cantidad y tocar el número abre el teclado (acepta coma). El pH de la cuajada se anota al sacarla y el tiempo lo mide la app. A la quesera ya no le aparecen avisos de insumos (siguen llegando a administración), y el teléfono recuerda quién entró.',
+    },
+    {
         id: '2026-11-18-pdf-rapido',
         fecha: '2026-11-18',
         roles: [],

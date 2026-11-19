@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import CampoNumero from '@/Kroma/Components/CampoNumero.jsx';
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, query, where, serverTimestamp } from 'firebase/firestore';
 import { precioLecheDeProveedor, fleteDeRecepcion } from '@/Kroma/costeoLote.js';
 import { leerConfigLeche } from '@/Kroma/configCostos.js';
@@ -21,7 +22,6 @@ const DEFAULT_PARAM_CONFIG = [
     { id: 'brix',        label: '°Brix',       unit: '°Bx',  step: 0.1,   decimals: 1, defaultValue: 11.5,  min: 5.0,   max: 20.0  },
 ];
 
-const LITER_STEPS    = [1, 5, 10, 50];
 const EDIT_WINDOW_MS = 10 * 60 * 1000;
 const STEP_LABELS    = ['Ingreso', 'Parámetros', 'Destino'];
 const CONFIG_DOC_ID  = 'milk_params';
@@ -110,64 +110,20 @@ function SecLabel({ children }) {
     );
 }
 
+// + y − que corren al dejar el dedo puesto, y el número se escribe con el
+// teclado (pedido del dueño, 19-nov). Ver CampoNumero.
 function ParamStepper({ param, value, onChange }) {
     const { step, decimals, label, unit, min, max, hint } = param;
-    const decrement = () => {
-        const next = +(value - step).toFixed(decimals);
-        onChange(min !== undefined ? Math.max(min, next) : next);
-    };
-    const increment = () => {
-        const next = +(value + step).toFixed(decimals);
-        onChange(max !== undefined ? Math.min(max, next) : next);
-    };
     return (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-            <SecLabel>{label}{unit && ` (${unit})`}</SecLabel>
-            <div className="flex items-center gap-3">
-                <button type="button" onClick={decrement} disabled={min !== undefined && value <= min}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold disabled:opacity-30 disabled:cursor-not-allowed">
-                    −
-                </button>
-                <div className="flex-1 bg-slate-900 rounded-xl px-4 py-3.5 text-center">
-                    <span className="text-white text-2xl font-mono font-bold">{value.toFixed(decimals)}</span>
-                    {unit && <span className="text-slate-400 text-sm ml-2">{unit}</span>}
-                </div>
-                <button type="button" onClick={increment} disabled={max !== undefined && value >= max}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold disabled:opacity-30 disabled:cursor-not-allowed">
-                    +
-                </button>
-            </div>
-            {hint && <p className="text-slate-500 text-xs mt-2">{hint}</p>}
+            <CampoNumero label={label} value={value} onChange={onChange} unit={unit}
+                step={step} decimales={decimals} min={min} max={max} ayuda={hint} />
         </div>
     );
 }
 
 function LitrosStepper({ value, onChange }) {
-    const [stepIdx, setStepIdx] = useState(2);
-    const step = LITER_STEPS[stepIdx];
-    return (
-        <div>
-            <SecLabel>Litros recibidos</SecLabel>
-            <div className="flex gap-1 mb-2">
-                {LITER_STEPS.map((s, i) => (
-                    <button key={s} type="button" onClick={() => setStepIdx(i)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-semibold ${
-                            stepIdx === i ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                        }`}>±{s}</button>
-                ))}
-            </div>
-            <div className="flex items-center gap-3">
-                <button type="button" onClick={() => onChange(Math.max(0, value - step))}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">−</button>
-                <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
-                    <span className="text-white text-2xl font-mono font-bold">{value}</span>
-                    <span className="text-slate-400 text-sm ml-2">L</span>
-                </div>
-                <button type="button" onClick={() => onChange(value + step)}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">+</button>
-            </div>
-        </div>
-    );
+    return <CampoNumero label="Litros recibidos" value={value} onChange={onChange} unit="L" step={1} min={0} />;
 }
 
 function StepBar({ current }) {

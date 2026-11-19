@@ -1169,7 +1169,8 @@ export default function MaterialsInventoryPage({ params = null }) {
                 )}
             </div>
 
-            <AlertsBanner alerts={alerts} onDismiss={dismissAlert} />
+            {/* Al operario no: los avisos de stock son de quien compra (19-nov). */}
+            {kromaRole !== 'kroma_operario' && <AlertsBanner alerts={alerts} onDismiss={dismissAlert} />}
 
             {lowCount > 0 && (
                 <div className="mx-5 mb-3 flex items-center gap-3 bg-amber-900/30 border border-amber-700/50 rounded-xl px-4 py-3 shrink-0">

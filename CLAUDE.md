@@ -2280,6 +2280,15 @@ credencial, nunca por un dato auxiliar que se puede reconstruir, y (2) nombrar
 la causa real. Si una pantalla de acceso puede mostrar el mismo mensaje para dos
 causas distintas, una de las dos deja a alguien afuera sin saber por qué.
 
+### Kroma fácil para la planta, primera vuelta (2026-11-19) ✅ (rama `claude/kroma-facil`)
+
+Pedido del dueño: «para que la gente use la app tiene que ser tan fácil como mandarme un WhatsApp con el inventario o escribirlo en un papel». Datos que lo explican: Diana empezó 4 producciones en la app (22-jul, 27-ago, 6-sep, 30-sep) y las cuatro se reemplazaron por la planilla de papel; la del 30-sep quedó abierta en el paso 1. Luis no va a usar la app: los despachos y el producto terminado los carga María José.
+- **`src/Kroma/Components/CampoNumero.jsx`**: EL control de cantidades. + y − corren con el dedo puesto (`usePasoSostenido`, que ahora le pasa a la acción cuántos pasos lleva, y `pasoAcelerado`: ×5 desde el paso 10, ×10 desde el 25) y tocar el número abre el teclado (`type="text" inputMode="decimal"`, acepta coma; se guarda en cuanto es un número y se ordena al salir). Puros: `leerNumero`, `mostrarNumero`, `sumarPaso`. Lo usan TODOS los valores de Producción (`NumStepper`, `ParamInput`, `LitrosStepper`, `NumPadField` —el teclado de calculadora propio se retiró—, la cantidad real de cada insumo) y de Leche (`ParamStepper`, `LitrosStepper`). **Regla: un valor nuevo en Kroma usa `CampoNumero`, nunca `type="number"`.**
+- **Lo que se sabe al terminar un paso largo se pide al retomarlo** (`esPasoLargo`, `AL_RETOMAR`, `AlRetomar` en `DailyProductionPage`): un cuajado de 24 h o un desuerado de 2 días se cierra cuando EMPIEZA a esperar, así que su pH de salida y su tiempo real no se pueden pedir ahí. Se piden arriba del paso siguiente («Al sacar la cuajada»: pH de la cuajada; «Al terminar el desuerado»: pH) y se guardan en el registro del paso largo (`phSalida` / `tiempoCoagulacionReal` del cuajado; `phPost` / `tiempo` del desuerado), así que el reporte no cambia. El tiempo lo mide la app (desde que se cerró el paso largo hasta que se abrió el siguiente) y no se pregunta. Un paso corto los sigue pidiendo en su lugar.
+- **La quesera no ve avisos de insumos**: ni en su inicio (`AvisosKroma`), ni en Insumos (`AlertsBanner`), ni en el proceso (stock bajo / faltó inventario, tampoco como notificación del navegador). Se siguen escribiendo en `kroma_alerts` para administración.
+- **El teléfono recuerda quién entró** (`KromaContext`): la persona elegida se guarda en `localStorage` (antes `sessionStorage`: en el iPhone había que elegirse cada vez que se abría la app) con el uid de la cuenta de la empresa (`authUid`; otra cuenta no la hereda) y sin `pinHash`. Al abrir se relee `kroma_users/{id}` en segundo plano: rol, módulos y permisos al día, y si la persona se dio de baja vuelve al selector. «Cambiar usuario» la borra.
+- Prueba: el control en un iPhone 13 emulado (un toque suma 0,01; el dedo puesto corre; «6,45» con coma queda 6,45; 534 L escritos).
+
 ### Kroma: correcciones del 11-oct ✅
 
 - **PIN de empresa con freno** (ver "Freno a la adivinanza del PIN" arriba).

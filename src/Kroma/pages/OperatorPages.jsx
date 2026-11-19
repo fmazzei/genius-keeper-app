@@ -62,7 +62,7 @@ function fmtHoraHold(ts) {
 }
 
 export function OperatorHome({ onNavigate }) {
-    const { kromaUser } = useKroma();
+    const { kromaUser, kromaRole } = useKroma();
     const empresaId = kromaUser?.empresaId || 'lacteoca';
     const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
 
@@ -254,8 +254,13 @@ export function OperatorHome({ onNavigate }) {
                 </section>
             )}
 
-            {/* ── Avisos del inventario ── */}
-            <AvisosKroma alertas={data?.alertas || []} userId={kromaUser?.id} />
+            {/* ── Avisos del inventario ──
+                Al operario NO se le muestran (pedido del dueño, 19-nov: con los
+                avisos de falta de insumos «se enreda y no sabe qué hacer»). Las
+                compras son de administración: los avisos siguen llegando allá. */}
+            {kromaRole !== 'kroma_operario' && (
+                <AvisosKroma alertas={data?.alertas || []} userId={kromaUser?.id} />
+            )}
 
             {/* ── Accesos directos (si el máster se los configuró) ── */}
             {shortcuts.length > 0 && (

@@ -13,7 +13,8 @@ import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import { unidadesDeConsumo, unidadInicial, pasoDe, convertirConsumo, leerCantidad, etiquetaUnidad } from '@/Kroma/consumoUnidades.js';
-import { usePasoSostenido } from '@/Kroma/pasoSostenido.js';
+import CampoNumero from '@/Kroma/Components/CampoNumero.jsx';
+import { usePasoSostenido, pasoAcelerado } from '@/Kroma/pasoSostenido.js';
 import { costoBasePorKgTeorico, precioLecheDeProveedor, componenteFlete, fleteDeRecepcion } from '@/Kroma/costeoLote.js';
 import { leerConfigLeche, leerRecepciones } from '@/Kroma/configCostos.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
@@ -40,6 +41,26 @@ const HOLDABLE = new Set([
     'maduracion', 'moldeado', 'prensado', 'agitacion_simple',
 ]);
 const HOLD_THRESHOLD_MIN = 30; // suggest hold if planned time > 30 min
+
+// Un paso LARGO (cuajado de 24 h, desuerado de 2 días) se cierra cuando empieza
+// a esperar, no cuando termina. Lo que solo se sabe al terminar —el pH de la
+// cuajada, cuánto coaguló— no se puede pedir ahí (pedido del dueño, 19-nov: «el
+// pH de salida de la cuajada debe estar en el siguiente paso, cuando se saca a
+// desuerar, porque es ahí cuando se sabe»). Se pide al RETOMAR, en el paso
+// siguiente, y se guarda en el registro del paso largo, como siempre.
+const esPasoLargo = (bloque) => !!bloque && HOLDABLE.has(bloque.tipo) && getPlannedMinutes(bloque) > HOLD_THRESHOLD_MIN;
+const AL_RETOMAR = {
+    cuajado: {
+        titulo: 'Al sacar la cuajada',
+        ph: { key: 'phSalida', label: 'pH de la cuajada', def: () => 6.2 },
+        tiempo: { key: 'tiempoCoagulacionReal', unidad: (p) => p.unidadTiempoCoagulacion || 'h', texto: 'Coaguló' },
+    },
+    desuerado: {
+        titulo: 'Al terminar el desuerado',
+        ph: { key: 'phPost', label: 'pH al terminar el desuerado', def: (p) => p.phPost ?? 5.8 },
+        tiempo: { key: 'tiempo', unidad: () => 'h', texto: 'Desueró' },
+    },
+};
 
 const BLOCK_META = {
     pasteurizacion:  { label: 'Pasteurización',    color: 'text-orange-400',  bg: 'bg-orange-500/15',  border: 'border-orange-500/30'  },
@@ -200,154 +221,25 @@ function RefRow({ label, value }) {
     );
 }
 
+// Todos los valores con + y − que corren al dejar el dedo puesto, y el número
+// se escribe con el teclado (pedido del dueño, 19-nov). Ver CampoNumero.
 function NumStepper({ label, value, onChange, unit = '', step = 1, min }) {
-    const display = Number.isInteger(value) ? value : value.toFixed(String(step).split('.')[1]?.length || 1);
-    return (
-        <div>
-            {label && <SecLabel>{label}</SecLabel>}
-            <div className="flex items-center gap-3">
-                <button type="button"
-                    onClick={() => onChange(+(value - step).toFixed(6))}
-                    className="w-13 h-13 w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 text-white text-xl font-bold flex items-center justify-center shrink-0">
-                    −
-                </button>
-                <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-center">
-                    <span className="text-white text-xl font-mono font-bold">{display}</span>
-                    {unit && <span className="text-slate-400 text-sm ml-1.5">{unit}</span>}
-                </div>
-                <button type="button"
-                    onClick={() => onChange(+(value + step).toFixed(6))}
-                    className="w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 text-white text-xl font-bold flex items-center justify-center shrink-0">
-                    +
-                </button>
-            </div>
-        </div>
-    );
+    return <CampoNumero label={label} value={value} onChange={onChange} unit={unit} step={step} min={min} />;
 }
 
-// Calculator-style numeric pad — opens automatically if defaultOpen=true
-function NumPadField({ label, value, onChange, unit = '', decimals = 2, defaultOpen = false }) {
-    const [open, setOpen] = useState(defaultOpen);
-    const [raw, setRaw] = useState(() => defaultOpen && value > 0 ? String(value) : '');
-
-    function pressKey(k) {
-        if (k === '⌫') {
-            setRaw(r => {
-                const next = r.slice(0, -1);
-                const n = parseFloat(next);
-                if (next === '' || next === '-') return next;
-                if (!isNaN(n)) onChange(n);
-                return next;
-            });
-            return;
-        }
-        if (k === 'OK') {
-            const n = parseFloat(raw);
-            onChange(!isNaN(n) && n >= 0 ? n : 0);
-            setOpen(false);
-            setRaw('');
-            return;
-        }
-        if (k === '.') {
-            if (decimals === 0) return;
-            setRaw(r => r.includes('.') ? r : (r === '' ? '0.' : r + '.'));
-            return;
-        }
-        // digit
-        setRaw(r => {
-            const next = r === '0' ? k : r + k;
-            const dot = next.indexOf('.');
-            if (dot >= 0 && next.length - dot - 1 > decimals) return r;
-            const n = parseFloat(next);
-            if (!isNaN(n)) onChange(n);
-            return next;
-        });
-    }
-
-    const displayed = open
-        ? (raw === '' ? '0' : raw)
-        : (value === 0 ? '0' : String(value));
-
-    return (
-        <div>
-            {label && <SecLabel>{label}</SecLabel>}
-            <button type="button"
-                onClick={() => { setOpen(o => { if (!o) setRaw(''); return !o; }); }}
-                className={`w-full rounded-xl border px-4 py-3.5 flex items-baseline justify-between transition-colors ${
-                    open ? 'bg-slate-700 border-emerald-500' : 'bg-slate-800 border-slate-600 hover:border-slate-500'
-                }`}>
-                <span className="text-white font-bold text-2xl font-mono tabular-nums">{displayed}</span>
-                {unit && <span className="text-slate-400 text-sm">{unit}</span>}
-            </button>
-            {open && (
-                <div className="mt-1 rounded-2xl overflow-hidden border border-slate-700 select-none">
-                    <div className="grid grid-cols-3 divide-x divide-y divide-slate-700">
-                        {['7','8','9','4','5','6','1','2','3','⌫','0','.'].map(k => (
-                            <button key={k} type="button" onPointerDown={e => { e.preventDefault(); pressKey(k); }}
-                                className={`py-4 text-xl font-bold font-mono bg-slate-800 active:bg-slate-600 transition-colors ${
-                                    k === '⌫' ? 'text-red-400' : 'text-white'
-                                }`}>
-                                {k}
-                            </button>
-                        ))}
-                    </div>
-                    <button type="button" onPointerDown={e => { e.preventDefault(); pressKey('OK'); }}
-                        className="w-full py-4 bg-emerald-700 active:bg-emerald-600 text-white text-lg font-bold transition-colors">
-                        OK ✓
-                    </button>
-                </div>
-            )}
-        </div>
-    );
+// Antes era un teclado de calculadora propio; ahora es el mismo control de
+// todos los valores: + y − que corren y el teclado del teléfono para escribir.
+function NumPadField({ label, value, onChange, unit = '', decimals = 2 }) {
+    return <CampoNumero label={label} value={value} onChange={onChange} unit={unit}
+        step={decimals === 0 ? 1 : 0.1} decimales={decimals} min={0} />;
 }
 
 function LitrosStepper({ value, onChange, label = 'Litros a procesar' }) {
-    const STEPS = [1, 5, 10, 50];
-    const [si, setSi] = useState(2);
-    return (
-        <div>
-            <SecLabel>{label}</SecLabel>
-            <div className="flex gap-1 mb-2">
-                {STEPS.map((s, i) => (
-                    <button key={s} type="button" onClick={() => setSi(i)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-semibold ${
-                            si === i ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                        }`}>
-                        ±{s}
-                    </button>
-                ))}
-            </div>
-            <div className="flex items-center gap-3">
-                <button type="button" onClick={() => onChange(Math.max(0, value - STEPS[si]))}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 text-white text-2xl font-bold flex items-center justify-center">−</button>
-                <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
-                    <span className="text-white text-2xl font-mono font-bold">{value}</span>
-                    <span className="text-slate-400 text-sm ml-2">L</span>
-                </div>
-                <button type="button" onClick={() => onChange(value + STEPS[si])}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 text-white text-2xl font-bold flex items-center justify-center">+</button>
-            </div>
-        </div>
-    );
+    return <CampoNumero label={label} value={value} onChange={onChange} unit="L" step={1} min={0} />;
 }
 
 function ParamInput({ label, value, onChange, unit, step = 0.1 }) {
-    const dec = String(step).split('.')[1]?.length ?? 1;
-    return (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">{label}</p>
-            <div className="flex items-center gap-2">
-                <button type="button" onClick={() => onChange(+(value - step).toFixed(dec + 1))}
-                    className="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center shrink-0">−</button>
-                <input type="number" value={value} step={step}
-                    onChange={e => onChange(Number(e.target.value))}
-                    className="flex-1 min-w-0 bg-transparent text-white font-mono text-sm text-center focus:outline-none" />
-                <button type="button" onClick={() => onChange(+(value + step).toFixed(dec + 1))}
-                    className="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center shrink-0">+</button>
-            </div>
-            {unit && <p className="text-slate-600 text-xs text-center mt-1">{unit}</p>}
-        </div>
-    );
+    return <CampoNumero label={label} value={value} onChange={onChange} unit={unit} step={step} compacto />;
 }
 
 // Returns true when a material comes in countable discrete packages (sobres, envases…)
@@ -400,8 +292,8 @@ function ConsumoFila({ c, onChange }) {
         const v = Math.max(0, +n.toFixed(3));
         onChange({ ...c, cantidad: v, texto: String(v).replace('.', ',') });
     };
-    const menos = usePasoSostenido(() => fijar((c.cantidad || 0) - paso));
-    const mas   = usePasoSostenido(() => fijar((c.cantidad || 0) + paso));
+    const menos = usePasoSostenido((t) => fijar((c.cantidad || 0) - pasoAcelerado(paso, t)));
+    const mas   = usePasoSostenido((t) => fijar((c.cantidad || 0) + pasoAcelerado(paso, t)));
     const cambiarUnidad = (u) => {
         if (u === c.unidad) return;
         const v = +convertirConsumo(c.cantidad || 0, c.unidad, u).toFixed(3);
@@ -713,15 +605,10 @@ function DosisRow({ nombre, cantidadRef, unidadRef, litrosNetos, valorReal, onCh
                 </span>
             </div>
             <div>
-                <p className="text-slate-500 text-xs mb-1">Cantidad real añadida * ({unidadRef})</p>
-                <input
-                    type="number"
-                    value={valorReal}
-                    onChange={e => onChangeReal(Number(e.target.value))}
-                    step={0.001}
-                    className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2.5 text-white font-mono text-base focus:outline-none focus:border-teal-500"
-                    placeholder={String(teórico)}
-                />
+                <p className="text-slate-500 text-xs mb-1">Cantidad real añadida *</p>
+                <CampoNumero value={valorReal} onChange={onChangeReal}
+                    step={teórico >= 50 ? 1 : teórico >= 5 ? 0.1 : 0.01} decimales={3} min={0}
+                    unit={unidadRef} placeholder={String(teórico)} />
                 {sobresReal !== null && valorReal > 0 && (
                     <p className="text-teal-700 text-xs mt-1 text-right font-mono">≈ {sobresReal} {mat.presentacion}</p>
                 )}
@@ -939,13 +826,20 @@ function CuajadoEditor({ bloque, litrosNetos, reg, onChange, materialsMap }) {
             <NumStepper label="pH pre-cuajado real"
                 value={reg.phPreCuajadoReal ?? p.phPreCuajado ?? 6.6}
                 onChange={v => onChange({ ...reg, phPreCuajadoReal: v })} step={0.01} />
-            <NumStepper label={`Tiempo coagulación real (${p.unidadTiempoCoagulacion || 'h'})`}
-                value={reg.tiempoCoagulacionReal ?? p.tiempoCoagulacion ?? 14}
-                onChange={v => onChange({ ...reg, tiempoCoagulacionReal: v })}
-                unit={p.unidadTiempoCoagulacion || 'h'} step={0.5} />
-            <NumStepper label="pH de salida"
-                value={reg.phSalida ?? 6.2}
-                onChange={v => onChange({ ...reg, phSalida: v })} step={0.01} />
+            {esPasoLargo(bloque) ? (
+                <p className="text-slate-400 text-sm bg-slate-800/60 rounded-xl px-4 py-3">
+                    El pH de la cuajada y el tiempo que coaguló se anotan en el paso siguiente,
+                    cuando la saques. El tiempo lo mide la app.
+                </p>
+            ) : <>
+                <NumStepper label={`Tiempo coagulación real (${p.unidadTiempoCoagulacion || 'h'})`}
+                    value={reg.tiempoCoagulacionReal ?? p.tiempoCoagulacion ?? 14}
+                    onChange={v => onChange({ ...reg, tiempoCoagulacionReal: v })}
+                    unit={p.unidadTiempoCoagulacion || 'h'} step={0.5} />
+                <NumStepper label="pH de la cuajada"
+                    value={reg.phSalida ?? 6.2}
+                    onChange={v => onChange({ ...reg, phSalida: v })} step={0.01} />
+            </>}
         </div>
     );
 }
@@ -1390,8 +1284,10 @@ function GenericEditor({ bloque, reg, onChange }) {
 
             {tipo === 'desuerado' && <>
                 <NumStepper label="Temperatura real (°C)" value={reg.temperatura ?? p.temperaturaAmbiente ?? 18} onChange={v => onChange({ ...reg, temperatura: v })} unit="°C" step={0.5} />
-                <NumStepper label="Tiempo real (h)" value={reg.tiempo ?? p.tiempo ?? 12} onChange={v => onChange({ ...reg, tiempo: v })} unit="h" step={0.5} />
-                <NumStepper label="pH post desuerado" value={reg.phPost ?? p.phPost ?? 5.8} onChange={v => onChange({ ...reg, phPost: v })} step={0.01} />
+                {!esPasoLargo(bloque) && <>
+                    <NumStepper label="Tiempo real (h)" value={reg.tiempo ?? p.tiempo ?? 12} onChange={v => onChange({ ...reg, tiempo: v })} unit="h" step={0.5} />
+                    <NumStepper label="pH post desuerado" value={reg.phPost ?? p.phPost ?? 5.8} onChange={v => onChange({ ...reg, phPost: v })} step={0.01} />
+                </>}
             </>}
 
             {tipo === 'moldeado' && <>
@@ -1461,11 +1357,59 @@ function GenericEditor({ bloque, reg, onChange }) {
 }
 
 // Dispatcher — picks the right editor per block type
-function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate, materialsMap, rutaLeche, catalogPresentaciones }) {
+// Lo que se anota del paso largo anterior al retomarlo (ver AL_RETOMAR). Se
+// guarda en el registro de ESE paso; el tiempo lo mide la app desde que se
+// cerró hasta que se abrió este.
+function AlRetomar({ bloqueAnterior, idxAnterior, bloquesData, iniciadoAt, onUpdate }) {
+    const cfg = AL_RETOMAR[bloqueAnterior.tipo];
+    const dataAnt = bloquesData[String(idxAnterior)] || {};
+    const regAnt = dataAnt.registros || {};
+    const p = bloqueAnterior.params || {};
+    const desde = dataAnt.completadoAt ? new Date(dataAnt.completadoAt) : null;
+    const hasta = iniciadoAt ? new Date(iniciadoAt) : new Date();
+    const minutos = desde ? Math.max(0, Math.round((hasta - desde) / 60000)) : null;
+    const unidad = cfg.tiempo.unidad(p);
+    const medido = minutos == null ? null : unidad === 'min' ? minutos : +(minutos / 60).toFixed(1);
+    const guardar = (cambios) => onUpdate(String(idxAnterior), { ...dataAnt, registros: { ...regAnt, ...cambios } });
+
+    useEffect(() => {
+        if (medido != null && regAnt[cfg.tiempo.key] == null) guardar({ [cfg.tiempo.key]: medido });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [medido]);
+
+    return (
+        <div className="bg-violet-950/40 border border-violet-700/50 rounded-2xl p-4 space-y-3 mb-5">
+            <p className="text-violet-200 font-bold text-base">{cfg.titulo}</p>
+            {medido != null && (
+                <p className="text-violet-300/90 text-sm">
+                    {cfg.tiempo.texto} <strong className="text-white">{String(medido).replace('.', ',')} {unidad}</strong> · lo midió la app
+                </p>
+            )}
+            <CampoNumero label={cfg.ph.label} step={0.01}
+                value={regAnt[cfg.ph.key] ?? cfg.ph.def(p)}
+                onChange={v => guardar({ [cfg.ph.key]: v })} />
+        </div>
+    );
+}
+
+function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate, materialsMap, rutaLeche, catalogPresentaciones, bloqueAnterior = null }) {
     const reg = bloquesData[String(idx)]?.registros || {};
     const onChange = newReg => onUpdate(String(idx), { ...(bloquesData[String(idx)] || {}), registros: newReg });
     const props = { bloque, reg, onChange };
+    const retomar = bloqueAnterior && esPasoLargo(bloqueAnterior) && AL_RETOMAR[bloqueAnterior.tipo];
+    const editor = <EditorDelPaso bloque={bloque} props={props} litrosIngresados={litrosIngresados} litrosNetos={litrosNetos}
+        materialsMap={materialsMap} rutaLeche={rutaLeche} catalogPresentaciones={catalogPresentaciones} />;
+    if (!retomar) return editor;
+    return (
+        <>
+            <AlRetomar bloqueAnterior={bloqueAnterior} idxAnterior={idx - 1} bloquesData={bloquesData}
+                iniciadoAt={bloquesData[String(idx)]?.iniciadoAt} onUpdate={onUpdate} />
+            {editor}
+        </>
+    );
+}
 
+function EditorDelPaso({ bloque, props, litrosIngresados, litrosNetos, materialsMap, rutaLeche, catalogPresentaciones }) {
     switch (bloque.tipo) {
         case 'pasteurizacion': return <PasteurizacionEditor {...props} litrosIngresados={litrosIngresados} rutaLeche={rutaLeche} />;
         case 'agregar_insumo':
@@ -1668,7 +1612,7 @@ function ReportBlockSummary({ bloque, data, litrosNetos = 0 }) {
             });
             if (reg.tiempoCoagulacionReal != null) rows.push({ l: `Tiempo coagulación real`,     v: `${reg.tiempoCoagulacionReal} ${p.unidadTiempoCoagulacion || 'h'}`, hi: true });
             if (p.tiempoCoagulacion       != null) rows.push({ l: `Tiempo coagulación teórico`,  v: `${p.tiempoCoagulacion} ${p.unidadTiempoCoagulacion || 'h'}` });
-            if (reg.phSalida              != null) rows.push({ l: 'pH de salida',                v: reg.phSalida, hi: true });
+            if (reg.phSalida              != null) rows.push({ l: 'pH de la cuajada al sacarla', v: reg.phSalida, hi: true });
             break;
         }
         case 'salado':
@@ -1679,6 +1623,11 @@ function ReportBlockSummary({ bloque, data, litrosNetos = 0 }) {
                 if (reg.titulacion)    rows.push({ l: 'Titulación', v: `${reg.titulacion} °D` });
                 if (reg.salinidad)     rows.push({ l: 'Salinidad', v: `${reg.salinidad} °Bé` });
             }
+            break;
+        case 'desuerado':
+            if (reg.temperatura != null) rows.push({ l: 'Temperatura', v: `${reg.temperatura} °C` });
+            if (reg.tiempo != null)      rows.push({ l: 'Tiempo de desuerado', v: `${reg.tiempo} h` });
+            if (reg.phPost != null)      rows.push({ l: 'pH al terminar', v: reg.phPost, hi: true });
             break;
         case 'moldeado':
             if (reg.phPostMoldeado) rows.push({ l: 'pH post-moldeado', v: reg.phPostMoldeado });
@@ -2326,7 +2275,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     // interruptor del panel. Un "Editar Producción" apagado a mano en su perfil
     // (p. ej. guardado antes de que el panel mandara) lo dejaba sin botón
     // "Nueva" y sin forma de saber por qué.
-    const canProducir = canEdit('produccionDiaria') || kromaRole === 'kroma_operario';
+    const esOperario = kromaRole === 'kroma_operario';
+    const canProducir = canEdit('produccionDiaria') || esOperario;
     const isMaster = kromaRole === 'master';
 
     const [fichas, setFichas]           = useState([]);
@@ -2744,8 +2694,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                     const msg = `⚠ Faltó inventario de ${nombre || inv.materialNombre}: se necesitaban `
                         + `${amountInBase.toFixed(2)} ${uni} y quedaron ${faltanteBase.toFixed(2)} ${uni} sin descontar. `
                         + `El stock de este material queda SOBRESTIMADO hasta que se cargue la compra que faltaba.`;
-                    newAlerts.push(msg);
-                    tryBrowserNotification('Faltó inventario', msg);
+                    // Al operario no se le interrumpe con esto (19-nov): queda en
+                    // los avisos de administración, que es quien compra.
+                    if (!esOperario) { newAlerts.push(msg); tryBrowserNotification('Faltó inventario', msg); }
                     await addDoc(collection(db, 'kroma_alerts'), {
                         tipo: 'faltante_inventario',
                         empresaId:      kromaUser?.empresaId || 'lacteoca',
@@ -2770,8 +2721,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                         : `${invTotalDisplay(updatedInv).toFixed(1)} ${inv.presentacionTipo || ''}`;
                     const msg = `⚠ Stock bajo: ${nombre || inv.materialNombre} — quedan ${total} (mín: ${inv.stockMinimo ?? 0} ${isGranelInv(inv) ? inv.unidadBase : inv.presentacionTipo})`;
 
-                    newAlerts.push(msg);
-                    tryBrowserNotification('Stock bajo', msg);
+                    if (!esOperario) { newAlerts.push(msg); tryBrowserNotification('Stock bajo', msg); }
 
                     await addDoc(collection(db, 'kroma_alerts'), {
                         tipo: 'stock_bajo',
@@ -3931,6 +3881,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                     materialsMap={materialsMap}
                                     rutaLeche={activeLog.rutaLeche}
                                     catalogPresentaciones={productsMap[activeLog.productoId]?.presentaciones || []}
+                                    bloqueAnterior={bloqueActualIdx > 0 ? bloques[bloqueActualIdx - 1] : null}
                                 />
                             </div>
 
