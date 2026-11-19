@@ -10,7 +10,7 @@
 // facturar.
 
 import React, { useState } from 'react';
-import { useEnLaMano } from '@/hooks/useEnLaMano.js';
+import { useEnLaMano, atrasadasPorFacturar } from '@/hooks/useEnLaMano.js';
 import { Hand, Receipt, Truck, ChevronDown, AlertTriangle, RefreshCw, Loader } from 'lucide-react';
 import { diaCaracas } from '@/utils/enLaMano.js';
 
@@ -60,6 +60,9 @@ export default function EnLaManoView({ datos: dado = null }) {
     const porFacturarUds = r.porFacturar.reduce((s, x) => s + x.unidades, 0);
     const dias = [...r.dias].reverse();
     const descuentos = r.dias.flatMap(d => d.retiros.filter(x => x.registradoComo === 'descuento'));
+    const enAlerta = new Set(atrasadasPorFacturar(r).facturas.map(f => f.numero));
+    const sinEntregaRoja = enAlerta.size > 0;
+    const sinEntregaUds = r.sinEntrega.reduce((s, x) => s + x.unidades, 0);
 
     return (
         <div className="space-y-4">
@@ -84,8 +87,8 @@ export default function EnLaManoView({ datos: dado = null }) {
                     nota="Retiradas de anaquel para devolver: van al camión a Barinas." />
             </div>
             <p className="text-xs text-slate-500">
-                Retirado − facturado = <b>{r.sinFacturar}</b> sin facturar: son las {r.enLaMano} en la mano más las {porFacturarUds} entregadas por facturar
-                {r.sinFacturar !== r.enLaMano + porFacturarUds ? ' (la diferencia la explican las facturas sin entrega anotada o lo repuesto y reubicado)' : ''}.
+                Retirado − facturado = <b>{r.sinFacturar}</b>: las {r.enLaMano} en la mano, más {porFacturarUds} entregadas por facturar
+                {sinEntregaUds > 0 ? <>, menos <b className="text-red-600">{sinEntregaUds} facturadas sin entrega</b></> : null}.
             </p>
 
             {r.porFacturar.length > 0 && (
@@ -109,17 +112,26 @@ export default function EnLaManoView({ datos: dado = null }) {
             )}
 
             {r.sinEntrega.length > 0 && (
-                <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                    <p className="px-4 py-3 text-sm font-bold text-slate-700 border-b border-slate-200">Facturado sin entrega anotada</p>
-                    <p className="px-4 pt-2 text-xs text-slate-500">Facturas de la ruta que ninguna visita del mercaderista registra como entregadas.</p>
+                <section className={`bg-white border rounded-2xl overflow-hidden ${sinEntregaRoja ? 'border-red-300' : 'border-slate-200'}`}>
+                    <p className={`px-4 py-3 text-sm font-bold border-b ${sinEntregaRoja ? 'text-red-700 bg-red-50 border-red-200' : 'text-slate-700 border-slate-200'}`}>
+                        Facturado sin entrega anotada{sinEntregaRoja ? ' · revisar hoy' : ''}
+                    </p>
+                    <p className="px-4 pt-2 text-xs text-slate-500">
+                        Se facturó más de lo que el mercaderista anotó como entregado. O la factura tiene unidades de más, o la visita está mal anotada.
+                    </p>
                     <div className="divide-y divide-slate-100">
                         {r.sinEntrega.map(x => (
                             <div key={x.numero} className="px-4 py-2.5 flex items-start gap-3">
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-semibold text-slate-800 truncate">{x.cliente}</p>
                                     <p className="text-xs text-slate-500">{x.numero} · {fmtDia(x.dia)}</p>
+                                    <p className={`text-xs mt-0.5 ${enAlerta.has(x.numero) ? 'text-red-600' : 'text-amber-700'}`}>
+                                        {x.parcial
+                                            ? `Facturadas ${x.facturadas}, entregó ${x.entregadas}: sobran ${x.unidades} en la factura.`
+                                            : 'Ninguna visita registra esta entrega.'}
+                                    </p>
                                 </div>
-                                <p className="text-lg font-black text-slate-700 shrink-0">{x.unidades}</p>
+                                <p className={`text-lg font-black shrink-0 ${enAlerta.has(x.numero) ? 'text-red-600' : 'text-slate-700'}`}>{x.unidades}</p>
                             </div>
                         ))}
                     </div>

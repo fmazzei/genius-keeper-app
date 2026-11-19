@@ -127,7 +127,7 @@ export default function AdministracionLayout({ user, onLogout }) {
         // corrección, lotes cerrados) y hace pickings, con el alcance del máster.
         ...(modOn('almacenComercial') ? [{ id: 'inventario', label: 'Almacén', Icon: Warehouse }] : []),
         // Lo que el mercaderista tiene en la mano y lo entregado sin factura.
-        ...(modOn('almacenComercial') ? [{ id: 'enLaMano', label: 'En la mano', Icon: Hand, dot: atrasadas.entregas.length }] : []),
+        ...(modOn('almacenComercial') ? [{ id: 'enLaMano', label: 'En la mano', Icon: Hand, dot: atrasadas.total }] : []),
     ];
     // Alertas del agente: su propia pestaña (con punto rojo), separada del
     // trabajo de pagar. Administración solo recibe avisos del agente (comisiones).
@@ -190,13 +190,22 @@ export default function AdministracionLayout({ user, onLogout }) {
             {/* Anaquel bajo (si el centro de notificaciones se lo da) y novedades */}
             <AlertaAnaquelBajo />
             <NovedadesApp />
-            {/* Alerta ROJA: el mercaderista entregó y no hay factura en Zoho. */}
-            {modOn('almacenComercial') && atrasadas.unidades > 0 && activeTab?.id !== 'enLaMano' && (
+            {/* Alerta ROJA: entregas sin factura y facturas sin entrega anotada. */}
+            {modOn('almacenComercial') && atrasadas.total > 0 && activeTab?.id !== 'enLaMano' && (
                 <button type="button" onClick={() => { setActive('enLaMano'); salirDelPago(); }}
                     className="shrink-0 w-full text-left bg-red-600 text-white px-4 py-2.5 flex items-center gap-3">
                     <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse shrink-0" />
                     <span className="flex-1 min-w-0 text-sm font-semibold leading-snug">
-                        {atrasadas.unidades} unidades entregadas sin factura ({atrasadas.entregas.length} entrega{atrasadas.entregas.length !== 1 ? 's' : ''} desde el {atrasadas.desde?.split('-').reverse().slice(0, 2).join('/')}). Hay que facturarlas.
+                        {atrasadas.unidades > 0 && (
+                            <span className="block">
+                                {atrasadas.unidades} unidades entregadas sin factura ({atrasadas.entregas.length} entrega{atrasadas.entregas.length !== 1 ? 's' : ''} desde el {atrasadas.desde?.split('-').reverse().slice(0, 2).join('/')}). Hay que facturarlas.
+                            </span>
+                        )}
+                        {atrasadas.facturas.length > 0 && (
+                            <span className="block">
+                                {atrasadas.unidadesFacturas} unidades facturadas sin entrega ({atrasadas.facturas.map(f => f.numero).join(', ')}). Revisa la factura o la visita.
+                            </span>
+                        )}
                     </span>
                     <span className="text-xs font-bold underline shrink-0">Ver</span>
                 </button>

@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-19-facturado-sin-entrega",
+    fecha: "2026-11-19",
+    roles: ["master", "gerencia", "administrador"],
+    titulo: "Alerta roja tambi\xE9n por lo facturado de m\xE1s",
+    resumen: "Si una factura lleva m\xE1s unidades de las que el mercaderista entreg\xF3, o ninguna visita registra su entrega, Administraci\xF3n ve la franja roja igual que con una entrega sin factura, y en \xABEn la mano\xBB se dice cu\xE1ntas sobran."
+  },
+  {
     id: "2026-11-19-factura-recien-llegada",
     fecha: "2026-11-19",
     roles: ["master"],

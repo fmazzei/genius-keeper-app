@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-19-facturado-sin-entrega',
+        fecha: '2026-11-19',
+        roles: ['master', 'gerencia', 'administrador'],
+        titulo: 'Alerta roja también por lo facturado de más',
+        resumen: 'Si una factura lleva más unidades de las que el mercaderista entregó, o ninguna visita registra su entrega, Administración ve la franja roja igual que con una entrega sin factura, y en «En la mano» se dice cuántas sobran.',
+    },
+    {
         id: '2026-11-19-factura-recien-llegada',
         fecha: '2026-11-19',
         roles: ['master'],
