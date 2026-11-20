@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-20-recepcion-retiro-mercaderista',
+        fecha: '2026-11-20',
+        roles: ['master', 'administrador'],
+        titulo: 'Recibir el camión cuando el mercaderista se queda con una parte',
+        resumen: 'Al recibir un despacho en Frimaca ahora puedes decir con cuánto se quedó el mercaderista para despacharlo de una vez. Todo se recibe y eso sale como picking a su nombre. En «En la mano» cada retiro dice si ya lo entregó, completo o en parte, y es alerta roja si pasan 2 días sin entregarlo o si entrega sin retiro anotado.',
+    },
+    {
         id: '2026-11-19-vencimiento-conteo-viejo',
         fecha: '2026-11-19',
         roles: ['master', 'gerencia'],

@@ -7,6 +7,7 @@
 
 import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { marcaMov } from './movInventario.js';
+import { registrarPicking } from './pickingOps.js';
 
 const norm = (s) => (s || '').trim().toLowerCase();
 
@@ -21,6 +22,7 @@ export async function recibirDespacho(db, {
     // presentación: 250 g y 1 kg del mismo lote se sumaban en una sola
     // fila). Varios renglones iguales se juntan antes de escribir.
     const grupos = new Map();
+    const grupoDeLinea = [];
     lineas.forEach((l, i) => {
         const recibida = Number(rows[i]?.cantidadRecibida) || 0;
         if (recibida <= 0) return;
@@ -30,6 +32,7 @@ export async function recibirDespacho(db, {
         const k = [norm(l.productoNombre), norm(l.presentacion), l.lote || '', l.fechaVencimiento || '', l.logId || '', l.costoUnitarioUsd || ''].join('|');
         const g = grupos.get(k) || { l, recibida: 0, notas: [] };
         g.recibida += recibida;
+        grupoDeLinea[i] = k;
         if (!rows[i]?.estadoOk) g.notas.push(rows[i]?.novedad || 'novedad');
         grupos.set(k, g);
     });
@@ -39,7 +42,9 @@ export async function recibirDespacho(db, {
     // el reintento volvía a sumar lo que ya había entrado. Y comprueba que
     // el despacho SIGA en tránsito: dos teléfonos no pueden recibirlo dos
     // veces.
+    const itemDeGrupo = new Map();
     await runTransaction(db, async (tx) => {
+        itemDeGrupo.clear();
         const despRef = doc(db, 'kroma_despachos', despachoId);
         const despSnap = await tx.get(despRef);
         if (!despSnap.exists()) throw new Error('Ese despacho ya no existe.');
@@ -49,7 +54,7 @@ export async function recibirDespacho(db, {
         }
 
         const planes = [];
-        for (const g of grupos.values()) {
+        for (const [k, g] of grupos) {
             const { l } = g;
             const existing = inventario.find(inv =>
                 inv.almacenId === almacenId &&
@@ -68,17 +73,20 @@ export async function recibirDespacho(db, {
                 if (fresh.exists() && (Number(fresh.data().unidades) || 0) > 0) antes = Number(fresh.data().unidades) || 0;
                 else ref = null;   // se cerró entretanto: abre un registro nuevo
             }
-            planes.push({ g, ref, antes });
+            planes.push({ g, ref, antes, k });
         }
 
-        for (const { g, ref, antes } of planes) {
+        for (const { g, ref, antes, k } of planes) {
             const { l, recibida } = g;
             const despues = +(antes + recibida).toFixed(3);
             const marca = marcaMov('recepcion', { motivo: `Recepción del despacho ${despachoId}`, ref: { despachoId }, usuario: actor });
             if (ref) {
                 tx.update(ref, { unidades: despues, updatedAt: serverTimestamp(), updatedBy: actor, ...marca });
+                itemDeGrupo.set(k, ref.id);
             } else {
-                tx.set(doc(collection(db, 'inventario_comercial')), {
+                const nuevo = doc(collection(db, 'inventario_comercial'));
+                itemDeGrupo.set(k, nuevo.id);
+                tx.set(nuevo, {
                     almacenId, almacenNombre: almacenNombre,
                     productoNombre: l.productoNombre, presentacion: l.presentacion || '',
                     tipo: l.tipo || 'empacado', unit: l.unit || 'ud',
@@ -138,4 +146,59 @@ export async function recibirDespacho(db, {
             inventarioAplicado: true,
         });
     });
+    // Partida de Frimaca donde quedó cada línea (para el retiro del mercaderista).
+    return { itemPorLinea: lineas.map((_, i) => itemDeGrupo.get(grupoDeLinea[i]) || null) };
+}
+
+/**
+ * Recepción con RETIRO DEL MERCADERISTA (pedido del dueño, 20-nov): cuando el
+ * mercaderista se queda con parte del camión para despacharla de una vez, todo
+ * se recibe en Frimaca y lo que se llevó sale como picking a su nombre. Así el
+ * inventario sigue el hilo: Barinas → camión → Frimaca → ruta del mercaderista,
+ * y «En la mano» sigue si lo entregó.
+ *
+ * Son dos pasos porque el libro valorado necesita ver la entrada y la salida de
+ * la partida por separado. Si el retiro falla, la recepción ya quedó y el error
+ * dice qué falta anotar como picking.
+ *
+ * `retiros[i]`: unidades de la línea i con las que se quedó el mercaderista.
+ */
+export async function recibirConRetiro(db, args) {
+    const { retiros = [], mercaderista = null, actor = {}, despachoId, lineas = [], rows = [] } = args;
+    const total = retiros.reduce((s, n) => s + (Number(n) || 0), 0);
+    if (total > 0) {
+        if (!mercaderista?.id) throw new Error('Elige qué mercaderista se quedó con el producto.');
+        lineas.forEach((l, i) => {
+            const r = Number(retiros[i]) || 0;
+            const rec = Number(rows[i]?.cantidadRecibida) || 0;
+            if (r < 0 || r > rec) throw new Error(`${l.productoNombre}: el mercaderista no puede quedarse con más de lo recibido (${rec}).`);
+        });
+    }
+    const { itemPorLinea } = await recibirDespacho(db, args);
+    if (!(total > 0)) return { itemPorLinea, pickings: [] };
+
+    const ahora = new Date();
+    const fecha = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+    const hora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+    const pickings = [];
+    const faltan = [];
+    for (let i = 0; i < lineas.length; i++) {
+        const n = Number(retiros[i]) || 0;
+        if (!(n > 0)) continue;
+        const itemId = itemPorLinea[i];
+        try {
+            if (!itemId) throw new Error('no se encontró la partida recibida');
+            const res = await registrarPicking(db, {
+                itemId, cantidad: n, fecha, hora, actor, retiradoPor: mercaderista,
+                origen: 'recepcion', despachoId,
+            });
+            pickings.push(res.pickingId);
+        } catch (e) {
+            faltan.push(`${n} de ${lineas[i].productoNombre}${lineas[i].lote ? ` (lote ${lineas[i].lote})` : ''}`);
+        }
+    }
+    if (faltan.length) {
+        throw new Error(`La recepción quedó guardada, pero no el retiro de ${faltan.join(' y ')}. Anótalo como picking a nombre de ${mercaderista.nombre}.`);
+    }
+    return { itemPorLinea, pickings };
 }

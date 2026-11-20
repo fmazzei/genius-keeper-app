@@ -113,7 +113,7 @@ const sr = r5.sinEntrega.find(x => x.numero === 'INV-001825');
 ok(r5.sinEntrega.length === 1 && sr?.unidades === 3 && sr.parcial && sr.facturadas === 15 && sr.entregadas === 12,
     `Santa Rosa: facturadas 15, entregó 12, sobran 3 (da ${JSON.stringify(sr)})`);
 ok(r5.sinFacturar === -1 && r5.enLaMano === 2, `retirado − facturado = −1 y sigue en 2 en la mano (da ${r5.sinFacturar} y ${r5.enLaMano})`);
-const al = atrasadasPorFacturar(r5);
+const al = atrasadasPorFacturar(r5, '2026-11-19');
 ok(al.facturas.length === 1 && al.unidadesFacturas === 3 && al.entregas.length === 0 && al.total === 1,
     'la factura con unidades de más es alerta roja de inmediato');
 const sinNada = atrasadasPorFacturar({ porFacturar: [], sinEntrega: [
@@ -121,6 +121,33 @@ const sinNada = atrasadasPorFacturar({ porFacturar: [], sinEntrega: [
     { numero: 'X2', dia: '2026-01-01', unidades: 12, parcial: false },
 ] });
 ok(sinNada.facturas.map(x => x.numero).join() === 'X2', 'una factura sin ninguna entrega se espera 2 días antes de ponerse roja');
+
+// 20-nov: el mercaderista se quedó con 84 al recibir el camión (picking anotado
+// después de la recepción) y las entregó: Manzanares 36, El Marqués 24, La Florida 24.
+const ret20 = { ...ACC, tipo: 'picking', cantidad: -84, lote: 'LCO20260929-H', nota: 'Picking 2026-11-20 09:00 · retiró Eduardo Carrillo · se lo quedó al recibir el camión', ref: { despachoId: 'CDYt' }, createdAt: '2026-11-20T19:12:23Z', actorNombre: 'Francisco (vía Claude)' };
+const posMas = [...pos, { id: 'man', name: 'Central Madeirense - Manzanares' }, { id: 'mar', name: 'Central Madeirense (El Marques)' }, { id: 'flo', name: 'Mi Negocio - La Florida' }];
+const vx = (posId, t, oq) => ({ ...v('RTjKlTzoQuum2oPZGCyb', t, oq), posId, posName: posMas.find(p => p.id === posId).name });
+const visitas20 = [...visitas, vx('man', '2026-11-20T13:40:38Z', 36), vx('mar', '2026-11-20T14:40:06Z', 24), vx('flo', '2026-11-20T15:06:14Z', 24)];
+const r6 = calcularEnLaMano({ movimientos: [...movimientos, ret20], facturas: conFacturas18, visitas: visitas20, posList: posMas, desde: '2026-11-13', hasta: '2026-11-20', excluidas: new Set(['INV-001814']) });
+const [rA, rB, rC] = r6.retiros;
+ok(r6.retiros.length === 3 && rA.estado === 'entregado' && rA.entregado === 180, `retiro del 17-nov (180): entregado completo (${rA?.estado} ${rA?.entregado})`);
+ok(rB.estado === 'entregado' && rB.entregas.at(-1)?.posName === 'Central Madeirense - Manzanares' && rB.entregas.at(-1)?.unidades === 2,
+    `retiro del 18-nov (68): las 2 que sobraban se entregan primero, en Manzanares el 20 (${rB?.estado})`);
+ok(rC.origen === 'recepcion' && rC.mercaderista === 'Eduardo Carrillo' && rC.estado === 'parcial' && rC.pendiente === 2 && rC.entregas.length === 3,
+    `las 84 del camión: 82 entregadas en Manzanares, El Marqués y La Florida aunque el picking se anotó después, quedan 2 (${rC?.estado}, ${rC?.entregas.map(e => e.posName + ' ' + e.unidades).join(' · ')})`);
+ok(r6.sinRetiro.length === 0 && r6.enLaMano === 2, `ninguna entrega sin retiro y siguen 2 en la mano (${r6.sinRetiro.length}, ${r6.enLaMano})`);
+const al6 = atrasadasPorFacturar(r6, '2026-11-20');
+ok(al6.retiros.length === 0 && al6.total === 1, 'el 20-nov no hay retiros atrasados (solo la factura de Santa Rosa)');
+const al6b = atrasadasPorFacturar(r6, '2026-11-22');
+ok(al6b.retiros.length === 1 && al6b.unidadesRetiros === 2 && al6b.retiros[0].origen === 'recepcion',
+    'el 22-nov, si siguen sin entregarse, las 2 del camión son alerta roja');
+// Sin el picking del camión, las 84 entregadas no salen de ningún retiro.
+const r7 = calcularEnLaMano({ movimientos, facturas: conFacturas18, visitas: visitas20, posList: posMas, desde: '2026-11-13', hasta: '2026-11-20', excluidas: new Set(['INV-001814']) });
+ok(r7.sinRetiro.reduce((s, x) => s + x.unidades, 0) === 82 && r7.enLaMano === -82,
+    `sin anotar el retiro: 82 entregadas sin retiro (las 2 de la mano cubren el resto) → ${r7.sinRetiro.map(x => x.posName + ' ' + x.unidades).join(' · ')}`);
+const al7 = atrasadasPorFacturar(r7, '2026-11-21');
+ok(al7.sinRetiro.length === 3 && al7.unidadesSinRetiro === 82 && atrasadasPorFacturar(r7, '2026-11-20').sinRetiro.length === 0,
+    'entregas sin retiro: alerta roja desde el día siguiente (ese día todavía se puede anotar el picking)');
 
 console.log(fallas ? `${fallas} falla(s)` : 'Todo en verde');
 process.exit(fallas ? 1 : 0);
