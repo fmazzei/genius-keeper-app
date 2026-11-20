@@ -12,16 +12,23 @@
 //           Frimaca y confirma. Al guardar: carga el inventario (desde lo
 //           RECIBIDO), escribe el libro de movimientos y el acta con fotos, y
 //           cierra el despacho como `recibido_caracas`.
+//
+//  Retiro del mercaderista (administración y máster, pedido del dueño 20-nov):
+//  si el mercaderista se quedó con parte del camión para despacharla de una
+//  vez, se dice con cuánto por línea. Todo se recibe en Frimaca y eso sale
+//  como picking a su nombre (`recibirConRetiro`): el inventario sigue el hilo y
+//  «En la mano» verifica que lo haya entregado.
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import {
-    X, Truck, Package, CheckCircle, AlertTriangle, Camera, Loader, ChevronRight, ArrowLeft, Minus, Plus,
+    X, Truck, Package, CheckCircle, AlertTriangle, Camera, Loader, ChevronRight, ArrowLeft, Minus, Plus, Hand,
 } from 'lucide-react';
 import { fileToCompactDataURL } from '@/utils/imageCapture.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { lineasACaracas } from '@/utils/destinoDespacho.js';
-import { recibirDespacho } from '@/utils/recepcionOps.js';
+import { recibirConRetiro } from '@/utils/recepcionOps.js';
 
 const THEME = {
     light: {
@@ -50,7 +57,7 @@ const THEME = {
 
 const norm = (s) => (s || '').trim().toLowerCase();
 
-export default function RecepcionFrimacaSheet({ despacho, almacenes = [], inventario = [], actor, theme = 'light', onClose, onDone }) {
+export default function RecepcionFrimacaSheet({ despacho, almacenes = [], inventario = [], actor, theme = 'light', puedeRetiro = false, onClose, onDone }) {
     const t = THEME[theme] || THEME.light;
     // Solo lo que va a Caracas: un despacho viejo con líneas a otra ciudad no
     // puede cargar esas líneas al inventario de Frimaca.
@@ -76,6 +83,32 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
     const [saving, setSaving]     = useState(false);
     const [error, setError]       = useState('');
 
+    // Retiro del mercaderista al recibir el camión.
+    const [conRetiro, setConRetiro] = useState(false);
+    const [retiros, setRetiros] = useState(() => lineas.map(() => 0));
+    const [mercaderistas, setMercaderistas] = useState([]);
+    const [quienId, setQuienId] = useState('');
+    const [guardadoParcial, setGuardadoParcial] = useState(false);
+    useEffect(() => {
+        if (!puedeRetiro) return undefined;
+        let vivo = true;
+        getDocs(collection(db, 'reporters')).then(snap => {
+            if (!vivo) return;
+            const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .filter(r => r.active !== false)
+                .map(r => ({ id: r.id, nombre: r.name || r.id }))
+                .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+            setMercaderistas(lista);
+            if (lista.length === 1) setQuienId(lista[0].id);
+        }).catch(() => {});
+        return () => { vivo = false; };
+    }, [puedeRetiro]);
+    const quien = mercaderistas.find(m => m.id === quienId) || null;
+    const retiroDe = (i) => (conRetiro ? Math.min(Number(retiros[i]) || 0, Number(rows[i]?.cantidadRecibida) || 0) : 0);
+    const totalRecibido = rows.reduce((s, r) => s + (Number(r.cantidadRecibida) || 0), 0);
+    const totalRetiro = lineas.reduce((s, _, i) => s + retiroDe(i), 0);
+    const setRetiro = (i, n) => setRetiros(rs => rs.map((x, idx) => (idx === i ? Math.max(0, Math.min(Number(rows[i]?.cantidadRecibida) || 0, n)) : x)));
+
     const almacen = almacenes.find(a => a.id === almacenId);
     const setRow = (i, patch) => setRows(rs => rs.map((r, idx) => idx === i ? { ...r, ...patch } : r));
 
@@ -91,19 +124,28 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
         if (saving) return;
         if (!almacen) { setError('Elige el almacén Frimaca de destino.'); setPaso(1); return; }
         if (!planillaFoto) { setError('Adjunta la foto de la planilla de Frimaca.'); return; }
+        if (totalRetiro > 0 && !quien) { setError('Elige qué mercaderista se quedó con el producto.'); setPaso(1); return; }
         setSaving(true); setError('');
         try {
             const actorLabel = { id: actor?.id || '', nombre: actor?.nombre || '', role: actor?.role || '' };
-            await recibirDespacho(db, {
+            await recibirConRetiro(db, {
                 despachoId: despacho.id, lineas, rows, inventario,
                 almacenId, almacenNombre: almacen.nombre, actor: actorLabel,
                 planillaFoto, notas: notas.trim(),
+                retiros: lineas.map((_, i) => retiroDe(i)), mercaderista: quien,
             });
 
             onDone?.();
             onClose?.();
         } catch (e) {
-            setError('No se pudo guardar la recepción. ' + (e?.message || ''));
+            const msg = e?.message || '';
+            if (msg.startsWith('La recepción quedó guardada')) {
+                setGuardadoParcial(true);
+                onDone?.();
+                setError(msg);
+            } else {
+                setError('No se pudo guardar la recepción. ' + msg);
+            }
         } finally {
             setSaving(false);
         }
@@ -152,6 +194,33 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
                                 </select>
                             </div>
 
+                            {puedeRetiro && (
+                                <div className={`rounded-xl p-3 ${t.card}`}>
+                                    <p className={`text-sm font-semibold flex items-center gap-1.5 ${t.title}`}>
+                                        <Hand size={15} /> ¿El mercaderista se quedó con producto para despacharlo de una vez?
+                                    </p>
+                                    <div className="flex gap-2 mt-2">
+                                        <button type="button" onClick={() => setConRetiro(false)}
+                                            className={`flex-1 py-2 rounded-lg text-xs font-bold ${!conRetiro ? t.okOn : t.okOff}`}>No, todo entra a Frimaca</button>
+                                        <button type="button" onClick={() => setConRetiro(true)}
+                                            className={`flex-1 py-2 rounded-lg text-xs font-bold ${conRetiro ? t.novOn : t.novOff}`}>Sí, se quedó con una parte</button>
+                                    </div>
+                                    {conRetiro && (
+                                        <div className="mt-2">
+                                            <p className={`text-xs font-semibold mb-1 ${t.label}`}>¿Quién?</p>
+                                            <select value={quienId} onChange={e => setQuienId(e.target.value)}
+                                                className={`w-full p-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.select}`}>
+                                                <option value="">Elige al mercaderista</option>
+                                                {mercaderistas.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
+                                            </select>
+                                            <p className={`text-xs mt-2 ${t.meta}`}>
+                                                Abajo, en cada producto, di con cuánto se quedó. Todo se recibe en Frimaca y eso sale como picking a su nombre.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {lineas.map((l, i) => {
                                 const r = rows[i] || {};
                                 return (
@@ -179,6 +248,19 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
                                                 className={`w-9 h-9 rounded-lg flex items-center justify-center ${t.stepBtn}`}><Plus size={15} /></button>
                                             <span className={`text-xs ${t.meta}`}>{l.unit || 'ud'}</span>
                                         </div>
+                                        {conRetiro && (
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`text-xs font-semibold ${t.label}`}>Se quedó con:</span>
+                                                <button onClick={() => setRetiro(i, (retiros[i] || 0) - 1)}
+                                                    className={`w-9 h-9 rounded-lg flex items-center justify-center ${t.stepBtn}`}><Minus size={15} /></button>
+                                                <input type="text" inputMode="numeric" value={retiros[i] || 0}
+                                                    onChange={e => setRetiro(i, parseInt(e.target.value.replace(/\D/g, ''), 10) || 0)}
+                                                    className={`w-20 text-center text-xl font-black rounded-lg py-1 focus:outline-none ${t.input}`} />
+                                                <button onClick={() => setRetiro(i, (retiros[i] || 0) + 1)}
+                                                    className={`w-9 h-9 rounded-lg flex items-center justify-center ${t.stepBtn}`}><Plus size={15} /></button>
+                                                <span className={`text-xs ${t.meta}`}>A Frimaca: {Math.max(0, (r.cantidadRecibida || 0) - retiroDe(i))}</span>
+                                            </div>
+                                        )}
                                         {/* Estado */}
                                         <div className="flex gap-2">
                                             <button onClick={() => setRow(i, { estadoOk: true })}
@@ -220,6 +302,11 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
                                 <p className={`text-xs ${t.meta} mb-1`}>Entregando en</p>
                                 <p className={`font-bold ${t.title}`}>{almacen?.nombre}</p>
                                 <p className={`text-xs ${t.meta} mt-1`}>{lineas.length} producto(s) · das fe de la entrega bajo tu responsabilidad.</p>
+                                {totalRetiro > 0 && (
+                                    <p className={`text-xs mt-2 font-semibold ${t.title}`}>
+                                        Entran a Frimaca {totalRecibido - totalRetiro} · {quien?.nombre || 'el mercaderista'} se lleva {totalRetiro} para despachar.
+                                    </p>
+                                )}
                             </div>
 
                             <label className={`flex flex-col items-center justify-center gap-2 rounded-xl py-8 text-sm font-semibold cursor-pointer ${t.photo}`}>
@@ -236,11 +323,15 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
                                 placeholder="Notas de la entrega (opcional)" rows={2}
                                 className={`w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none ${t.textarea}`} />
 
+                            {guardadoParcial ? (
+                                <button onClick={onClose} className={`w-full font-black py-4 rounded-xl text-base ${t.primary}`}>Cerrar</button>
+                            ) : (
                             <button onClick={guardar} disabled={saving || busyFoto || !planillaFoto}
                                 className={`w-full font-black py-4 rounded-xl text-base disabled:opacity-50 flex items-center justify-center gap-2 ${t.save}`}>
                                 {saving ? <Loader size={18} className="animate-spin" /> : <CheckCircle size={18} />}
                                 {saving ? 'Guardando…' : 'Confirmar recepción y entrega'}
                             </button>
+                            )}
                         </div>
                     )}
                 </div>

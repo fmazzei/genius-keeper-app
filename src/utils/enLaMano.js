@@ -26,6 +26,13 @@
 //
 // Lo retirado de un anaquel como DEVOLUCIÓN (para el camión a Barinas) no es
 // vendible: va aparte, en «devoluciones por entregar al camión».
+//
+// SEGUIMIENTO DE CADA RETIRO (pedido del dueño, 20-nov): lo entregado se va
+// descontando de los retiros, el más viejo primero (un retiro del día sirve
+// para las entregas de ese mismo día, aunque se haya anotado más tarde). Así
+// cada retiro queda entregado, parcial o pendiente; uno con unidades pendientes
+// pasados `diasEntregaRetiro` días, o una entrega que no sale de ningún retiro
+// anotado, es alerta roja para administración.
 
 import { horaVisitaMs } from './visitaOla1.js';
 import { fechaCalendario } from './vendedorMeta.js';
@@ -103,7 +110,7 @@ const facturaCuenta = (f, excluidas) =>
 export function calcularEnLaMano({
     movimientos = [], facturas = [], visitas = [], posList = [],
     desde, hasta = diaCaracas(Date.now()), inicial = 0,
-    excluidas = new Set(), diasFactura = 7,
+    excluidas = new Set(), diasFactura = 7, diasEntregaRetiro = 2,
 } = {}) {
     const enRango = (dia) => !!dia && dia >= desde && dia <= hasta;
     const carnetDe = new Map(posList.map(p => [p.id, p.zohoCustomerId || null]));
@@ -122,7 +129,12 @@ export function calcularEnLaMano({
         const uds = unidadesDeVenta(m);
         const fila = dia(d);
         fila.retirado += uds;
-        fila.retiros.push({ unidades: uds, lote: m.lote || '', nota: m.nota || '', quien: m.actorNombre || '', registradoComo: m.tipo === 'picking' ? 'picking' : 'descuento' });
+        const mercaderista = (String(m.nota || '').match(/retiró ([^·]+)/) || [])[1]?.trim() || '';
+        fila.retiros.push({
+            unidades: uds, lote: m.lote || '', nota: m.nota || '', quien: m.actorNombre || '', mercaderista,
+            hora: aMs(m.createdAt) || 0, origen: m.ref?.despachoId ? 'recepcion' : 'frimaca',
+            registradoComo: m.tipo === 'picking' ? 'picking' : 'descuento',
+        });
     }
 
     // 2. Entregas según las visitas.
@@ -232,6 +244,8 @@ export function calcularEnLaMano({
         dias: lista,
         retirado: total('retirado'), entregado: total('entregado'), repuesto: total('repuesto'),
         reubicado: total('reubicado'), facturado: total('facturado'),
+        ...seguirRetiros(lista, entregas, visitas, desde, inicial, enRango),
+        diasEntregaRetiro,
         enLaMano: manoVisitas,             // según sus visitas
         sinFacturar,                       // retirado − facturado
         devoluciones,                      // retiradas de anaquel para el camión
@@ -241,15 +255,74 @@ export function calcularEnLaMano({
 }
 
 /**
- * La alerta roja de administración (pedido del dueño, 19-nov). Dos casos:
+ * Cada retiro hasta su entrega. Fuentes: lo que tenía al empezar, los retiros
+ * de Frimaca y lo que retiró de un anaquel para ponerlo en otro. Consumos: lo
+ * que entró a cada anaquel y lo que repuso al retirar. Día por día; dentro del
+ * día, primero las fuentes y después las entregas por hora.
+ */
+function seguirRetiros(lista, entregas, visitas, desde, inicial, enRango) {
+    const fuentes = [];
+    if (inicial > 0) fuentes.push({ dia: desde, unidades: inicial, etiqueta: 'Lo que tenía al empezar', resto: inicial, entregas: [] });
+    for (const f of lista) {
+        [...f.retiros].sort((a, b) => a.hora - b.hora).forEach(x => fuentes.push({
+            dia: f.dia, unidades: x.unidades, lote: x.lote, mercaderista: x.mercaderista, anoto: x.quien,
+            origen: x.origen, etiqueta: x.origen === 'recepcion' ? 'Se lo quedó al recibir el camión' : 'Retiro de Frimaca',
+            resto: x.unidades, entregas: [],
+        }));
+        if (f.reubicado > 0) fuentes.push({ dia: f.dia, unidades: f.reubicado, etiqueta: 'Retirado de un anaquel para otro punto', resto: f.reubicado, entregas: [] });
+    }
+    // Lo repuesto al retirar también sale de la mano.
+    const consumos = entregas.map(e => ({ dia: e.dia, hora: e.hora, posName: e.posName, unidades: e.unidades }));
+    for (const v of visitas) {
+        const rep = Number(v.retiroVisita?.repuestas) || 0;
+        if (rep <= 0 || (Number(v.formVersion) || 1) < 2) continue;
+        const d = diaCaracas(horaVisitaMs(v));
+        if (!enRango(d)) continue;
+        consumos.push({ dia: d, hora: horaVisitaMs(v), posName: v.posName || '', unidades: rep, repuesto: true });
+    }
+    consumos.sort((a, b) => a.dia.localeCompare(b.dia) || a.hora - b.hora);
+
+    const sinRetiro = [];
+    for (const c of consumos) {
+        let falta = c.unidades;
+        for (const f of fuentes) {
+            if (falta <= 0) break;
+            if (f.dia > c.dia || f.resto <= 0) continue;
+            const toma = Math.min(falta, f.resto);
+            f.resto -= toma;
+            falta -= toma;
+            f.entregas.push({ dia: c.dia, posName: c.posName, unidades: toma, repuesto: !!c.repuesto });
+        }
+        if (falta > 0) sinRetiro.push({ dia: c.dia, posName: c.posName, unidades: falta });
+    }
+    const retiros = fuentes.map(({ resto, ...f }) => ({
+        ...f, entregado: f.unidades - resto, pendiente: resto,
+        estado: resto <= 0 ? 'entregado' : (resto < f.unidades ? 'parcial' : 'pendiente'),
+    }));
+    return { retiros, sinRetiro };
+}
+
+/** Retiros con unidades sin entregar pasados `dias` días (alerta roja). */
+export function retirosAtrasados(r, hoy = diaCaracas(Date.now())) {
+    const limite = sumarDias(hoy, -(Number(r?.diasEntregaRetiro) || 2));
+    return (r?.retiros || []).filter(x => x.pendiente > 0 && x.dia <= limite);
+}
+
+/**
+ * La alerta roja de administración (pedido del dueño, 19-nov). Cuatro casos:
+ *  · retiros con unidades sin entregar pasados `diasEntregaRetiro` días;
+ *  · entregas que no salen de ningún retiro anotado (día ya pasado);
  *  · entregas sin factura cuyo día ya pasó;
  *  · facturas sin entrega anotada: si el cliente recibió menos de lo facturado,
  *    de una vez; si no recibió nada, cuando pasaron los 2 días en que la
  *    entrega todavía se podía cruzar con esa factura.
  */
-export function atrasadasPorFacturar(r) {
-    if (!r) return { entregas: [], unidades: 0, desde: null, facturas: [], unidadesFacturas: 0, total: 0 };
-    const hoy = diaCaracas(Date.now());
+export function atrasadasPorFacturar(r, hoy = diaCaracas(Date.now())) {
+    if (!r) return { entregas: [], unidades: 0, desde: null, facturas: [], unidadesFacturas: 0, retiros: [], unidadesRetiros: 0, sinRetiro: [], unidadesSinRetiro: 0, total: 0 };
+    // Retiros que no terminan de entregarse y entregas que no salen de ningún
+    // retiro anotado (el día ya pasó: hubo tiempo de anotar el picking).
+    const retiros = retirosAtrasados(r, hoy);
+    const sinRetiro = (r.sinRetiro || []).filter(x => x.dia < hoy);
     const entregas = (r.porFacturar || []).filter(x => x.dia < hoy);
     const facturas = (r.sinEntrega || []).filter(x => x.parcial || x.dia <= sumarDias(hoy, -2));
     return {
@@ -258,6 +331,10 @@ export function atrasadasPorFacturar(r) {
         desde: entregas.length ? entregas.map(x => x.dia).sort()[0] : null,
         facturas,
         unidadesFacturas: facturas.reduce((s, x) => s + x.unidades, 0),
-        total: entregas.length + facturas.length,
+        retiros,
+        unidadesRetiros: retiros.reduce((s, x) => s + x.pendiente, 0),
+        sinRetiro,
+        unidadesSinRetiro: sinRetiro.reduce((s, x) => s + x.unidades, 0),
+        total: entregas.length + facturas.length + retiros.length + sinRetiro.length,
     };
 }
