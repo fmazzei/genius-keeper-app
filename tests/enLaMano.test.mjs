@@ -1,7 +1,7 @@
 // Prueba del cruce «en la mano» con los datos REALES del 13 al 19-nov-2026.
 // El mercaderista confirmó el 19-nov que tenía 2 unidades.
 // Correr: TZ=America/Caracas node --import ./tests/alias.mjs tests/enLaMano.test.mjs
-import { calcularEnLaMano, esRetiroMercaderista, unidadesDeVenta, diaRetiro, atrasadasPorFacturar } from '@/utils/enLaMano.js';
+import { calcularEnLaMano, esRetiroMercaderista, unidadesDeVenta, diaRetiro, atrasadasPorFacturar, textoCantidad, textoPartes, partesDeEntrega } from '@/utils/enLaMano.js';
 
 let fallas = 0;
 const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
@@ -148,6 +148,22 @@ ok(r7.sinRetiro.reduce((s, x) => s + x.unidades, 0) === 82 && r7.enLaMano === -8
 const al7 = atrasadasPorFacturar(r7, '2026-11-21');
 ok(al7.sinRetiro.length === 3 && al7.unidadesSinRetiro === 82 && atrasadasPorFacturar(r7, '2026-11-20').sinRetiro.length === 0,
     'entregas sin retiro: alerta roja desde el día siguiente (ese día todavía se puede anotar el picking)');
+
+// Whole Fit (20-nov): el mercaderista se quedó 1 bolsa de 1 kg al recibir y la entregó.
+// Se cuenta y se muestra como 1 bolsa de 1 kg, no como 4 unidades.
+const posWF = [...posMas, { id: 'fs-whole-fit', name: 'Whole Fit', zohoCustomerId: '3576378000008729002' }];
+const ret1kg = { ...ACC, tipo: 'picking', cantidad: -1, presentacion: 'Lacteoca Chèvre Original · 1 kg', nota: 'Picking 2026-11-20 · retiró Eduardo Carrillo', createdAt: '2026-11-21T17:00:00Z', ref: { despachoId: 'CDYtYfwzfl67IuQOBjui' } };
+const vWF = { ...v('RTjKlTzoQuum2oPZGCyb', '2026-11-20T13:30:00Z', 4), posId: 'fs-whole-fit', posName: 'Whole Fit', entregaSinFactura: 4, entregaPresentaciones: [{ presentacion: '1 kg', cantidad: 1, unidadesVenta: 4 }] };
+const r8 = calcularEnLaMano({ movimientos: [...movimientos, ret20, ret1kg], facturas: conFacturas18, visitas: [...visitas20, vWF], posList: posWF, desde: '2026-11-13', hasta: '2026-11-20', excluidas: new Set(['INV-001814']) });
+const rKg = r8.retiros.find(x => x.pres === '1kg');
+ok(rKg && rKg.estado === 'entregado' && rKg.entregas[0]?.posName === 'Whole Fit', `la bolsa de 1 kg sale de su propio retiro y queda entregada (${rKg?.estado})`);
+ok(textoCantidad(rKg?.unidades, rKg?.pres) === '1 bolsa de 1 kg', `el retiro se lee «${textoCantidad(rKg?.unidades, rKg?.pres)}»`);
+const eWF = r8.dias.flatMap(d => d.entregas).find(e => e.posId === 'fs-whole-fit');
+ok(textoPartes(eWF?.partes) === '1 bolsa de 1 kg', `la entrega en Whole Fit se lee «${textoPartes(eWF?.partes)}»`);
+const pWF = r8.porFacturar.find(x => x.posId === 'fs-whole-fit');
+ok(pWF && textoCantidad(pWF.unidades, pWF.pres) === '1 bolsa de 1 kg', 'por facturar: 1 bolsa de 1 kg');
+ok(r8.enLaMano === 2 && r8.enLaManoPartes.length === 1 && r8.enLaManoPartes[0].pres === '250', 'siguen 2 de 250 g en la mano y ninguna bolsa');
+ok(textoPartes(partesDeEntrega({ orderQuantity: 28, entregaPresentaciones: [{ presentacion: '1 kg', cantidad: 1 }] })) === '24 uds y 1 bolsa de 1 kg', 'entrega mixta: 24 uds y 1 bolsa de 1 kg');
 
 console.log(fallas ? `${fallas} falla(s)` : 'Todo en verde');
 process.exit(fallas ? 1 : 0);

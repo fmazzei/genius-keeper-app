@@ -11,7 +11,7 @@ import { horaVisitaMs } from '@/utils/visitaOla1.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { ReporteVisitaDoc } from '@/Components/ReportesPdvDoc.jsx';
 import InformePdvSheet from '@/Components/InformePdvSheet.jsx';
-import { comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL } from '@/utils/reporteVisita.js';
+import { comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL, textoRepuestas } from '@/utils/reporteVisita.js';
 import { historialAnaquel, datosDelRegistro, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa, textoNoVenta, textoDuplicada } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
@@ -639,7 +639,7 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                                 value={va?.contadas}
                                 sub={va?.dia ? fmtDiaVE(va.dia) : null} />
                             <Cifra label="Esta visita · repuestas" t={t} tone={va?.repuestas > 0 ? t.popOk : undefined} subTone={tonoRepo(va)}
-                                value={va?.repuestas ?? 0}
+                                value={textoRepuestas(report, va?.repuestas ?? 0)}
                                 sub={textoFacturas(va)} />
                             <Cifra label="Total en anaquel" t={t} tone={t.metricPrimary} subTone={t.metricPrimary} className="col-span-2 sm:col-span-1"
                                 value={va?.quedaron}

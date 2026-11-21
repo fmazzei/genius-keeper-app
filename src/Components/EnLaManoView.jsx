@@ -12,8 +12,17 @@
 import React, { useState } from 'react';
 import { useEnLaMano, atrasadasPorFacturar } from '@/hooks/useEnLaMano.js';
 import { Hand, Receipt, Truck, ChevronDown, AlertTriangle, RefreshCw, Loader } from 'lucide-react';
-import { diaCaracas } from '@/utils/enLaMano.js';
+import { diaCaracas, textoCantidad, textoPartes } from '@/utils/enLaMano.js';
 
+
+// Unidades de venta separadas en sus presentaciones: nunca se suman bolsas de
+// 1 kg con unidades de 250 g.
+const partesDe = (total, kg1) => [{ pres: '250', unidades: total - (kg1 || 0) }, { pres: '1kg', unidades: kg1 || 0 }];
+const corto = (total, kg1) => {
+    if (!kg1) return total;
+    const bolsas = `${Math.round((kg1 / 4) * 100) / 100} kg`;
+    return total - kg1 ? `${total - kg1}+${bolsas}` : bolsas;
+};
 
 const fmtDia = (d) => {
     if (!d) return '';
@@ -21,7 +30,7 @@ const fmtDia = (d) => {
     return new Date(y, m - 1, dd).toLocaleDateString('es-VE', { weekday: 'short', day: '2-digit', month: 'short' });
 };
 
-function Cifra({ Icon, titulo, valor, nota, tono = 'slate' }) {
+function Cifra({ Icon, titulo, valor, extra, nota, tono = 'slate' }) {
     const tonos = {
         emerald: 'text-emerald-600 bg-emerald-50 border-emerald-200',
         amber: 'text-amber-700 bg-amber-50 border-amber-200',
@@ -34,6 +43,7 @@ function Cifra({ Icon, titulo, valor, nota, tono = 'slate' }) {
                 <Icon size={14} /> {titulo}
             </div>
             <p className="text-3xl font-black mt-1 leading-none">{valor} <span className="text-sm font-bold opacity-70">uds</span></p>
+            {extra && <p className="text-sm font-bold mt-1">{extra}</p>}
             {nota && <p className="text-xs mt-1.5 opacity-80 leading-snug">{nota}</p>}
         </div>
     );
@@ -67,6 +77,9 @@ export default function EnLaManoView({ datos: dado = null }) {
     const atrasado = new Set(alerta.retiros.map(x => `${x.dia}|${x.unidades}|${x.lote || ''}`));
     const retiros = [...(r.retiros || [])].reverse().slice(0, 12);
     const sinRetiro = r.sinRetiro || [];
+    const kg1Ret = r.dias.reduce((s, d) => s + (d.retiradoKg1 || 0), 0);
+    const kg1Ent = r.dias.reduce((s, d) => s + (d.entregadoKg1 || 0), 0);
+    const manoKg1 = (r.enLaManoPartes || []).find(x => x.pres === '1kg')?.unidades || 0;
 
     return (
         <div className="space-y-4">
@@ -74,7 +87,7 @@ export default function EnLaManoView({ datos: dado = null }) {
                 <div className="min-w-0">
                     <h3 className="text-lg font-black text-slate-800">Mercaderista: en la mano</h3>
                     <p className="text-sm text-slate-500">
-                        Desde el {fmtDia(r.desde)}: retiró {r.retirado} de Frimaca, entregó {r.entregado}{r.repuesto ? ` y repuso ${r.repuesto}` : ''} según sus visitas, y se facturaron {r.facturado}.
+                        Desde el {fmtDia(r.desde)}: retiró {textoPartes(partesDe(r.retirado, kg1Ret))} de Frimaca, entregó {textoPartes(partesDe(r.entregado, kg1Ent))}{r.repuesto ? ` y repuso ${r.repuesto}` : ''} según sus visitas, y se facturaron {r.facturado}.
                     </p>
                 </div>
                 <button onClick={recargar} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0" title="Actualizar">
@@ -83,7 +96,7 @@ export default function EnLaManoView({ datos: dado = null }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Cifra Icon={Hand} titulo="En la mano" valor={r.enLaMano} tono="emerald"
+                <Cifra Icon={Hand} titulo="En la mano" valor={r.enLaMano - manoKg1} extra={manoKg1 ? `y ${textoCantidad(manoKg1, '1kg')}` : null} tono="emerald"
                     nota="Lo que debería tener según lo que retiró y lo que anotó en sus visitas." />
                 <Cifra Icon={Receipt} titulo="Entregado sin factura" valor={porFacturarUds} tono={porFacturarUds > 0 ? 'amber' : 'slate'}
                     nota={porFacturarUds > 0 ? `${r.porFacturar.length} entrega${r.porFacturar.length !== 1 ? 's' : ''} por facturar (abajo).` : 'Todo lo entregado está facturado.'} />
@@ -110,7 +123,7 @@ export default function EnLaManoView({ datos: dado = null }) {
                                     <p className="text-sm font-semibold text-slate-800 truncate">{x.posName}</p>
                                     <p className="text-xs text-slate-500">Entregado el {fmtDia(x.dia)}</p>
                                 </div>
-                                <p className={`text-lg font-black shrink-0 ${x.dia < hoy ? 'text-red-600' : 'text-amber-700'}`}>{x.unidades}</p>
+                                <p className={`text-lg font-black shrink-0 ${x.dia < hoy ? 'text-red-600' : 'text-amber-700'}`}>{textoCantidad(x.unidades, x.pres)}</p>
                             </div>
                         ))}
                     </div>
@@ -140,18 +153,18 @@ export default function EnLaManoView({ datos: dado = null }) {
                                                 {x.etiqueta} · <span className="capitalize">{fmtDia(x.dia)}</span>
                                             </p>
                                             <p className="text-xs text-slate-500">
-                                                {x.unidades} uds{x.lote ? ` · lote ${x.lote}` : ''}{x.mercaderista ? ` · ${x.mercaderista}` : ''}
+                                                {textoCantidad(x.unidades, x.pres)}{x.lote ? ` · lote ${x.lote}` : ''}{x.mercaderista ? ` · ${x.mercaderista}` : ''}
                                             </p>
                                         </div>
                                         <span className={`text-[11px] font-bold px-2 py-1 rounded-full shrink-0 ${chip}`}>
-                                            {x.estado === 'entregado' ? 'Entregado' : `${x.estado === 'parcial' ? 'Parcial' : 'Pendiente'} · faltan ${x.pendiente}`}
+                                            {x.estado === 'entregado' ? 'Entregado' : `${x.estado === 'parcial' ? 'Parcial' : 'Pendiente'} · faltan ${textoCantidad(x.pendiente, x.pres)}`}
                                         </span>
                                     </button>
                                     {abierto === clave && (
                                         <div className="px-4 pb-3 space-y-1 text-xs text-slate-600">
                                             {x.entregas.length === 0 && <p>Todavía no hay entregas anotadas de este retiro.</p>}
                                             {x.entregas.map((e, j) => (
-                                                <p key={j}><span className="capitalize">{fmtDia(e.dia)}</span>: {e.repuesto ? 'repuso' : 'entregó'} <b>{e.unidades}</b> en {e.posName}</p>
+                                                <p key={j}><span className="capitalize">{fmtDia(e.dia)}</span>: {e.repuesto ? 'repuso' : 'entregó'} <b>{textoCantidad(e.unidades, e.pres)}</b> en {e.posName}</p>
                                             ))}
                                         </div>
                                     )}
@@ -175,7 +188,7 @@ export default function EnLaManoView({ datos: dado = null }) {
                                     <p className="text-xs text-slate-500">Entregado el {fmtDia(x.dia)}{x.quien ? ` · ${x.quien}` : ''}</p>
                                     {x.motivo && <p className="text-xs text-amber-700 mt-0.5">{x.motivo}</p>}
                                 </div>
-                                <p className={`text-lg font-black shrink-0 ${x.dia < hoy ? 'text-red-600' : 'text-amber-700'}`}>{x.unidades}</p>
+                                <p className={`text-lg font-black shrink-0 ${x.dia < hoy ? 'text-red-600' : 'text-amber-700'}`}>{x.pres ? textoCantidad(x.unidades, x.pres) : x.unidades}</p>
                             </div>
                         ))}
                     </div>
@@ -233,18 +246,18 @@ export default function EnLaManoView({ datos: dado = null }) {
                                     <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${abierto === d.dia ? 'rotate-180' : ''}`} />
                                     <span className="truncate">{fmtDia(d.dia)}</span>
                                 </span>
-                                <span className="text-right font-mono">{d.retirado || '—'}</span>
-                                <span className="text-right font-mono">{d.entregado + d.repuesto || '—'}</span>
+                                <span className="text-right font-mono">{d.retirado ? corto(d.retirado, d.retiradoKg1) : '—'}</span>
+                                <span className="text-right font-mono">{d.entregado + d.repuesto ? corto(d.entregado + d.repuesto, d.entregadoKg1) : '—'}</span>
                                 <span className="text-right font-mono">{d.facturado || '—'}</span>
-                                <span className="text-right font-mono font-black text-emerald-700">{d.manoVisitas}</span>
+                                <span className="text-right font-mono font-black text-emerald-700">{corto(d.manoVisitas, d.manoKg1)}</span>
                             </button>
                             {abierto === d.dia && (
                                 <div className="px-4 pb-3 space-y-1.5 text-xs text-slate-600">
                                     {d.retiros.map((x, i) => (
-                                        <p key={`r${i}`}>Retiró <b>{x.unidades}</b> de Frimaca{x.lote ? ` · lote ${x.lote}` : ''}{x.quien ? ` · anotó ${x.quien}` : ''}{x.registradoComo === 'descuento' ? ' (como descuento)' : ''}</p>
+                                        <p key={`r${i}`}>Retiró <b>{textoCantidad(x.unidades, x.pres)}</b> de Frimaca{x.lote ? ` · lote ${x.lote}` : ''}{x.quien ? ` · anotó ${x.quien}` : ''}{x.registradoComo === 'descuento' ? ' (como descuento)' : ''}</p>
                                     ))}
                                     {d.entregas.map((x, i) => (
-                                        <p key={`e${i}`}>Entregó <b>{x.unidades}</b> en {x.posName}{x.facturadaCon?.length ? ` · ${x.facturadaCon.join(', ')}` : ' · sin factura'}</p>
+                                        <p key={`e${i}`}>Entregó <b>{textoPartes(x.partes || [{ pres: '250', unidades: x.unidades }])}</b> en {x.posName}{x.facturadaCon?.length ? ` · ${x.facturadaCon.join(', ')}` : ' · sin factura'}</p>
                                     ))}
                                     {d.repuesto > 0 && <p>Repuso <b>{d.repuesto}</b> al retirar producto de un anaquel.</p>}
                                     {d.reubicado > 0 && <p>Retiró <b>{d.reubicado}</b> de un anaquel para ponerlas en otro.</p>}

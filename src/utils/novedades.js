@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-21-mano-bolsas-1kg',
+        fecha: '2026-11-21',
+        roles: ['master', 'administrador'],
+        titulo: 'En la mano: las bolsas de 1 kg en bolsas',
+        resumen: 'Lo que el mercaderista retira y entrega en bolsas de 1 kg se muestra como «1 bolsa de 1 kg», no como 4 unidades, en «En la mano», en la alerta roja y en el reporte de la visita. Cada bolsa sale de su propio retiro.',
+    },
+    {
         id: '2026-11-21-competencia-reporte',
         fecha: '2026-11-21',
         roles: ['merchandiser', 'master'],

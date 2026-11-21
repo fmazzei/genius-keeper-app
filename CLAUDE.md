@@ -4458,6 +4458,19 @@ Pedido del dueño: saber con cuántas unidades quedó el mercaderista al termina
   - **Datos del 20-nov (aprobados por el dueño, por el conector, reversibles):** picking de 84 del lote LCO20260929-H a nombre de Eduardo Carrillo (`pickings/retiro-recepcion-20261120-eduardo`, Frimaca 144 → 60). Las **3 bolsas de 1 kg** del lote LCO20260918-H viajaron en el despacho `CDYtYfwzfl67IuQOBjui` y no se anotaron: se agregaron al despacho y al acta, salieron de la cava de Barinas (`despacho_caracas`, fecha 18-nov) y entraron a Frimaca (`inventario_comercial/rec-CDYtYfwzfl67IuQOBjui-1kg`). Las 2 de 250 g del lote 12-sep sí viajaron (Frimaca 180 → 182 es correcto). Ojo: la nota del acta de María José dice que las 3 bolsas quedaron con el mercaderista («no ingresadas a frimaca»); si es así, falta un picking de 3.
   - Prueba: `tests/despacho.e2e.test.mjs` (22 en verde, emulador) y `TZ=America/Caracas node --import ./tests/alias.mjs tests/enLaMano.test.mjs` (29 en verde, con los datos reales del 20-nov).
 
+### Las bolsas de 1 kg se ven en bolsas (2026-11-21) ✅
+
+Reclamo del dueño: la entrega a Whole Fit (1 bolsa de 1 kg) salía como «4 unidades».
+- La cuenta sigue en unidades de venta de 250 g (una bolsa de 1 kg = 4), que es como `facturas_vendedor.unidades` cuenta la factura. Por eso `orderQuantity` del reporte sigue siendo 4.
+- **`visit_reports.entregaPresentaciones = [{presentacion:'1 kg', cantidad, unidadesVenta}]`** dice qué parte de lo entregado fue en bolsas de 1 kg. **`src/utils/presentacionEntrega.js`**: `partesDeEntrega`, `textoCantidad(unidades, pres)` («1 bolsa de 1 kg») y `textoPartes` («24 uds y 1 bolsa de 1 kg»).
+- **`enLaMano.js`**:
+  - cada retiro lleva `pres` (`presDeRetiro`: 1 kg o granel en kg = `'1kg'`) y cada entrega sus `partes`;
+  - una bolsa solo sale de un retiro de bolsas (`seguirRetiros` empareja por presentación);
+  - cada día lleva `retiradoKg1`, `entregadoKg1` y `manoKg1`, y el total `enLaManoPartes`.
+- **Dónde se ve en bolsas:** «En la mano» (retiros, entregas, por facturar, día por día y la cifra), la alerta roja de administración, el cuadro «Esta visita · repuestas», «Datos del registro» y el PDF del reporte.
+- Dato: el reporte de Whole Fit (`visit_reports/8bab1401-…`) lleva su presentación (cambio `5HpgmrHxHvPraebdDNTO`).
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/enLaMano.test.mjs` (6 casos nuevos).
+
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
 Pedido del dueño: las alertas de los reportes deben llegar al máster y a la gerencia, abrir el reporte al tocarlas y decir las unidades; el reporte debe traer la coordenada de donde se hizo; y las alertas del sistema o del agente van solo al máster, en Configuraciones, con un punto rojo cuando llega una.

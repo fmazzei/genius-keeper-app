@@ -10,6 +10,13 @@
 import { horaVisitaMs, distanciaM, MOTIVOS_RETIRO, RESPUESTAS_ANTES_DESPUES, MOTIVOS_CORRECCION_CONTEO, RESPUESTAS_DUPLICADO, RESPUESTAS_CONTEO_IDENTICO } from '@/utils/visitaOla1.js';
 import { DISTANCIA_MISMO_PDV_M } from '@/utils/anaquelConstantes.js';
 import { entregasDuplicadas, ventaEntreVisitas } from '@/utils/ventaAnaquel.js';
+import { partesDeEntrega, textoPartes } from '@/utils/presentacionEntrega.js';
+
+/** Lo repuesto en una visita como se entregó: «1 bolsa de 1 kg» y no «4». */
+export function textoRepuestas(report, n) {
+    if (!Array.isArray(report?.entregaPresentaciones) || !report.entregaPresentaciones.length) return n;
+    return textoPartes(partesDeEntrega(report));
+}
 
 /** Hasta esta distancia se lee "lejos"; más allá, "muy lejos". */
 export const DISTANCIA_LEJOS_M = 500;
@@ -391,6 +398,11 @@ export function datosDelRegistro(report, omitir = new Set()) {
             `${e.numero}: ${e.opcion === 'no' ? 'no entregada' : uds(Number(e.unidadesEntregadas) || 0)}`).join(' · ');
         fila('entregas', 'Entregas por factura', txt || null, 'Lo que el mercaderista confirmó haber entregado de cada factura de Zoho.');
         usadas.add('entregas');
+    }
+    if (Array.isArray(r.entregaPresentaciones) && r.entregaPresentaciones.length) {
+        fila('entregaPresentaciones', 'Presentación de lo entregado', textoPartes(partesDeEntrega(r)),
+            `Lo que entró, como se entregó. En unidades de venta de 250 g (las que se cruzan con la factura) son ${Number(r.orderQuantity) || 0}.`);
+        usadas.add('entregaPresentaciones');
     }
     if (r.entregaSinFactura != null) {
         fila('entregaSinFactura', 'Entregado sin factura', uds(Number(r.entregaSinFactura) || 0),

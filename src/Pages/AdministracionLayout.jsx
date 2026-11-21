@@ -37,6 +37,10 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useReportView } from '@/context/ReportViewContext.jsx';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
+import { textoPartes } from '@/utils/presentacionEntrega.js';
+
+// Unidades por presentación: una bolsa de 1 kg se dice en bolsas, no en 4 uds.
+const enPres = (lista = [], campo = 'unidades') => textoPartes(lista.map(x => ({ pres: x.pres || '250', unidades: x[campo] })));
 
 const saludoDelDia = () => {
     const h = new Date().getHours();
@@ -198,17 +202,17 @@ export default function AdministracionLayout({ user, onLogout }) {
                     <span className="flex-1 min-w-0 text-sm font-semibold leading-snug">
                         {atrasadas.unidades > 0 && (
                             <span className="block">
-                                {atrasadas.unidades} unidades entregadas sin factura ({atrasadas.entregas.length} entrega{atrasadas.entregas.length !== 1 ? 's' : ''} desde el {atrasadas.desde?.split('-').reverse().slice(0, 2).join('/')}). Hay que facturarlas.
+                                {enPres(atrasadas.entregas)} entregadas sin factura ({atrasadas.entregas.length} entrega{atrasadas.entregas.length !== 1 ? 's' : ''} desde el {atrasadas.desde?.split('-').reverse().slice(0, 2).join('/')}). Hay que facturarlas.
                             </span>
                         )}
                         {atrasadas.unidadesSinRetiro > 0 && (
                             <span className="block">
-                                {atrasadas.unidadesSinRetiro} unidades entregadas sin retiro anotado. Anota el picking o lo que el mercaderista se quedó del camión.
+                                {enPres(atrasadas.sinRetiro)} entregadas sin retiro anotado. Anota el picking o lo que el mercaderista se quedó del camión.
                             </span>
                         )}
                         {atrasadas.unidadesRetiros > 0 && (
                             <span className="block">
-                                {atrasadas.unidadesRetiros} unidades retiradas por el mercaderista siguen sin entregar ({atrasadas.retiros.length} retiro{atrasadas.retiros.length !== 1 ? 's' : ''}). Pregúntale dónde están.
+                                {enPres(atrasadas.retiros, 'pendiente')} retiradas por el mercaderista siguen sin entregar ({atrasadas.retiros.length} retiro{atrasadas.retiros.length !== 1 ? 's' : ''}). Pregúntale dónde están.
                             </span>
                         )}
                         {atrasadas.facturas.length > 0 && (
