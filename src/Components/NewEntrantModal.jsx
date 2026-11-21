@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { CheckCircle } from 'lucide-react';
 import Modal from './Modal.jsx';
 // --- SOLUCIÓN: La ruta de importación ahora apunta al nuevo archivo centralizado ---
-import { FormInput, ToggleButton } from '@/Components/FormControls.jsx'; 
+import { FormInput, ToggleButton } from '@/Components/FormControls.jsx';
+import { leerPrecio } from '@/utils/visitaOla1.js';
 
 const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
     const [entrant, setEntrant] = useState({
@@ -17,8 +18,11 @@ const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
     const [isDirect, setIsDirect] = useState(null);
 
     const handleSave = () => {
-        if (!entrant.brand || !entrant.presentation || !entrant.price) {
-            alert('Marca, presentación y precio son obligatorios.');
+        const precio = leerPrecio(entrant.price);
+        if (!entrant.brand.trim() || !entrant.presentation.trim() || precio === null) {
+            alert(precio === null && entrant.price
+                ? 'El precio no se entiende. Escríbelo así: 9,50'
+                : 'Marca, presentación y precio son obligatorios.');
             return;
         }
         if (isDirect === null) {
@@ -28,10 +32,12 @@ const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
         
         const finalEntrantData = {
             ...entrant,
-            price: Number(entrant.price) || 0,
+            brand: entrant.brand.trim(),
+            presentation: entrant.presentation.trim(),
+            price: precio,
             // Gramaje real (si el mercaderista lo aporta) para que el
             // posicionamiento por precio/100g no asuma 200g fijo.
-            weight_g: Number(entrant.weight_g) || null,
+            weight_g: Number(String(entrant.weight_g).replace(',', '.')) || null,
             competitorType: isDirect ? 'directo' : 'indirecto'
         };
         onSave(finalEntrantData);
@@ -49,8 +55,8 @@ const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
             <div className="p-6 space-y-4">
                 <FormInput label="Marca" value={entrant.brand} onChange={e => setEntrant({...entrant, brand: e.target.value})} placeholder="Ej: Quesos La Pradera" />
                 <FormInput label="Presentación" value={entrant.presentation} onChange={e => setEntrant({...entrant, presentation: e.target.value})} placeholder="Ej: Natural Untable 200g" />
-                <FormInput label="Precio (PVP)" type="number" value={entrant.price} onChange={e => setEntrant({...entrant, price: e.target.value})} placeholder="Ej: 9.50" />
-                <FormInput label="Gramaje (g)" type="number" value={entrant.weight_g} onChange={e => setEntrant({...entrant, weight_g: e.target.value})} placeholder="Ej: 200 (para comparar por precio/100g)" />
+                <FormInput label="Precio (PVP)" type="text" inputMode="decimal" value={entrant.price} onChange={e => setEntrant({...entrant, price: e.target.value.replace(/[^\d.,]/g, '')})} placeholder="Ej: 9,50" />
+                <FormInput label="Gramaje (g)" type="text" inputMode="numeric" value={entrant.weight_g} onChange={e => setEntrant({...entrant, weight_g: e.target.value.replace(/[^\d]/g, '')})} placeholder="Ej: 200 (para comparar por precio/100g)" />
                 <FormInput label="Fabricante (si es visible)" value={entrant.manufacturer} onChange={e => setEntrant({...entrant, manufacturer: e.target.value})} placeholder="Ej: Lácteos Del Sur C.A." />
                 
                 <div>

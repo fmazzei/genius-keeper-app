@@ -143,6 +143,16 @@ export function leerPrecio(texto) {
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/**
+ * ¿El paso de competencia quedó respondido? Vale cualquiera de las tres:
+ * un competidor de la lista, un nuevo entrante declarado o «No hay competencia».
+ */
+export function competenciaRespondida(report) {
+    return (report?.competition || []).length > 0
+        || (report?.newEntrants || []).length > 0
+        || !!report?.sinCompetencia;
+}
+
 /** Hora de la visita de un reporte (ms): `startTime` si es válida; si no, la fecha guardada. */
 export function horaVisitaMs(r) {
     const c = r?.createdAt?.seconds != null ? r.createdAt.seconds * 1000

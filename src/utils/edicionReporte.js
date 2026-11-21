@@ -76,6 +76,7 @@ export function formularioDesdeReporte(r = {}) {
         popStatus: r.popStatus || '',
         competition: (r.competition || []).map(c => ({ ...c, price: texto(c.price ?? '') })),
         newEntrants: r.newEntrants || [],
+        sinCompetencia: !!r.sinCompetencia,
         notes: r.notes || '',
     };
 }
@@ -196,6 +197,8 @@ function construir(original, f) {
         popStatus: f.popStatus || null,
         competition: (f.competition || []).map(c => ({ ...c, price: leerNumero(c.price) ?? 0 })),
         newEntrants: f.newEntrants || [],
+        // null cuando no aplica: así un reporte viejo sin el campo no cuenta como cambio.
+        sinCompetencia: f.sinCompetencia && !(f.competition || []).length && !(f.newEntrants || []).length ? true : null,
         notes: f.notes || '',
         startTime,
         endTime,
@@ -207,7 +210,7 @@ function construir(original, f) {
 export const NOMBRE_CAMPO = {
     stockout: 'Estado del anaquel', batches: 'Lotes', price: 'PVP', entregas: 'Entregas con factura',
     entregaSinFactura: 'Entró sin factura', retiroVisita: 'Retiro', facing: 'Caras', shelfLocation: 'Altura',
-    adjacentCategory: 'Categoría vecina', popStatus: 'POP', competition: 'Competencia', newEntrants: 'Nuevos entrantes',
+    adjacentCategory: 'Categoría vecina', popStatus: 'POP', competition: 'Competencia', newEntrants: 'Nuevos entrantes', sinCompetencia: 'Sin competencia',
     notes: 'Observaciones', startTime: 'Hora de inicio', endTime: 'Hora de fin', posId: 'Punto de venta',
     posName: 'Punto de venta', posZone: 'Zona', coordinates: 'Ubicación del PDV', reporterId: 'Mercaderista', userName: 'Mercaderista',
 };
