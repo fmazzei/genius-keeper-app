@@ -11,7 +11,7 @@ import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
 import { doc, getDoc, setDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import { registrarDespacho } from '../src/Kroma/despachoOps.js';
-import { recibirDespacho } from '../src/utils/recepcionOps.js';
+import { recibirDespacho, recibirConRetiro } from '../src/utils/recepcionOps.js';
 import { lineasACaracas, esDestinoCaracas } from '../src/utils/destinoDespacho.js';
 
 const PORT = Number(process.env.FS_PORT || 8092);
@@ -29,6 +29,7 @@ await env.withSecurityRulesDisabled(async (c) => {
   const db = c.firestore();
   await setDoc(doc(db, 'users_metadata', 'planta'), { role: 'produccion', email: 'produccion@lacteoca.com' });
   await setDoc(doc(db, 'users_metadata', 'merch'), { role: 'merchandiser', email: 'm@lacteoca.com' });
+  await setDoc(doc(db, 'users_metadata', 'admin'), { role: 'administrador', email: 'mj@lacteoca.com' });
   await setDoc(doc(db, 'kroma_inventory_pt', 'kg1'),  { ...base, tipo: 'empacado', presentacion: 'Lacteoca Chèvre Original · 1 kg', pesoPorUnidad: 1, unidades: 10 });
   await setDoc(doc(db, 'kroma_inventory_pt', 'g250'), { ...base, tipo: 'empacado', presentacion: 'Lacteoca Chèvre Original · 250 g', pesoPorUnidad: 0.25, unidades: 20 });
   await setDoc(doc(db, 'kroma_inventory_pt', 'gran'), { ...base, tipo: 'sin_envasar', kgTotales: 5 });
@@ -108,6 +109,39 @@ try {
 } catch (e) { fallo2 = e.message; }
 const inv2 = (await getDocs(collection(merch, 'inventario_comercial'))).docs.length;
 ok(!!fallo2 && inv2 === 3, `segunda recepción rechazada ("${fallo2}") y el inventario no se duplica`);
+
+// ── 5. Recepción con retiro del mercaderista (administración) ──────────────
+const [id3] = await registrarDespacho(planta, {
+  aCaracas: [linea('kg1', kg1, 3, CARACAS), linea('gran', gran, 2, CARACAS)], fecha: '2026-09-29', hoy: '2026-09-29',
+  empresaId: 'lacteoca', responsable: { id: 'u1', nombre: 'Operario' },
+});
+const admin = env.authenticatedContext('admin').firestore();
+const desp3 = { id: id3, ...(await leer(admin, 'kroma_despachos', id3)) };
+const lineas3 = lineasACaracas(desp3);
+const rows3 = lineas3.map(l => ({ cantidadRecibida: l.cantidad, estadoOk: true }));
+const invAntes = (await getDocs(collection(admin, 'inventario_comercial'))).docs.map(d => ({ id: d.id, ...d.data() }));
+const mj = { id: 'admin', nombre: 'María José', role: 'administrador' };
+const eduardo = { id: 'rep1', nombre: 'Eduardo Carrillo' };
+let fallo3 = null;
+try {
+  await recibirConRetiro(admin, { despachoId: id3, lineas: lineas3, rows: rows3, inventario: invAntes, almacenId: 'frimaca', almacenNombre: 'Frimaca',
+    actor: mj, planillaFoto: 'x', retiros: [4, 0], mercaderista: eduardo });
+} catch (e) { fallo3 = e.message; }
+ok(!!fallo3 && (await leer(admin, 'kroma_despachos', id3)).estado === 'en_transito',
+  `quedarse con más de lo recibido se rechaza ANTES de recibir ("${fallo3}")`);
+await recibirConRetiro(admin, { despachoId: id3, lineas: lineas3, rows: rows3, inventario: invAntes, almacenId: 'frimaca', almacenNombre: 'Frimaca',
+  actor: mj, planillaFoto: 'x', retiros: [2, 0], mercaderista: eduardo });
+const inv3 = (await getDocs(collection(admin, 'inventario_comercial'))).docs.map(d => d.data());
+const k1b = inv3.find(i => /1 kg/.test(i.presentacion));
+ok(k1b?.unidades === 4, `1 kg en Frimaca: 3 que había + 3 recibidas − 2 con el mercaderista = 4 → ${k1b?.unidades}`);
+ok(inv3.find(i => i.tipo === 'sin_envasar')?.unidades === 4.5, 'granel: 2,5 + 2 recibidos, sin retiro = 4,5 kg');
+const pk = (await getDocs(query(collection(admin, 'pickings'), where('despachoId', '==', id3)))).docs.map(d => d.data());
+ok(pk.length === 1 && pk[0].cantidad === 2 && pk[0].origen === 'recepcion' && pk[0].mercaderistaNombre === 'Eduardo Carrillo' && pk[0].anotadoPorNombre === 'María José',
+  'picking de 2 a nombre de Eduardo, anotado por María José, con origen «recepción» y el despacho');
+const mv3 = (await getDocs(query(collection(admin, 'inventario_movimientos'), where('tipo', '==', 'picking')))).docs.map(d => d.data());
+ok(mv3.length === 1 && mv3[0].cantidad === -2 && mv3[0].ref?.despachoId === id3 && /al recibir el camión/.test(mv3[0].nota),
+  'libro de movimientos: picking −2 con el despacho y la nota');
+ok((await leer(admin, 'kroma_despachos', id3)).estado === 'recibido_caracas', 'el despacho queda recibido');
 
 await env.cleanup();
 console.log(fallas ? `\n${fallas} FALLA(S)` : '\nTODO OK');

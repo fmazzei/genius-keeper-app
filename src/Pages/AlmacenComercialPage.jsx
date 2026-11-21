@@ -638,6 +638,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                     inventario={inventario}
                     actor={actorLabel}
                     theme={theme}
+                    puedeRetiro={puedeAjustar}
                     onClose={() => setRecepDespacho(null)}
                     onDone={load}
                 />

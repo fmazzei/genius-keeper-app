@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-20-recepcion-retiro-mercaderista",
+    fecha: "2026-11-20",
+    roles: ["master", "administrador"],
+    titulo: "Recibir el cami\xF3n cuando el mercaderista se queda con una parte",
+    resumen: "Al recibir un despacho en Frimaca ahora puedes decir con cu\xE1nto se qued\xF3 el mercaderista para despacharlo de una vez. Todo se recibe y eso sale como picking a su nombre. En \xABEn la mano\xBB cada retiro dice si ya lo entreg\xF3, completo o en parte, y es alerta roja si pasan 2 d\xEDas sin entregarlo o si entrega sin retiro anotado."
+  },
+  {
     id: "2026-11-19-vencimiento-conteo-viejo",
     fecha: "2026-11-19",
     roles: ["master", "gerencia"],

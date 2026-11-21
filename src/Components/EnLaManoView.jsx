@@ -63,6 +63,10 @@ export default function EnLaManoView({ datos: dado = null }) {
     const enAlerta = new Set(atrasadasPorFacturar(r).facturas.map(f => f.numero));
     const sinEntregaRoja = enAlerta.size > 0;
     const sinEntregaUds = r.sinEntrega.reduce((s, x) => s + x.unidades, 0);
+    const alerta = atrasadasPorFacturar(r);
+    const atrasado = new Set(alerta.retiros.map(x => `${x.dia}|${x.unidades}|${x.lote || ''}`));
+    const retiros = [...(r.retiros || [])].reverse().slice(0, 12);
+    const sinRetiro = r.sinRetiro || [];
 
     return (
         <div className="space-y-4">
@@ -90,6 +94,73 @@ export default function EnLaManoView({ datos: dado = null }) {
                 Retirado − facturado = <b>{r.sinFacturar}</b>: las {r.enLaMano} en la mano, más {porFacturarUds} entregadas por facturar
                 {sinEntregaUds > 0 ? <>, menos <b className="text-red-600">{sinEntregaUds} facturadas sin entrega</b></> : null}.
             </p>
+
+            {sinRetiro.length > 0 && (
+                <section className={`bg-white border rounded-2xl overflow-hidden ${sinRetiro.some(x => x.dia < hoy) ? 'border-red-300' : 'border-amber-200'}`}>
+                    <p className={`px-4 py-3 text-sm font-bold border-b ${sinRetiro.some(x => x.dia < hoy) ? 'text-red-700 bg-red-50 border-red-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
+                        Entregas sin retiro anotado
+                    </p>
+                    <p className="px-4 pt-2 text-xs text-slate-500">
+                        El mercaderista entregó más de lo que tiene retirado. Falta anotar de dónde salió: un picking de Frimaca o lo que se quedó del camión.
+                    </p>
+                    <div className="divide-y divide-slate-100">
+                        {sinRetiro.map((x, i) => (
+                            <div key={i} className="px-4 py-2.5 flex items-start gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-slate-800 truncate">{x.posName}</p>
+                                    <p className="text-xs text-slate-500">Entregado el {fmtDia(x.dia)}</p>
+                                </div>
+                                <p className={`text-lg font-black shrink-0 ${x.dia < hoy ? 'text-red-600' : 'text-amber-700'}`}>{x.unidades}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {retiros.length > 0 && (
+                <section className={`bg-white border rounded-2xl overflow-hidden ${alerta.retiros.length ? 'border-red-300' : 'border-slate-200'}`}>
+                    <p className={`px-4 py-3 text-sm font-bold border-b ${alerta.retiros.length ? 'text-red-700 bg-red-50 border-red-200' : 'text-slate-700 border-slate-200'}`}>
+                        Retiros y su entrega{alerta.retiros.length ? ` · ${alerta.unidadesRetiros} sin entregar hace más de ${r.diasEntregaRetiro} días` : ''}
+                    </p>
+                    <p className="px-4 pt-2 text-xs text-slate-500">
+                        Cada retiro se va descontando con lo que el mercaderista anota en sus visitas, el más viejo primero.
+                    </p>
+                    <div className="divide-y divide-slate-100">
+                        {retiros.map((x, i) => {
+                            const rojo = atrasado.has(`${x.dia}|${x.unidades}|${x.lote || ''}`);
+                            const chip = x.estado === 'entregado' ? 'bg-emerald-100 text-emerald-700'
+                                : rojo ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800';
+                            const clave = `ret${i}`;
+                            return (
+                                <div key={clave}>
+                                    <button type="button" onClick={() => setAbierto(a => (a === clave ? null : clave))}
+                                        className="w-full px-4 py-2.5 flex items-start gap-3 text-left hover:bg-slate-50">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-slate-800">
+                                                {x.etiqueta} · <span className="capitalize">{fmtDia(x.dia)}</span>
+                                            </p>
+                                            <p className="text-xs text-slate-500">
+                                                {x.unidades} uds{x.lote ? ` · lote ${x.lote}` : ''}{x.mercaderista ? ` · ${x.mercaderista}` : ''}
+                                            </p>
+                                        </div>
+                                        <span className={`text-[11px] font-bold px-2 py-1 rounded-full shrink-0 ${chip}`}>
+                                            {x.estado === 'entregado' ? 'Entregado' : `${x.estado === 'parcial' ? 'Parcial' : 'Pendiente'} · faltan ${x.pendiente}`}
+                                        </span>
+                                    </button>
+                                    {abierto === clave && (
+                                        <div className="px-4 pb-3 space-y-1 text-xs text-slate-600">
+                                            {x.entregas.length === 0 && <p>Todavía no hay entregas anotadas de este retiro.</p>}
+                                            {x.entregas.map((e, j) => (
+                                                <p key={j}><span className="capitalize">{fmtDia(e.dia)}</span>: {e.repuesto ? 'repuso' : 'entregó'} <b>{e.unidades}</b> en {e.posName}</p>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
 
             {r.porFacturar.length > 0 && (
                 <section className={`bg-white border rounded-2xl overflow-hidden ${r.porFacturar.some(x => x.dia < hoy) ? 'border-red-300' : 'border-amber-200'}`}>

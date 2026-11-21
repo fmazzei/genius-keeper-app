@@ -15,7 +15,7 @@ import { marcaMov } from './movInventario.js';
 
 const r3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1000) / 1000;
 
-export async function registrarPicking(db, { itemId, cantidad, fecha, hora, actor = {}, pdv = null, retiradoPor = null }) {
+export async function registrarPicking(db, { itemId, cantidad, fecha, hora, actor = {}, pdv = null, retiradoPor = null, origen = null, despachoId = null }) {
     const qty = r3(cantidad);
     if (!(qty > 0)) throw new Error('Indica cuánto retiras.');
     const actorLabel = { id: actor.id || '', nombre: actor.nombre || '', role: actor.role || '' };
@@ -37,7 +37,7 @@ export async function registrarPicking(db, { itemId, cantidad, fecha, hora, acto
             unidades: despues, updatedAt: serverTimestamp(), updatedBy: actorLabel,
             ...marcaMov('picking', {
                 motivo: destino ? `Picking para ${destino.posNombre}` : 'Picking (ruta)',
-                ref: { pickingId: pickRef.id, ...(destino || {}) }, usuario: actorLabel,
+                ref: { pickingId: pickRef.id, ...(destino || {}), ...(despachoId ? { despachoId } : {}) }, usuario: actorLabel,
             }),
         });
         tx.set(doc(collection(db, 'inventario_movimientos')), {
@@ -45,9 +45,9 @@ export async function registrarPicking(db, { itemId, cantidad, fecha, hora, acto
             productoNombre: item.productoNombre, presentacion: item.presentacion || '',
             lote: item.lote || '', fechaVencimiento: item.fechaVencimiento || '',
             tipo: 'picking', cantidad: -qty, unidadesAntes: stock, unidadesDespues: despues,
-            unit, ref: { itemId, pickingId: pickRef.id, ...(destino || {}) },
+            unit, ref: { itemId, pickingId: pickRef.id, ...(destino || {}), ...(despachoId ? { despachoId } : {}) },
             actorId: actorLabel.id, actorNombre: actorLabel.nombre, actorRole: actorLabel.role,
-            nota: `Picking ${fecha} ${hora}${retiradoPor?.nombre ? ` · retiró ${retiradoPor.nombre}` : ''}${destino ? ` · ${destino.posNombre}` : ''}`, createdAt: serverTimestamp(),
+            nota: `Picking ${fecha} ${hora}${retiradoPor?.nombre ? ` · retiró ${retiradoPor.nombre}` : ''}${destino ? ` · ${destino.posNombre}` : ''}${origen === 'recepcion' ? ' · se lo quedó al recibir el camión' : ''}`, createdAt: serverTimestamp(),
         });
         tx.set(pickRef, {
             almacenId: item.almacenId || null, almacenNombre: item.almacenNombre || '',
@@ -63,6 +63,7 @@ export async function registrarPicking(db, { itemId, cantidad, fecha, hora, acto
             mercaderistaNombre: retiradoPor?.nombre || actorLabel.nombre,
             mercaderistaRole: retiradoPor ? 'mercaderista' : actorLabel.role,
             ...(retiradoPor ? { anotadoPorId: actorLabel.id, anotadoPorNombre: actorLabel.nombre } : {}),
+            ...(origen ? { origen } : {}), ...(despachoId ? { despachoId } : {}),
             estado: 'aplicado', createdAt: serverTimestamp(),
         });
         resultado = { pickingId: pickRef.id, unidades: despues };

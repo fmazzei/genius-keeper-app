@@ -201,6 +201,16 @@ export default function AdministracionLayout({ user, onLogout }) {
                                 {atrasadas.unidades} unidades entregadas sin factura ({atrasadas.entregas.length} entrega{atrasadas.entregas.length !== 1 ? 's' : ''} desde el {atrasadas.desde?.split('-').reverse().slice(0, 2).join('/')}). Hay que facturarlas.
                             </span>
                         )}
+                        {atrasadas.unidadesSinRetiro > 0 && (
+                            <span className="block">
+                                {atrasadas.unidadesSinRetiro} unidades entregadas sin retiro anotado. Anota el picking o lo que el mercaderista se quedó del camión.
+                            </span>
+                        )}
+                        {atrasadas.unidadesRetiros > 0 && (
+                            <span className="block">
+                                {atrasadas.unidadesRetiros} unidades retiradas por el mercaderista siguen sin entregar ({atrasadas.retiros.length} retiro{atrasadas.retiros.length !== 1 ? 's' : ''}). Pregúntale dónde están.
+                            </span>
+                        )}
                         {atrasadas.facturas.length > 0 && (
                             <span className="block">
                                 {atrasadas.unidadesFacturas} unidades facturadas sin entrega ({atrasadas.facturas.map(f => f.numero).join(', ')}). Revisa la factura o la visita.
