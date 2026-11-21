@@ -36,6 +36,9 @@
 
 import { horaVisitaMs } from './visitaOla1.js';
 import { fechaCalendario } from './vendedorMeta.js';
+import { partesDeEntrega, textoCantidad, textoPartes } from './presentacionEntrega.js';
+
+export { partesDeEntrega, textoCantidad, textoPartes };
 
 const TZ_MS = 4 * 3600 * 1000; // Caracas, UTC−4 sin horario de verano
 
@@ -67,6 +70,13 @@ export function unidadesDeVenta(mov) {
     if (mov?.unit === 'kg') return n * 4;
     if (/\b1\s*kg\b/i.test(pres)) return n * 4;
     return n;
+}
+
+/** Presentación de un retiro: '1kg' (bolsa de 1 kg o kg a granel) o '250'. */
+export function presDeRetiro(mov) {
+    const pres = String(mov?.presentacion || '');
+    if (mov?.unit === 'kg' || /\b1\s*kg\b/i.test(pres)) return '1kg';
+    return '250';
 }
 
 /** ¿Este movimiento de ACC es un retiro del mercaderista? */
@@ -117,7 +127,7 @@ export function calcularEnLaMano({
     const nombreDe = new Map(posList.map(p => [p.id, p.name || p.nombre || p.id]));
     const dias = new Map();
     const dia = (d) => {
-        if (!dias.has(d)) dias.set(d, { dia: d, retirado: 0, entregado: 0, repuesto: 0, reubicado: 0, devolucion: 0, facturado: 0, retiros: [], entregas: [], facturas: [] });
+        if (!dias.has(d)) dias.set(d, { dia: d, retirado: 0, entregado: 0, repuesto: 0, reubicado: 0, devolucion: 0, facturado: 0, retiradoKg1: 0, entregadoKg1: 0, retiros: [], entregas: [], facturas: [] });
         return dias.get(d);
     };
 
@@ -127,11 +137,13 @@ export function calcularEnLaMano({
         const d = diaRetiro(m);
         if (!enRango(d)) continue;
         const uds = unidadesDeVenta(m);
+        const pres = presDeRetiro(m);
         const fila = dia(d);
         fila.retirado += uds;
+        if (pres === '1kg') fila.retiradoKg1 += uds;
         const mercaderista = (String(m.nota || '').match(/retiró ([^·]+)/) || [])[1]?.trim() || '';
         fila.retiros.push({
-            unidades: uds, lote: m.lote || '', nota: m.nota || '', quien: m.actorNombre || '', mercaderista,
+            unidades: uds, pres, lote: m.lote || '', nota: m.nota || '', quien: m.actorNombre || '', mercaderista,
             hora: aMs(m.createdAt) || 0, origen: m.ref?.despachoId ? 'recepcion' : 'frimaca',
             registradoComo: m.tipo === 'picking' ? 'picking' : 'descuento',
         });
@@ -149,7 +161,9 @@ export function calcularEnLaMano({
         const repuesto = Number(r?.repuestas) || 0;
         const retirado = Number(r?.unidades) || 0;
         const reubica = r && r.destino === 'otro_pdv';
+        const partes = partesDeEntrega(v);
         fila.entregado += entro;
+        fila.entregadoKg1 += partes.filter(p => p.pres === '1kg').reduce((s, p) => s + p.unidades, 0);
         fila.repuesto += repuesto;
         if (retirado > 0) {
             if (reubica) fila.reubicado += retirado;
@@ -161,7 +175,7 @@ export function calcularEnLaMano({
                 .map(e => ({ numero: e.numero, unidades: Number(e.unidadesEntregadas) || 0 }));
             const e = {
                 dia: d, hora: horaVisitaMs(v), posId: v.posId, posName: v.posName || nombreDe.get(v.posId) || '',
-                carnet: carnetDe.get(v.posId) || null, unidades: entro, conFactura,
+                carnet: carnetDe.get(v.posId) || null, unidades: entro, partes, conFactura,
                 sinFactura: Math.max(0, entro - conFactura.reduce((s, x) => s + x.unidades, 0)),
                 quien: v.userName || '', reportId: v.reportId || v.id || null,
             };
@@ -214,6 +228,7 @@ export function calcularEnLaMano({
         if (falta > 0) {
             porFacturar.push({
                 dia: e.dia, posId: e.posId, posName: e.posName, unidades: falta, quien: e.quien,
+                pres: e.partes.length === 1 ? e.partes[0].pres : null,
                 motivo: e.carnet ? null : 'El punto de venta no está vinculado a un cliente de Zoho: no se puede buscar su factura.',
             });
         }
@@ -229,9 +244,11 @@ export function calcularEnLaMano({
 
     // 5. Día por día.
     const lista = [...dias.values()].sort((a, b) => a.dia.localeCompare(b.dia));
-    let manoVisitas = inicial, sinFacturar = inicial, devoluciones = 0;
+    let manoVisitas = inicial, sinFacturar = inicial, devoluciones = 0, manoKg1 = 0;
     for (const f of lista) {
         manoVisitas += f.retirado - f.entregado - f.repuesto + f.reubicado;
+        manoKg1 += f.retiradoKg1 - f.entregadoKg1;
+        f.manoKg1 = manoKg1;
         sinFacturar += f.retirado - f.facturado;
         devoluciones += f.devolucion;
         f.manoVisitas = manoVisitas;
@@ -246,7 +263,11 @@ export function calcularEnLaMano({
         reubicado: total('reubicado'), facturado: total('facturado'),
         ...seguirRetiros(lista, entregas, visitas, desde, inicial, enRango),
         diasEntregaRetiro,
-        enLaMano: manoVisitas,             // según sus visitas
+        enLaMano: manoVisitas,             // según sus visitas (unidades de venta)
+        enLaManoPartes: [                  // lo mismo, por presentación
+            { pres: '250', unidades: manoVisitas - manoKg1 },
+            { pres: '1kg', unidades: manoKg1 },
+        ].filter(x => x.unidades !== 0),
         sinFacturar,                       // retirado − facturado
         devoluciones,                      // retiradas de anaquel para el camión
         porFacturar: porFacturar.sort((a, b) => a.dia.localeCompare(b.dia) || a.posName.localeCompare(b.posName)),
@@ -262,23 +283,25 @@ export function calcularEnLaMano({
  */
 function seguirRetiros(lista, entregas, visitas, desde, inicial, enRango) {
     const fuentes = [];
-    if (inicial > 0) fuentes.push({ dia: desde, unidades: inicial, etiqueta: 'Lo que tenía al empezar', resto: inicial, entregas: [] });
+    if (inicial > 0) fuentes.push({ dia: desde, unidades: inicial, pres: '250', etiqueta: 'Lo que tenía al empezar', resto: inicial, entregas: [] });
     for (const f of lista) {
         [...f.retiros].sort((a, b) => a.hora - b.hora).forEach(x => fuentes.push({
-            dia: f.dia, unidades: x.unidades, lote: x.lote, mercaderista: x.mercaderista, anoto: x.quien,
+            dia: f.dia, unidades: x.unidades, pres: x.pres || '250', lote: x.lote, mercaderista: x.mercaderista, anoto: x.quien,
             origen: x.origen, etiqueta: x.origen === 'recepcion' ? 'Se lo quedó al recibir el camión' : 'Retiro de Frimaca',
             resto: x.unidades, entregas: [],
         }));
-        if (f.reubicado > 0) fuentes.push({ dia: f.dia, unidades: f.reubicado, etiqueta: 'Retirado de un anaquel para otro punto', resto: f.reubicado, entregas: [] });
+        if (f.reubicado > 0) fuentes.push({ dia: f.dia, unidades: f.reubicado, pres: '250', etiqueta: 'Retirado de un anaquel para otro punto', resto: f.reubicado, entregas: [] });
     }
     // Lo repuesto al retirar también sale de la mano.
-    const consumos = entregas.map(e => ({ dia: e.dia, hora: e.hora, posName: e.posName, unidades: e.unidades }));
+    // Cada presentación sale de un retiro de su misma presentación.
+    const consumos = entregas.flatMap(e => (e.partes?.length ? e.partes : [{ pres: '250', unidades: e.unidades }])
+        .map(p => ({ dia: e.dia, hora: e.hora, posName: e.posName, unidades: p.unidades, pres: p.pres })));
     for (const v of visitas) {
         const rep = Number(v.retiroVisita?.repuestas) || 0;
         if (rep <= 0 || (Number(v.formVersion) || 1) < 2) continue;
         const d = diaCaracas(horaVisitaMs(v));
         if (!enRango(d)) continue;
-        consumos.push({ dia: d, hora: horaVisitaMs(v), posName: v.posName || '', unidades: rep, repuesto: true });
+        consumos.push({ dia: d, hora: horaVisitaMs(v), posName: v.posName || '', unidades: rep, pres: '250', repuesto: true });
     }
     consumos.sort((a, b) => a.dia.localeCompare(b.dia) || a.hora - b.hora);
 
@@ -287,13 +310,13 @@ function seguirRetiros(lista, entregas, visitas, desde, inicial, enRango) {
         let falta = c.unidades;
         for (const f of fuentes) {
             if (falta <= 0) break;
-            if (f.dia > c.dia || f.resto <= 0) continue;
+            if (f.dia > c.dia || f.resto <= 0 || (f.pres || '250') !== (c.pres || '250')) continue;
             const toma = Math.min(falta, f.resto);
             f.resto -= toma;
             falta -= toma;
-            f.entregas.push({ dia: c.dia, posName: c.posName, unidades: toma, repuesto: !!c.repuesto });
+            f.entregas.push({ dia: c.dia, posName: c.posName, unidades: toma, pres: c.pres || '250', repuesto: !!c.repuesto });
         }
-        if (falta > 0) sinRetiro.push({ dia: c.dia, posName: c.posName, unidades: falta });
+        if (falta > 0) sinRetiro.push({ dia: c.dia, posName: c.posName, unidades: falta, pres: c.pres || '250' });
     }
     const retiros = fuentes.map(({ resto, ...f }) => ({
         ...f, entregado: f.unidades - resto, pendiente: resto,

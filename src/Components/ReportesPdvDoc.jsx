@@ -10,7 +10,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { fmtDiaVE, fmtMomentoVE, DIAS_FACTURA_ANTES_DE_REPONER, comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL, textoNoVenta, textoDuplicada } from '@/utils/reporteVisita.js';
+import { fmtDiaVE, fmtMomentoVE, DIAS_FACTURA_ANTES_DE_REPONER, comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL, textoNoVenta, textoDuplicada, textoRepuestas } from '@/utils/reporteVisita.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { etiquetaAltura, etiquetaCategoria } from '@/utils/anaquelCatalogo.js';
 import { estadoLote, ESTADO_LABEL, labelMotivo } from '@/utils/retiros.js';
@@ -224,7 +224,7 @@ export function ReporteVisitaDoc({ report, pos, va, vp, ub, registro, historial,
                 <Kpi k="Esta visita · contadas" v={va?.contadas} sub={va?.dia ? fmtDiaVE(va.dia) : null} color={NAVY} />
             </Fila>
             <Fila>
-                <Kpi k="Esta visita · repuestas" v={va?.repuestas ?? 0} sub={factTxt(va)} color={colorFact(va)} />
+                <Kpi k="Esta visita · repuestas" v={textoRepuestas(report, va?.repuestas ?? 0)} sub={factTxt(va)} color={colorFact(va)} />
                 <Kpi k="Total en anaquel" v={va?.quedaron} sub="contadas + repuestas" color={NAVY} />
             </Fila>
             <H2>Rotación (unidades que salen por día)</H2>
