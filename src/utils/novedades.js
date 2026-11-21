@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-21-competencia-reporte',
+        fecha: '2026-11-21',
+        roles: ['merchandiser', 'master'],
+        titulo: 'Competencia en el reporte: sin trampas',
+        resumen: 'En el paso de competencia ahora puedes marcar «No hay competencia» si el anaquel no tiene ninguna, y un nuevo entrante declarado ya cuenta para continuar. El precio del nuevo entrante acepta coma (9,50). No hace falta anotar un competidor con precio de $1.',
+    },
+    {
         id: '2026-11-20-recepcion-retiro-mercaderista',
         fecha: '2026-11-20',
         roles: ['master', 'administrador'],

@@ -1,6 +1,6 @@
 // Prueba de la lógica pura de la Ola 1 del formulario de visita.
 // Correr: node --import ./tests/alias.mjs tests/visitaOla1.test.mjs
-import { leerPrecio, firmaLotes, conteoIdentico, horaVisitaMs, diaLocalMs, distanciaM, ETIQUETAS } from '../src/utils/visitaOla1.js';
+import { leerPrecio, firmaLotes, conteoIdentico, horaVisitaMs, diaLocalMs, distanciaM, ETIQUETAS, competenciaRespondida } from '../src/utils/visitaOla1.js';
 import { resumenLotes } from '../src/utils/retiros.js';
 
 let ok = 0, mal = 0;
@@ -38,6 +38,13 @@ t('etiqueta motivo sin fecha', ETIQUETAS.loteSinFecha.etiqueta_danada.length > 0
 const r = resumenLotes(lotes);
 t('lote sin fecha cuenta en inventario', r.inventoryLevel === 8);
 t('lote sin fecha en su estado', r.porEstado.sin_fecha === 2);
+
+// Paso de competencia: basta un competidor, un nuevo entrante o «no hay competencia».
+t('competencia sin nada no avanza', !competenciaRespondida({ competition: [], newEntrants: [] }));
+t('competencia con uno de la lista', competenciaRespondida({ competition: [{ product: 'Ananke', price: 7.98 }], newEntrants: [] }));
+t('competencia con solo un nuevo entrante', competenciaRespondida({ competition: [], newEntrants: [{ brand: 'X', presentation: '200 g', price: 6.5 }] }));
+t('competencia: no hay competencia', competenciaRespondida({ competition: [], newEntrants: [], sinCompetencia: true }));
+t('precio del entrante con coma', leerPrecio('9,50') === 9.5);
 
 console.log(`${ok} en verde, ${mal} en rojo`);
 if (mal) process.exit(1);

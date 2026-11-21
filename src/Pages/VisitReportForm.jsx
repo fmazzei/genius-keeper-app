@@ -13,6 +13,7 @@ import {
     MOTIVOS_SIN_FECHA, GPS_TIEMPO_MAX_MS, ETIQUETAS, firmaLotes, leerPrecio, horaVisitaMs,
     diaLocalMs, distanciaM, conteoIdentico, OPCIONES_ENTREGA, MOTIVOS_RETIRO, DESTINOS_RETIRO, RESPUESTAS_ANTES_DESPUES,
     totalEntregado, pareceContadoDespues, corregirAntes,
+    competenciaRespondida,
 } from '@/utils/visitaOla1.js';
 import { facturasPorEntregarDe, ultimoConteoDe, anotarVisitaEnRuta, leerRuta, guardarRuta } from '@/utils/rutaOffline.js';
 import { encolarReporte, enviarPendientes, enviarSinCola } from '@/utils/colaEnvio.js';
@@ -682,7 +683,7 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince,
         if (isReadOnly) return;
         const precio = leerPrecio(comp.price);
         if (comp.product && precio !== null) {
-            setReport(prev => ({ ...prev, competition: [...prev.competition, { ...comp, price: precio }] }));
+            setReport(prev => ({ ...prev, sinCompetencia: false, competition: [...prev.competition, { ...comp, price: precio }] }));
             setComp({ product: '', brand: '', productName: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
         } else {
             alert("Por favor, selecciona un producto y añade su precio.");
@@ -690,7 +691,16 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince,
     };
     const handleRemoveCompetitor = (index) => { if (!isReadOnly) setReport(prev => ({ ...prev, competition: prev.competition.filter((_, i) => i !== index) })); };
     const handleRemoveEntrant = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, newEntrants: prev.newEntrants.filter((_, i) => i !== index) })); };
-    const handleSaveNewEntrant = (entrantData) => { if(!isReadOnly) { setReport(prev => ({ ...prev, newEntrants: [...prev.newEntrants, entrantData] })); setIsEntrantModalOpen(false); }};
+    const handleSaveNewEntrant = (entrantData) => { if(!isReadOnly) { setReport(prev => ({ ...prev, sinCompetencia: false, newEntrants: [...prev.newEntrants, entrantData] })); setIsEntrantModalOpen(false); }};
+    const sinCompetencia = !!report.sinCompetencia;
+    const hayAnotado = report.competition.length > 0 || report.newEntrants.length > 0;
+    const marcarSinCompetencia = (valor) => {
+        if (isReadOnly) return;
+        if (valor && hayAnotado && !window.confirm('Se quitarán los competidores anotados en este reporte. ¿Continuar?')) return;
+        setReport(prev => valor
+            ? { ...prev, sinCompetencia: true, competition: [], newEntrants: [] }
+            : { ...prev, sinCompetencia: false });
+    };
 
     const dayLabel = daysSince === null ? null : daysSince === 0 ? 'hoy' : `hace ${daysSince} día${daysSince !== 1 ? 's' : ''}`;
 
@@ -713,13 +723,31 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince,
                             <AlertTriangle size={15} className="text-red-500 shrink-0 mt-0.5" />
                             <p className="text-sm text-red-800">
                                 {daysSince === null
-                                    ? 'Primera visita a este PDV. Registra los competidores presentes para continuar.'
-                                    : `Han pasado ${daysSince} días desde el último reporte. Actualiza los datos para continuar.`}
+                                    ? 'Primera visita a este PDV. Registra los competidores presentes (o un nuevo entrante, o marca que no hay competencia) para continuar.'
+                                    : `Han pasado ${daysSince} días desde el último reporte. Actualiza los competidores (o un nuevo entrante, o marca que no hay competencia) para continuar.`}
                             </p>
                         </div>
                     )}
 
+                    {/* ── ¿Hay competencia en el anaquel? ───────────────── */}
+                    {!isReadOnly && (
+                        <div>
+                            <label className="text-sm font-medium text-slate-700">¿Hay productos de la competencia en este anaquel?</label>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                                <ToggleButton label="Sí, hay" isSelected={!sinCompetencia} onClick={() => marcarSinCompetencia(false)} />
+                                <ToggleButton label="No hay competencia" isSelected={sinCompetencia} onClick={() => marcarSinCompetencia(true)} />
+                            </div>
+                            {sinCompetencia && (
+                                <p className="text-sm text-slate-600 mt-2">Listo: el reporte queda con «sin competencia en este anaquel». No hace falta anotar ningún competidor.</p>
+                            )}
+                        </div>
+                    )}
+                    {isReadOnly && sinCompetencia && (
+                        <p className="text-sm text-slate-600">Sin competencia en este anaquel.</p>
+                    )}
+
                     {/* ── Formulario de competidores ────────────────────── */}
+                    {!sinCompetencia && (<>
                     <div>
                         <h4 className="font-semibold text-slate-700 mb-2">Seguimiento a Competidores</h4>
                         <div className="p-4 bg-slate-50 rounded-lg space-y-4 border">
@@ -759,7 +787,8 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince,
                     </div>
 
                     <div className="pt-6 border-t">
-                        <h4 className="font-semibold text-slate-700 mb-2">Nuevos Entrantes Detectados</h4>
+                        <h4 className="font-semibold text-slate-700 mb-1">Nuevos Entrantes Detectados</h4>
+                        {!isReadOnly && <p className="text-xs text-slate-500 mb-2">¿Ves una marca que no está en la lista? Decláralo aquí: cuenta como competidor de este reporte.</p>}
                         <div className="mt-2 space-y-2">
                             {report.newEntrants.map((e, i) => (
                                 <div key={i} className="flex justify-between items-center p-3 bg-amber-50 border-l-4 border-amber-400 rounded-r-lg">
@@ -770,6 +799,7 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince,
                         </div>
                         {!isReadOnly && <button type="button" onClick={() => setIsEntrantModalOpen(true)} className="w-full bg-amber-100 text-amber-800 font-bold p-3 rounded-lg mt-4 flex items-center justify-center gap-2"><Search size={18}/> Declarar Nuevo Entrante</button>}
                     </div>
+                    </>)}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Notas Adicionales</label>
                         <textarea value={report.notes} onChange={e => setReport(prev => ({...prev, notes: e.target.value}))} rows="3" className="w-full p-2 border rounded disabled:bg-slate-100 disabled:text-slate-500" placeholder="Observaciones, nuevos productos, etc..." disabled={isReadOnly}></textarea>
@@ -809,7 +839,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     };
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
-    const [report, setReport] = useState({ reporterName: '', price: '', sinFactura: '', entregas: {}, retiro: {}, stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
+    const [report, setReport] = useState({ reporterName: '', price: '', sinFactura: '', entregas: {}, retiro: {}, stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], sinCompetencia: false, notes: '' });
     // Facturas por entregar de este PDV, de la copia guardada en el teléfono
     // (llega con señal desde datosRutaMercaderista). Sin copia: lista vacía y se
     // escribe a mano lo que entró ("sin factura vinculada").
@@ -861,6 +891,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                 facing: initialData.facing || '',
                 competition: initialData.competition || [],
                 newEntrants: initialData.newEntrants || [],
+                sinCompetencia: !!initialData.sinCompetencia,
                 notes: initialData.notes || ''
             });
             if (initialData.createdAt && initialData.createdAt.toDate) {
@@ -890,9 +921,10 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             }
             case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
             case 4:
-                // Sin catálogo de competidores (sin señal y sin copia) no se puede
-                // exigir uno: el reporte no se bloquea.
-                isValid = competitorMode === 'preloaded' || report.competition.length > 0 || !hayCompetidores;
+                // Basta con: un competidor de la lista, un nuevo entrante declarado
+                // o «No hay competencia». Sin catálogo (sin señal y sin copia) no
+                // se puede exigir uno: el reporte no se bloquea.
+                isValid = competitorMode === 'preloaded' || competenciaRespondida(report) || !hayCompetidores;
                 break;
             default: isValid = false;
         }
@@ -1140,6 +1172,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             facing: Number(report.facing) || 0,
             competition: report.competition || [],
             newEntrants: report.newEntrants || [],
+            sinCompetencia: !!report.sinCompetencia && !(report.competition || []).length && !(report.newEntrants || []).length,
             notes: report.notes || '',
             userId: user.uid,
             userName: report.reporterName,

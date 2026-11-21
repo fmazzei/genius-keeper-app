@@ -287,6 +287,10 @@ const EditReportForm = ({ report, posList = [], onSave, onClose }) => {
                 </Seccion>
 
                 <Seccion titulo="Competencia" icono={<Shield size={18} className="text-brand-blue" />}>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input type="checkbox" checked={!!f.sinCompetencia} onChange={e => set('sinCompetencia', e.target.checked)} />
+                        No hay competencia en este anaquel
+                    </label>
                     {(f.competition || []).map((c, i) => (
                         <div key={i} className="grid grid-cols-[1fr_6rem_auto] gap-2 items-end">
                             <div className="text-sm font-semibold text-slate-700 truncate pb-3">{c.product || `${c.brand} ${c.productName}`}</div>

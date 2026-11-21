@@ -286,7 +286,7 @@ function ReportCard({ report, onOpen, t }) {
 const OMIT_KEYS = new Set([
     'id', 'reportId', 'posId', 'posName', 'posZone', 'userId', 'userName', 'reporterId',
     'createdAt', 'startTime', 'endTime', 'price', 'orderQuantity', 'stockout', 'batches',
-    'shelfLocation', 'adjacentCategory', 'popStatus', 'facing', 'competition',
+    'shelfLocation', 'adjacentCategory', 'popStatus', 'facing', 'competition', 'sinCompetencia',
     'newEntrants', 'notes', 'inventoryLevel', 'coordinates', 'gpsVisita', 'visitaAnterior',
 ]);
 
@@ -749,6 +749,12 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                                     );
                                 })}
                             </div>
+                        </Section>
+                    )}
+
+                    {report.sinCompetencia && !report.competition?.length && (
+                        <Section title="Competencia" t={t}>
+                            <p className="text-sm">Sin competencia en este anaquel.</p>
                         </Section>
                     )}
 

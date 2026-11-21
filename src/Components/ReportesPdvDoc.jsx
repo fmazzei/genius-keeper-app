@@ -269,6 +269,7 @@ export function ReporteVisitaDoc({ report, pos, va, vp, ub, registro, historial,
             </>)}
 
             {r.competition?.length > 0 && (<><H2>Competencia ({r.competition.length})</H2><Competencia items={r.competition} /></>)}
+            {r.sinCompetencia && !r.competition?.length && (<><H2>Competencia</H2><p style={{ margin: 0, fontSize: 12 }}>Sin competencia en este anaquel.</p></>)}
 
             {r.newEntrants?.length > 0 && (<>
                 <H2>Nuevos entrantes ({r.newEntrants.length})</H2>
