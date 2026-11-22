@@ -779,6 +779,7 @@ const MODULE_ROLE_CONFIG = [
             { key: 'conciliacion', label: 'Conciliación',       icon: 'Store'     },
             { key: 'cartera',      label: 'Cartera',            icon: 'Briefcase' },
             { key: 'almacenComercial', label: 'Almacén', icon: 'Warehouse' },
+            { key: 'trazabilidad', label: 'Trazabilidad', icon: 'Store' },
         ],
     },
 ];
@@ -5086,6 +5087,7 @@ const ADMIN_MODULES = [
     { id: 'conciliacion',  label: 'Conciliación de facturas' },
     { id: 'cartera',       label: 'Cartera' },
     { id: 'almacenComercial', label: 'Almacén (inventario de Caracas, ajustes y pickings)' },
+    { id: 'trazabilidad', label: 'Trazabilidad (por vencimiento o lote, de la leche al anaquel)' },
 ];
 
 // Herramienta general: sincroniza el índice de login por nombre de usuario

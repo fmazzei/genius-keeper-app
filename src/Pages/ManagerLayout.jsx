@@ -14,7 +14,7 @@ import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/Firebase/config.js';
-import { LogOut, BarChart2, TrendingUp, Settings, Map as MapIcon, Menu, ChevronsRight, Briefcase, CalendarCheck, ClipboardList, Download, Warehouse, UserCheck } from 'lucide-react';
+import { LogOut, BarChart2, TrendingUp, Settings, Map as MapIcon, Menu, ChevronsRight, Briefcase, CalendarCheck, ClipboardList, Download, Warehouse, UserCheck, ScanSearch } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
@@ -26,6 +26,7 @@ import AdminPanel from './AdminPanel.jsx';
 import ComercialView from './ComercialView.jsx';
 import EstaSemanaView from './EstaSemanaView.jsx';
 import MercaderistasView from './MercaderistasView.jsx';
+import TrazabilidadView from '@/Components/TrazabilidadView.jsx';
 import ReportesAnaquelView from './ReportesAnaquelView.jsx';
 import ExportesView from './ExportesView.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
@@ -158,6 +159,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             comercial:        'Comercial',
             semana:           'Para esta semana',
             mercaderistas:    'Mercaderistas',
+            trazabilidad:     'Trazabilidad',
             almacenComercial: 'Almacén Comercial',
             planner:          'Centro de Planificación',
             reportesAnaquel:  'Reportes de Anaquel',
@@ -193,6 +195,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
+                <NavItem icon={<ScanSearch size={24} />} text="Trazabilidad" active={currentView === 'trazabilidad'} onClick={() => setCurrentView('trazabilidad')} />
                 <NavItem icon={<Settings size={24} />} text="Configuraciones" dot={agenteNoLeidas > 0} active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
             </ul>
         );
@@ -251,6 +254,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 {currentView === 'mercaderistas' && (
                     <MercaderistasView posList={posList} reports={reports} />
                 )}
+
+                {/* Trazabilidad: por vencimiento o lote, de la leche al anaquel (solo el máster). */}
+                {currentView === 'trazabilidad' && role === 'master' && <TrazabilidadView />}
 
                 {/* Reportes de Anaquel */}
                 <div className={currentView === 'reportesAnaquel' ? 'block h-full' : 'hidden'}>

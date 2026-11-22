@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-22-trazabilidad",
+    fecha: "2026-11-22",
+    roles: ["master", "administrador"],
+    titulo: "Trazabilidad: de la leche al anaquel",
+    resumen: "Escribe la fecha de vencimiento del empaque o el lote y ves de qu\xE9 leche sali\xF3 (productores y par\xE1metros), c\xF3mo se produjo, cu\xE1nto se guard\xF3 antes de envasar, a d\xF3nde se despach\xF3, a qu\xE9 clientes pudo llegar y cu\xE1nto queda en anaqueles. En GK est\xE1 en \xABTrazabilidad\xBB y en Kroma, en Administraci\xF3n. Se puede bajar en PDF."
+  },
+  {
     id: "2026-11-21-mano-bolsas-1kg",
     fecha: "2026-11-21",
     roles: ["master", "administrador"],

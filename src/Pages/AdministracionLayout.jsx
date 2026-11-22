@@ -18,7 +18,7 @@ import { db } from '@/Firebase/config.js';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
-import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2, Bot, Warehouse, Hand } from 'lucide-react';
+import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2, Bot, Warehouse, Hand, ScanSearch } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
@@ -27,6 +27,7 @@ import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } fr
 import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import EnLaManoView from '@/Components/EnLaManoView.jsx';
+import TrazabilidadView from '@/Components/TrazabilidadView.jsx';
 import { useEnLaMano, atrasadasPorFacturar } from '@/hooks/useEnLaMano.js';
 import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
@@ -132,6 +133,8 @@ export default function AdministracionLayout({ user, onLogout }) {
         ...(modOn('almacenComercial') ? [{ id: 'inventario', label: 'Almacén', Icon: Warehouse }] : []),
         // Lo que el mercaderista tiene en la mano y lo entregado sin factura.
         ...(modOn('almacenComercial') ? [{ id: 'enLaMano', label: 'En la mano', Icon: Hand, dot: atrasadas.total }] : []),
+        // De la leche al anaquel, por vencimiento o lote.
+        ...(modOn('trazabilidad') ? [{ id: 'trazabilidad', label: 'Trazabilidad', Icon: ScanSearch }] : []),
     ];
     // Alertas del agente: su propia pestaña (con punto rojo), separada del
     // trabajo de pagar. Administración solo recibe avisos del agente (comisiones).
@@ -265,6 +268,8 @@ export default function AdministracionLayout({ user, onLogout }) {
                     <ListaMaestraPdv />
                 ) : activeTab?.id === 'cartera' ? (
                     <CarteraAdmin vendedores={vendedores} />
+                ) : activeTab?.id === 'trazabilidad' ? (
+                    <TrazabilidadView />
                 ) : activeTab?.id === 'enLaMano' ? (
                     <div className="max-w-4xl mx-auto"><EnLaManoView datos={enLaMano} /></div>
                 ) : activeTab?.id === 'inventario' ? (

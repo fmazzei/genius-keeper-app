@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-22-trazabilidad',
+        fecha: '2026-11-22',
+        roles: ['master', 'administrador'],
+        titulo: 'Trazabilidad: de la leche al anaquel',
+        resumen: 'Escribe la fecha de vencimiento del empaque o el lote y ves de qué leche salió (productores y parámetros), cómo se produjo, cuánto se guardó antes de envasar, a dónde se despachó, a qué clientes pudo llegar y cuánto queda en anaqueles. En GK está en «Trazabilidad» y en Kroma, en Administración. Se puede bajar en PDF.',
+    },
+    {
         id: '2026-11-21-mano-bolsas-1kg',
         fecha: '2026-11-21',
         roles: ['master', 'administrador'],
