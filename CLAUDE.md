@@ -4471,6 +4471,21 @@ Reclamo del dueño: la entrega a Whole Fit (1 bolsa de 1 kg) salía como «4 uni
 - Dato: el reporte de Whole Fit (`visit_reports/8bab1401-…`) lleva su presentación (cambio `5HpgmrHxHvPraebdDNTO`).
 - Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/enLaMano.test.mjs` (6 casos nuevos).
 
+## Trazabilidad: de la leche al anaquel, por vencimiento o lote (2026-11-22) ✅
+
+Pedido del dueño: con la fecha de vencimiento o el lote en una barra de búsqueda, saber a qué producción pertenece un producto, de qué leche (productores y parámetros de recepción con fecha y hora), todos los datos de la producción, cuánto estuvo guardado hasta envasarse, a dónde se despachó, a qué clientes pudo llegar y cuánto queda aproximadamente en la calle. Solo máster y administración, en GK y en Kroma.
+- **Servidor** (cruza las dos apps; la cuenta de planta no lee visitas ni facturas): callable **`trazabilidad({q, perfilId})`** (`functions/handlers/trazabilidad.js`) + reglas puras **`trazabilidadReglas.js`**.
+  - `resolverConsulta`: 23/11/26, 23-11-2026, 2026-11-23, «23 de noviembre de 2026» o un lote (completo o un pedazo).
+  - `lotesDeConsulta`: por vencimiento, todo lote con algo de esa fecha en producción (`productosFinales`, granel), cava, Frimaca, despachos o libro; hasta 6 lotes.
+  - `trazarLote`: leche (`kroma_milk_reception` por `recepcionIds`, con parámetros; la hora de una recepción de planilla no se da por cierta), producción (cada paso con lo que pide la ficha y lo anotado, sin costos), envasado (`productosFinales` o partidas, con días guardado = envasado − cierre), despachos (con la recepción en Caracas), ventas en planta, saldos de hoy por ubicación, pickings, clientes (facturas asignadas por FEFO en `kroma_inv_libro`, reposiciones, ventas en planta, despachos a otra ciudad), en la calle (visitas con esa fecha en sus lotes; la estimación suma lo que vio la ÚLTIMA visita de cada punto), retiros de anaquel y una línea de tiempo.
+  - **Acceso**: GK `master` o `administrador`; Kroma, la cuenta de la empresa (Lacteoca) con un perfil `kroma_users` máster o `kroma_admin` (lo manda la app como `perfilId`). Nunca devuelve costos ni fotos (`select` en visitas, devoluciones y actas).
+- **Pantalla** `src/Components/TrazabilidadView.jsx` (tema claro en GK, oscuro en Kroma): barra de búsqueda, resumen del lote, 7 secciones desplegables y la línea de tiempo, y **PDF** (copia clara fuera de la vista + `BotonPdf`).
+  - GK: menú del máster «Trazabilidad»; administración, pestaña «Trazabilidad» (módulo `trazabilidad`, se apaga por usuario o por rol).
+  - Kroma: Administración → «Trazabilidad» (módulo `trazabilidad`: máster y `kroma_admin`).
+- **Límites**: los clientes por factura son lo más probable (FEFO desde el 16-oct), no una certeza; lo visto en anaquel sí es seguro. Antes del 16-oct lo que salió de Frimaca no tiene cliente asignado. Los saldos de hoy salen del libro valorado (desde el 5-oct).
+- Caso real: el 23/11/26 es el lote **LCO20260715-H** (planilla del 15-jul: Masparrito 238,2 L + Los Gilgares 583,57 L; 262 ud envasadas el 23-sep tras 70 días a granel; 216 despachadas a Caracas el 30-sep).
+- Pruebas: `node tests/trazabilidad.test.mjs` (30 en verde, con el caso real) y `npx firebase emulators:exec --only firestore --project demo-gk-traza "node tests/trazabilidad.e2e.test.mjs"` (18 en verde: acceso, consultas, sin costos ni fotos).
+
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
 Pedido del dueño: las alertas de los reportes deben llegar al máster y a la gerencia, abrir el reporte al tocarlas y decir las unidades; el reporte debe traer la coordenada de donde se hizo; y las alertas del sistema o del agente van solo al máster, en Configuraciones, con un punto rojo cuando llega una.
