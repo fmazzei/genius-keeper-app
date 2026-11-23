@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-23-zoho-reintentos',
+        fecha: '2026-11-23',
+        roles: ['master'],
+        titulo: 'Zoho: una lectura que se corta se reintenta',
+        resumen: 'Cuando Zoho corta una lectura o tarda demasiado, GK lo intenta otra vez (hasta 3) antes de dar el barrido por fallido. Así el robot deja de avisar por cortes pasajeros de Zoho.',
+    },
+    {
         id: '2026-11-22-trazabilidad',
         fecha: '2026-11-22',
         roles: ['master', 'administrador'],
