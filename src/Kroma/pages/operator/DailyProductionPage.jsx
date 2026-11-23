@@ -12,9 +12,9 @@ import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
-import { unidadesDeConsumo, unidadInicial, pasoDe, convertirConsumo, leerCantidad, etiquetaUnidad } from '@/Kroma/consumoUnidades.js';
+import { filasDeConsumo, resumenConsumo, totalesConsumo } from '@/Kroma/consumoUnidades.js';
+import ConsumosPasoSheet from '@/Kroma/Components/ConsumosPasoSheet.jsx';
 import CampoNumero from '@/Kroma/Components/CampoNumero.jsx';
-import { usePasoSostenido, pasoAcelerado } from '@/Kroma/pasoSostenido.js';
 import { costoBasePorKgTeorico, precioLecheDeProveedor, componenteFlete, fleteDeRecepcion } from '@/Kroma/costeoLote.js';
 import { leerConfigLeche, leerRecepciones } from '@/Kroma/configCostos.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
@@ -338,57 +338,6 @@ function convertUnit(amount, from, to) {
     if (!f || !t || f === t) return amount;
     const CONV = { 'g_kg': 0.001, 'kg_g': 1000, 'ml_l': 0.001, 'l_ml': 1000 };
     return amount * (CONV[`${f}_${t}`] || 1);
-}
-
-// Una fila del cierre del día: se escribe la cantidad (con coma) o se usan + y −
-// (dejarlos presionados corre la cifra), y se elige la unidad chica o grande
-// (ml/L, g/kg). Arranca en la chica: lo de una jornada son mililitros o gramos.
-function ConsumoFila({ c, onChange }) {
-    const unidades = unidadesDeConsumo(c.unidadBase);
-    const paso = pasoDe(c.unidad);
-    const fijar = (n) => {
-        const v = Math.max(0, +n.toFixed(3));
-        onChange({ ...c, cantidad: v, texto: String(v).replace('.', ',') });
-    };
-    const menos = usePasoSostenido((t) => fijar((c.cantidad || 0) - pasoAcelerado(paso, t)));
-    const mas   = usePasoSostenido((t) => fijar((c.cantidad || 0) + pasoAcelerado(paso, t)));
-    const cambiarUnidad = (u) => {
-        if (u === c.unidad) return;
-        const v = +convertirConsumo(c.cantidad || 0, c.unidad, u).toFixed(3);
-        onChange({ ...c, unidad: u, cantidad: v, texto: v ? String(v).replace('.', ',') : '' });
-    };
-    return (
-        <div className="bg-slate-800 rounded-xl px-4 py-3 space-y-2.5">
-            <div className="flex items-center justify-between gap-3">
-                <p className="text-white text-sm font-medium truncate flex-1 min-w-0">{c.nombre}</p>
-                {unidades.length > 1 ? (
-                    <div className="flex rounded-lg overflow-hidden border border-slate-600 shrink-0">
-                        {unidades.map(u => (
-                            <button key={u} type="button" onClick={() => cambiarUnidad(u)}
-                                className={`px-3 py-1 text-xs font-bold ${c.unidad === u ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
-                                {etiquetaUnidad(u)}
-                            </button>
-                        ))}
-                    </div>
-                ) : (
-                    <span className="text-slate-400 text-xs shrink-0">{etiquetaUnidad(c.unidad)}</span>
-                )}
-            </div>
-            <div className="flex items-center gap-2">
-                <button type="button" {...menos}
-                    className="w-11 h-11 rounded-xl bg-slate-700 active:bg-slate-600 text-white text-lg font-bold flex items-center justify-center select-none">−</button>
-                <input type="text" inputMode="decimal" value={c.texto ?? ''} placeholder="0"
-                    onChange={e => {
-                        const t = e.target.value.replace(/[^0-9.,]/g, '');
-                        onChange({ ...c, texto: t, cantidad: leerCantidad(t) });
-                    }}
-                    className="flex-1 min-w-0 h-11 bg-slate-900 border border-slate-700 rounded-xl text-center text-white font-mono text-base focus:outline-none focus:border-emerald-500" />
-                <span className="text-slate-400 text-sm w-8 text-center shrink-0">{etiquetaUnidad(c.unidad)}</span>
-                <button type="button" {...mas}
-                    className="w-11 h-11 rounded-xl bg-slate-700 active:bg-slate-600 text-white text-lg font-bold flex items-center justify-center select-none">+</button>
-            </div>
-        </div>
-    );
 }
 
 // Elegir hasta cuándo queda la producción en hold. Hoja propia (no un campo
@@ -1988,6 +1937,36 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
                     </div>
                 )}
 
+                {/* Lo que se usó en cada paso (guantes, tapabocas, limpieza…) */}
+                {(() => {
+                    const porPaso = Object.entries(log.consumosPorPaso || {})
+                        .sort((x, y) => Number(x[0]) - Number(y[0]))
+                        .map(([k, v]) => ({ k, paso: v?.paso || blockLabel(bloques[Number(k)]?.tipo), usados: v?.consumibles || [] }));
+                    const jornadas = (log.jornadasConsumo || []).map((j, i) => ({ k: `j${i}`, paso: `Cierre del día ${(j.dia || 1) - 1}`, usados: j.consumibles || [] }));
+                    const todos = [...jornadas, ...porPaso];
+                    if (!todos.length) return null;
+                    const total = resumenConsumo(totalesConsumo(todos.flatMap(t => t.usados)));
+                    return (
+                        <div>
+                            <SecLabel>Lo que se usó en la producción</SecLabel>
+                            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2">
+                                {todos.map(t => (
+                                    <div key={t.k} className="flex justify-between gap-3">
+                                        <span className="text-slate-500 text-xs shrink-0">{t.paso}</span>
+                                        <span className="text-slate-300 text-xs text-right">{resumenConsumo(t.usados) || 'Nada'}</span>
+                                    </div>
+                                ))}
+                                {total && (
+                                    <div className="flex justify-between gap-3 pt-2 border-t border-slate-800">
+                                        <span className="text-slate-400 text-xs font-semibold shrink-0">Total</span>
+                                        <span className="text-emerald-300 text-xs font-semibold text-right">{total}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 {/* Resultado */}
                 <div>
                     <SecLabel>Resultado final</SecLabel>
@@ -2380,8 +2359,10 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     const [elapsedNotif, setElapsedNotif] = useState(null); // { bloqueAnterior, minutos }
 
     // Cierre de Jornada gate
-    const [cierreJornada, setCierreJornada] = useState(null); // null | { pendingIdx, dia }
-    const [cierreConsumos, setCierreConsumos] = useState([]); // [{ materialId, nombre, cantidad, unidad }]
+    // «¿Qué usaste en este paso?»: se abre al cerrar cada paso (pedido del dueño, 23-nov).
+    const [consumoPaso, setConsumoPaso] = useState(null); // null | { idx, paso, ultimo, anterior }
+    const [consumoGuardando, setConsumoGuardando] = useState(false);
+    const [consumoError, setConsumoError] = useState('');
     const [consumiblesInv, setConsumiblesInv] = useState([]); // consumibles/detergentes from inventory
 
     // New production wizard
@@ -2675,35 +2656,37 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     }
 
     // litrosNetos: derived from pasteurizacion block or ingresados
-    async function confirmCierreJornada() {
-        if (!cierreJornada || !activeLog) return;
-        const usados = cierreConsumos.filter(c => c.cantidad > 0)
-            .map(({ texto, ...c }) => c); // eslint-disable-line no-unused-vars
-        // Save cierre to log
-        const jornadasConsumo = [...(activeLog.jornadasConsumo || []), {
-            dia:       cierreJornada.dia,
-            fecha:     new Date().toISOString(),
+    // Guarda lo que se usó en el paso (y lo descuenta de Insumos) y recién
+    // entonces cierra el paso. Se guarda ANTES de cerrarlo y queda marcado en
+    // `consumosPorPaso.{idx}`: si el cierre falla y se reintenta, no se vuelve
+    // a preguntar ni a descontar.
+    async function guardarConsumoPaso(usados) {
+        if (!consumoPaso || !activeLog || consumoGuardando) return;
+        const { idx, paso } = consumoPaso;
+        const entrada = {
+            paso,
+            fecha: new Date().toISOString(),
             consumibles: usados,
             reportadoPor: kromaUser?.id || '',
-        }];
+            reportadoPorNombre: kromaUser?.name || '',
+        };
+        setConsumoGuardando(true);
+        setConsumoError('');
         try {
-            // Descontar PRIMERO (awaited): si falla, no se guarda el cierre como
-            // si los consumibles ya se hubieran restado del inventario.
             if (usados.length > 0) {
                 await decrementInventory(usados.map(c => ({ materialId: c.materialId, nombre: c.nombre, amount: c.cantidad, unidad: c.unidad })),
                     { tipo: 'consumible', log: activeLog });
             }
-            await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), { jornadasConsumo });
-            setActiveLog(prev => ({ ...prev, jornadasConsumo }));
+            await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), sinUndefined({ [`consumosPorPaso.${idx}`]: entrada }));
+            setActiveLog(prev => ({ ...prev, consumosPorPaso: { ...(prev?.consumosPorPaso || {}), [String(idx)]: entrada } }));
         } catch (e) {
-            setSaveError(e.message);
-            return; // no avanzar al siguiente bloque si el cierre no quedó bien
+            setConsumoError(`No se pudo guardar: ${e.message}`);
+            setConsumoGuardando(false);
+            return; // el paso no se cierra si lo usado no quedó guardado
         }
-        const pendingIdx = cierreJornada.pendingIdx;
-        setCierreJornada(null);
-        setCierreConsumos([]);
-        // Proceed with the original block completion
-        completeBlock(pendingIdx);
+        setConsumoGuardando(false);
+        setConsumoPaso(null);
+        completeBlock(idx, { consumoListo: true, consumibles: usados });
     }
 
     function getLitrosNetos() {
@@ -3120,15 +3103,26 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         finally { setFinSaving(false); }
     }
 
-    async function completeBlock(idx) {
+    async function completeBlock(idx, opts = {}) {
         const idxStr = String(idx);
         const bloques = activeLog?.bloquesSnapshot || [];
         const bloque  = bloques[idx];
         if (!bloque || saving) return;
 
-        // Cierre de Jornada gate: if the last completed block was on a different calendar day,
-        // ask the operator to report consumables before advancing.
-        // Cierre de Jornada gate moved below — needs holdHasta computed first
+        // Antes de cerrar el paso: ¿qué se usó? (guantes, tapabocas, cloro,
+        // jabón, soda). No se pregunta al corregir una producción ya cerrada,
+        // ni si ya se anotó para este paso.
+        const yaAnotado = activeLog?.consumosPorPaso?.[idxStr];
+        if (!modoEdicion && !opts.consumoListo && !yaAnotado) {
+            const previos = Object.entries(activeLog?.consumosPorPaso || {})
+                .filter(([k, v]) => Number(k) < idx && v?.consumibles?.length)
+                .sort((a, b) => Number(b[0]) - Number(a[0]));
+            const anterior = previos.length ? { paso: previos[0][1].paso, usados: previos[0][1].consumibles } : null;
+            setConsumoError('');
+            setConsumoPaso({ idx, paso: blockLabel(bloque.tipo), ultimo: idx >= bloques.length - 1, anterior });
+            return;
+        }
+        const consumiblesPaso = opts.consumibles ?? yaAnotado?.consumibles ?? null;
 
         const reg     = bloquesData[idxStr]?.registros || {};
         const isEmpaque     = bloque.tipo === 'empaque';
@@ -3145,16 +3139,6 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 || (plannedMin > 0 ? nowDatetimeLocal(plannedMin * 60 * 1000) : null);
             holdHasta  = holdDateStr ? new Date(holdDateStr) : null;
             holdBloque = blockLabel(bloque.tipo);
-        }
-
-        // Cierre de Jornada: trigger when the operator is setting a hold that
-        // resumes on a different calendar day — they're still in the plant and
-        // remember exactly what they used today.
-        if (!cierreJornada && wantHold && holdHasta && holdHasta.toDateString() !== new Date().toDateString()) {
-            const completedSoFar = Object.values(activeLog?.bloquesData || {}).filter(b => b.completado).length;
-            setCierreConsumos(consumiblesInv.map(c => ({ materialId: c.id, nombre: c.materialNombre, cantidad: 0, texto: '', unidadBase: c.unidadBase || 'und', unidad: unidadInicial(c.unidadBase || 'und') })));
-            setCierreJornada({ pendingIdx: idx, dia: completedSoFar + 1 });
-            return;
         }
 
         // Compute litros netos after pasteurizacion
@@ -3188,6 +3172,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 tiempoEsperaRealMin,
                 registros:     reg,
                 consumosCosteo,
+                ...(consumiblesPaso ? { consumibles: consumiblesPaso } : {}),
             },
         };
 
@@ -3850,34 +3835,18 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                     )}
                 </div>
 
-                {/* ── Cierre de Jornada modal ── */}
-                {cierreJornada && (
-                <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/75">
-                    <div className="bg-slate-900 rounded-t-2xl max-h-[85vh] flex flex-col">
-                        <div className="px-5 pt-5 pb-3 shrink-0 border-b border-slate-800">
-                            <p className="text-white font-bold text-base">Cierre del Día {cierreJornada.dia - 1}</p>
-                            <p className="text-slate-400 text-sm mt-0.5">Reporta los consumibles utilizados hoy antes de continuar</p>
-                        </div>
-                        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-                            {cierreConsumos.length === 0 ? (
-                                <p className="text-slate-500 text-sm text-center py-6">No hay consumibles ni detergentes en inventario.</p>
-                            ) : cierreConsumos.map((c, i) => (
-                                <ConsumoFila key={c.materialId} c={c}
-                                    onChange={nuevo => setCierreConsumos(prev => prev.map((x, j) => j === i ? nuevo : x))} />
-                            ))}
-                        </div>
-                        <div className="px-5 py-4 flex gap-3 shrink-0 border-t border-slate-800">
-                            <button onClick={() => { setCierreJornada(null); setCierreConsumos([]); }}
-                                className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
-                                Cancelar
-                            </button>
-                            <button onClick={confirmCierreJornada}
-                                className="flex-1 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold transition-colors">
-                                Confirmar y continuar
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                {/* ── ¿Qué usaste en este paso? ── */}
+                {consumoPaso && (
+                    <ConsumosPasoSheet
+                        key={consumoPaso.idx}
+                        paso={consumoPaso.paso}
+                        ultimo={consumoPaso.ultimo}
+                        anterior={consumoPaso.anterior}
+                        filas={filasDeConsumo(consumiblesInv)}
+                        guardando={consumoGuardando}
+                        error={consumoError}
+                        onGuardar={guardarConsumoPaso}
+                        onCancelar={() => { if (!consumoGuardando) { setConsumoPaso(null); setConsumoError(''); } }} />
                 )}
 
                 {elapsedNotif && (

@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-23-kroma-consumibles-paso",
+    fecha: "2026-11-23",
+    roles: ["master"],
+    titulo: "Kroma: lo que se us\xF3 en cada paso",
+    resumen: "Al cerrar cada paso de una producci\xF3n, tambi\xE9n el \xFAltimo, Kroma pregunta qu\xE9 se us\xF3: guantes por pares, tapabocas por unidad, cloro y jab\xF3n en ml, soda en gramos. Botones grandes, \xABLo mismo que en el paso anterior\xBB y \xABNo us\xE9 nada\xBB. Se descuenta de Insumos y queda en el reporte del lote."
+  },
+  {
     id: "2026-11-23-zoho-reintentos",
     fecha: "2026-11-23",
     roles: ["master"],
