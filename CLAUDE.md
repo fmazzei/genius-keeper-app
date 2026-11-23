@@ -686,6 +686,12 @@ lo que Zoho nunca anuncia.
   ahora sale temprano. El cuadre y la marca de tiempo van en try/catch — son
   diagnóstico, no pueden tumbar una corrida que ya aplicó sus cambios.
 
+### Las lecturas de Zoho se reintentan (2026-11-23) ✅
+
+El robot avisó «Las facturas de Zoho no se están actualizando»: los barridos de las 11:01 y 12:00 del 23-nov fallaron con «Zoho: aborted» y «timeout of 30000ms exceeded» (el de las 10:03 había salido bien; no era un permiso). Una sola página de Zoho que se cortaba tumbaba el barrido entero.
+- `functions/handlers/zohoApi.js`: toda LECTURA (`getZoho`) y el refresco del token van por `conReintento` (3 intentos, espera 2 s y 4 s) cuando la falla es pasajera (`esFallaPasajera`: aborted, socket hang up, timeout, ECONNRESET y similares, 429 y 5xx). Un 401, un 4xx o un código de error de Zoho en el cuerpo NO se reintentan. Las escrituras (crear factura, asientos) nunca se reintentan: podrían duplicar.
+- Prueba: `node tests/zohoReintentos.test.mjs` (10 en verde).
+
 ### Conciliar por comando, sin abrir la app (2026-11-18) ✅
 
 Pedido del dueño: que Claude pueda conciliar con Zoho cuando él lo pida, sin tener que tocar el botón de Integraciones.

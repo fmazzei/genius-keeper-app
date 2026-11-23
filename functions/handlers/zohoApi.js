@@ -11,6 +11,38 @@
 
 const axios = require('axios');
 
+// Zoho a veces corta una lectura a la mitad («aborted», «socket hang up») o
+// tarda más de 30 s. Una sola página que falla tumbaba el barrido completo
+// (23-nov: dos barridos seguidos en error). Las LECTURAS y el refresco del
+// token se reintentan solos; las escrituras no (podrían duplicar).
+const REINTENTOS_ZOHO = 3;
+const ESPERA_BASE_MS = 2000;
+
+function esFallaPasajera(e) {
+    const st = e?.response?.status;
+    if (st === 429 || (st >= 500 && st <= 599)) return true;
+    if (e?.response) return false;
+    const txt = `${e?.code || ''} ${e?.message || ''}`;
+    return /ECONNRESET|ECONNABORTED|ETIMEDOUT|ESOCKETTIMEDOUT|EAI_AGAIN|ENOTFOUND|EPIPE|ERR_BAD_RESPONSE|aborted|socket hang up|timeout|network/i.test(txt);
+}
+
+const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function conReintento(fn, intentos = REINTENTOS_ZOHO) {
+    let ultimo;
+    for (let i = 1; i <= intentos; i++) {
+        try { return await fn(); } catch (e) {
+            ultimo = e;
+            if (i === intentos || !esFallaPasajera(e)) throw e;
+            await esperar(ESPERA_BASE_MS * Math.pow(2, i - 1));
+        }
+    }
+    throw ultimo;
+}
+
+/** GET a Zoho con reintentos ante fallas pasajeras. Misma firma que axios.get. */
+const getZoho = (url, config) => conReintento(() => axios.get(url, config));
+
 // Dominios por data center de Zoho. accounts.* para OAuth, zohoapis.* para la API.
 const DC = {
     com:    { accounts: 'https://accounts.zoho.com',    api: 'https://www.zohoapis.com' },
@@ -35,7 +67,7 @@ async function getAccessToken({ clientId, clientSecret, refreshToken, dataCenter
         throw new Error('Faltan credenciales de Zoho (clientId, clientSecret o refreshToken).');
     }
     const { accounts } = dcUrls(dataCenter);
-    const res = await axios.post(`${accounts}/oauth/v2/token`, null, {
+    const res = await conReintento(() => axios.post(`${accounts}/oauth/v2/token`, null, {
         params: {
             refresh_token: refreshToken,
             client_id:     clientId,
@@ -43,7 +75,7 @@ async function getAccessToken({ clientId, clientSecret, refreshToken, dataCenter
             grant_type:    'refresh_token',
         },
         timeout: 20000,
-    });
+    }));
     const token = res.data?.access_token;
     if (!token) {
         const err = res.data?.error || 'sin access_token en la respuesta';
@@ -68,7 +100,7 @@ async function listInvoicesPage({ accessToken, organizationId, dataCenter, page,
         sort_order: 'D',
     };
     if (modifiedAfter) params.last_modified_time = modifiedAfter;
-    const res = await axios.get(`${api}/books/v3/invoices`, {
+    const res = await getZoho(`${api}/books/v3/invoices`, {
         params,
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
         timeout: 30000,
@@ -107,7 +139,7 @@ async function listBillsPage({ accessToken, organizationId, dataCenter, page, pe
     const { api } = dcUrls(dataCenter);
     const params = { organization_id: organizationId, page, per_page: perPage, sort_column: 'date', sort_order: 'D' };
     if (filterBy) params.filter_by = filterBy;
-    const res = await axios.get(`${api}/books/v3/bills`, {
+    const res = await getZoho(`${api}/books/v3/bills`, {
         params,
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
         timeout: 30000,
@@ -149,7 +181,7 @@ async function listAllBills({ accessToken, organizationId, dataCenter, maxPages 
  */
 async function getInvoiceDetail({ accessToken, organizationId, dataCenter, invoiceId }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/invoices/${invoiceId}`, {
+    const res = await getZoho(`${api}/books/v3/invoices/${invoiceId}`, {
         params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
         timeout: 20000,
@@ -165,7 +197,7 @@ async function getInvoiceDetail({ accessToken, organizationId, dataCenter, invoi
  */
 async function findInvoiceIdByNumber({ accessToken, organizationId, dataCenter, invoiceNumber }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/invoices`, {
+    const res = await getZoho(`${api}/books/v3/invoices`, {
         params: { organization_id: organizationId, invoice_number: invoiceNumber, per_page: 5 },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
         timeout: 20000,
@@ -184,7 +216,7 @@ async function findInvoiceIdByNumber({ accessToken, organizationId, dataCenter, 
  */
 async function getContactDetail({ accessToken, organizationId, dataCenter, contactId }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/contacts/${contactId}`, {
+    const res = await getZoho(`${api}/books/v3/contacts/${contactId}`, {
         params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
         timeout: 20000,
@@ -230,7 +262,7 @@ async function listItems({ accessToken, organizationId, dataCenter, perPage = 20
     const { api } = dcUrls(dataCenter);
     const todos = [];
     for (let page = 1; page <= 10; page++) {
-        const res = await axios.get(`${api}/books/v3/items`, {
+        const res = await getZoho(`${api}/books/v3/items`, {
             params: { organization_id: organizationId, page, per_page: perPage },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
             timeout: 30000,
@@ -289,7 +321,7 @@ async function listAllContacts({ accessToken, organizationId, dataCenter, maxPag
     const all = [];
     let complete = true;
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/contacts`, {
+        const res = await getZoho(`${api}/books/v3/contacts`, {
             params: { organization_id: organizationId, contact_type: 'customer', page, per_page: perPage },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
             timeout: 30000,
@@ -328,7 +360,7 @@ async function listVendorBalances({ accessToken, organizationId, dataCenter, max
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/contacts`, {
+        const res = await getZoho(`${api}/books/v3/contacts`, {
             params: { organization_id: organizationId, contact_type: 'vendor', page, per_page: perPage },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
             timeout: 30000,
@@ -359,7 +391,7 @@ async function listRecurringBills({ accessToken, organizationId, dataCenter, max
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/recurringbills`, {
+        const res = await getZoho(`${api}/books/v3/recurringbills`, {
             params: { organization_id: organizationId, page, per_page: perPage },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
             timeout: 30000,
@@ -388,7 +420,7 @@ async function listRecurringBills({ accessToken, organizationId, dataCenter, max
 async function getAccountBalanceByCode({ accessToken, organizationId, dataCenter, codigo }) {
     const { api } = dcUrls(dataCenter);
     for (let page = 1; page <= 10; page++) {
-        const res = await axios.get(`${api}/books/v3/chartofaccounts`, {
+        const res = await getZoho(`${api}/books/v3/chartofaccounts`, {
             params: { organization_id: organizationId, showbalance: true, page, per_page: 200 },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
             timeout: 30000,
@@ -427,7 +459,7 @@ async function listChartOfAccounts({ accessToken, organizationId, dataCenter }) 
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= 10; page++) {
-        const res = await axios.get(`${api}/books/v3/chartofaccounts`, {
+        const res = await getZoho(`${api}/books/v3/chartofaccounts`, {
             params: { organization_id: organizationId, page, per_page: 200 },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
         });
@@ -443,7 +475,7 @@ async function listChartOfAccounts({ accessToken, organizationId, dataCenter }) 
 /** Detalle de una cuenta; `closing_balance` es su saldo actual (verificado en Lacteoca). */
 async function getAccount({ accessToken, organizationId, dataCenter, accountId }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/chartofaccounts/${accountId}`, {
+    const res = await getZoho(`${api}/books/v3/chartofaccounts/${accountId}`, {
         params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
     });
@@ -454,7 +486,7 @@ async function getAccount({ accessToken, organizationId, dataCenter, accountId }
 
 async function findJournalsByReference({ accessToken, organizationId, dataCenter, referencia }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/journals`, {
+    const res = await getZoho(`${api}/books/v3/journals`, {
         params: { organization_id: organizationId, reference_number: referencia, per_page: 50 },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
     });
@@ -465,7 +497,7 @@ async function findJournalsByReference({ accessToken, organizationId, dataCenter
 
 async function getJournal({ accessToken, organizationId, dataCenter, journalId }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/journals/${journalId}`, {
+    const res = await getZoho(`${api}/books/v3/journals/${journalId}`, {
         params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
     });
@@ -532,7 +564,7 @@ async function listInvoicesDesde({ accessToken, organizationId, dataCenter, date
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/invoices`, {
+        const res = await getZoho(`${api}/books/v3/invoices`, {
             params: { organization_id: organizationId, date_start: dateStart, page, per_page: 200, sort_column: 'date', sort_order: 'A' },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
         });
@@ -549,7 +581,7 @@ async function listCreditNotesDesde({ accessToken, organizationId, dataCenter, d
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/creditnotes`, {
+        const res = await getZoho(`${api}/books/v3/creditnotes`, {
             params: { organization_id: organizationId, date_start: dateStart, filter_by: 'Status.All', page, per_page: 200 },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
         });
@@ -568,7 +600,7 @@ async function listBillsRango({ accessToken, organizationId, dataCenter, desde, 
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/bills`, {
+        const res = await getZoho(`${api}/books/v3/bills`, {
             params: { organization_id: organizationId, date_start: desde, date_end: hasta, filter_by: 'Status.All', page, per_page: 200 },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
         });
@@ -582,7 +614,7 @@ async function listBillsRango({ accessToken, organizationId, dataCenter, desde, 
 
 async function getBillDetail({ accessToken, organizationId, dataCenter, billId }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/bills/${billId}`, {
+    const res = await getZoho(`${api}/books/v3/bills/${billId}`, {
         params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 20000,
     });
@@ -594,7 +626,7 @@ async function listExpensesRango({ accessToken, organizationId, dataCenter, desd
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/expenses`, {
+        const res = await getZoho(`${api}/books/v3/expenses`, {
             params: { organization_id: organizationId, date_start: desde, date_end: hasta, page, per_page: 200 },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
         });
@@ -609,7 +641,7 @@ async function listExpensesRango({ accessToken, organizationId, dataCenter, desd
 /** Detalle de un gasto (trae la cuenta y, si es detallado, sus líneas). */
 async function getExpense({ accessToken, organizationId, dataCenter, expenseId }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/expenses/${expenseId}`, {
+    const res = await getZoho(`${api}/books/v3/expenses/${expenseId}`, {
         params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 20000,
     });
@@ -621,7 +653,7 @@ async function listJournalsRango({ accessToken, organizationId, dataCenter, desd
     const { api } = dcUrls(dataCenter);
     const all = [];
     for (let page = 1; page <= maxPages; page++) {
-        const res = await axios.get(`${api}/books/v3/journals`, {
+        const res = await getZoho(`${api}/books/v3/journals`, {
             params: { organization_id: organizationId, date_start: desde, date_end: hasta, page, per_page: 200 },
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
         });
@@ -635,7 +667,7 @@ async function listJournalsRango({ accessToken, organizationId, dataCenter, desd
 
 async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, creditnoteId }) {
     const { api } = dcUrls(dataCenter);
-    const res = await axios.get(`${api}/books/v3/creditnotes/${creditnoteId}`, {
+    const res = await getZoho(`${api}/books/v3/creditnotes/${creditnoteId}`, {
         params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 20000,
     });
@@ -645,4 +677,5 @@ async function getCreditNoteDetail({ accessToken, organizationId, dataCenter, cr
 module.exports = {
     listInvoicesDesde, listCreditNotesDesde, getCreditNoteDetail, listBillsRango, getBillDetail, listJournalsRango, listExpensesRango, getExpense,
     listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal, submitJournal, urlAsientoWeb,
-    categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
+    categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice,
+    _internos: { esFallaPasajera, conReintento } };
