@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-23-kroma-consumibles-paso',
+        fecha: '2026-11-23',
+        roles: ['master'],
+        titulo: 'Kroma: lo que se usó en cada paso',
+        resumen: 'Al cerrar cada paso de una producción, también el último, Kroma pregunta qué se usó: guantes por pares, tapabocas por unidad, cloro y jabón en ml, soda en gramos. Botones grandes, «Lo mismo que en el paso anterior» y «No usé nada». Se descuenta de Insumos y queda en el reporte del lote.',
+    },
+    {
         id: '2026-11-23-zoho-reintentos',
         fecha: '2026-11-23',
         roles: ['master'],

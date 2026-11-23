@@ -2315,6 +2315,15 @@ Reclamo del dueño con la captura del inicio de Diana: la tarjeta «… en curso
 - **Insumos:** se quitó el aviso «N bajo el mínimo · Ver», que repetía el filtro «Por reponer». Al operario no se le muestran los filtros «Sin registro» y «Sin mínimo» (son datos por completar de administración). Título «Insumos».
 - Probado en un iPhone simulado con datos de ejemplo (la alerta y el renglón). No probado con la cuenta de producción.
 
+### Kroma: «¿Qué usaste en este paso?» al cerrar cada paso (2026-11-23) ✅ (rama `claude/consumibles-por-paso`)
+
+Reclamo del dueño: al cargar la producción del sábado no le apareció el cuestionario de consumibles. Solo salía como «Cierre del día» cuando un paso se ponía en espera hasta OTRO día; si la producción se hacía de corrido, o en el último paso, no salía nunca.
+- **Sale al cerrar CADA paso, también el último** (`completeBlock` abre la hoja antes de cerrar; no se pregunta al corregir una producción cerrada ni si ese paso ya está anotado). Se retiraron el «Cierre del día» y `ConsumoFila`.
+- **`src/Kroma/Components/ConsumosPasoSheet.jsx`**: una tarjeta por consumible del inventario (`categoria` consumibles o detergentes), con − y + grandes (corren al dejarlos presionados), el número escribible y sumas rápidas. La unidad es fija por material (`unidadDeAnotar` en `consumoUnidades.js`): guantes por pares, lo que se cuenta por unidad, los líquidos en ml y los sólidos en g. Arriba, «Lo mismo que en {paso anterior}»; abajo, el resumen («Vas a anotar: …»), **No usé nada** y **Guardar y seguir**.
+- **Guardar**: descuenta de Insumos (`decrementInventory`, tipo `consumible`; convierte ml→L y g→kg) y escribe `consumosPorPaso.{idx}` = `{paso, fecha, consumibles, reportadoPor}` ANTES de cerrar el paso. Si el cierre falla y se reintenta, no se vuelve a preguntar ni a descontar. El paso guarda además `bloquesData[idx].consumibles`.
+- **Reporte del lote**: sección «Lo que se usó en la producción», paso por paso y el total por material (`totalesConsumo`); también muestra los «Cierre del día» viejos (`jornadasConsumo`).
+- Prueba: `node --import ./tests/alias.mjs tests/consumosPaso.test.mjs` (19 en verde, con el inventario real de planta). Probado en un iPhone simulado; no probado con la cuenta de producción.
+
 ### Kroma: correcciones del 11-oct ✅
 
 - **PIN de empresa con freno** (ver "Freno a la adivinanza del PIN" arriba).
