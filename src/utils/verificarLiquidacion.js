@@ -205,7 +205,14 @@ export function verificarLiquidacion({ desglose: d, estado: e, facturas = [], pr
 
     // ── 7. Activación: semanas logradas ────────────────────────────────────
     const usdAct = num(d.bonoActivacionUSD);
-    if (usdAct > 0 || num(d.bonoActRate) > 0) {
+    const fz = d.congelado ? d.congeladoCifras : null;
+    if (fz && fz.actSemanasTotales != null && (usdAct > 0 || num(d.bonoActRate) > 0 || fz.bonoActivacionMonto + fz.bonoActivacionUSDMonto > 0)) {
+        // Mes congelado: la activación se pagó con la cartera y las semanas que
+        // había al cerrarlo. La cartera de HOY (traspasada, vacía) no cuenta.
+        const montoAct = num(fz.bonoActivacionMonto) + num(fz.bonoActivacionUSDMonto);
+        add('activacion', C, 'Bono de activación de cartera', 'ok',
+            `Mes congelado: ${num(fz.actSemanasLogradas)} de ${num(fz.actSemanasTotales)} semanas logradas${num(fz.carteraSize) > 0 ? ` con una cartera de ${num(fz.carteraSize)} PDV` : ''} → ${usd(montoAct)}. Es lo que quedó fijo al cerrar el mes; la cartera de hoy no lo cambia.`);
+    } else if (usdAct > 0 || num(d.bonoActRate) > 0) {
         const sem = d.semanas || [];
         if (!(num(d.carteraSize) > 0)) {
             add('activacion', C, 'Bono de activación de cartera', 'aviso',

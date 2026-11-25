@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-25-liquidacion-mes-congelado',
+        fecha: '2026-11-25',
+        roles: ['master', 'administrador'],
+        titulo: 'Pagar un mes cerrado ya no se bloquea',
+        resumen: 'En un mes cerrado y congelado, el detalle de bonos y comisiones sale de lo que quedó fijo al cerrarlo, así que suma lo mismo que el total y se puede pagar. La activación de ese mes tampoco mira la cartera de hoy.',
+    },
+    {
         id: '2026-11-23-zoho-reintentos',
         fecha: '2026-11-23',
         roles: ['master'],

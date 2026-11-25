@@ -1179,6 +1179,15 @@ Reclamo del dueño (captura del Estado de Cuenta de Carolina): María José cerr
     - La tarjeta "Cobrado" pasó a llamarse **"Cobrado de estas facturas"**: incluye lo cobrado después del cierre.
     - El cuadro de comisión muestra la **base de la comisión** (lo cobrado dentro del período) y avisa si el mes quedó pagado de más.
 
+### Pagar un mes congelado: los bloques salen de lo congelado (2026-11-25) ✅
+
+Reclamo del dueño: María José no podía pagar las comisiones del Mes 2 de Carolina ($86,54). Los cruces daban un error («las partes suman $84,73 y el total dice $86,54») y dos avisos (activación sin cartera, pago sin concepto).
+- **Causa:** el robot congela los meses sin guardar el desglose por bloque. `computeDesglosePeriodo` armaba entonces los bloques con las cifras de HOY y el total con las congeladas: si algo cambió después (aquí $1,81 de comisión %), no cuadraban y el pago se bloqueaba.
+- **Arreglo** (`vendedorMeta.js`): `conCongelado(fila, frozen)` pone las cifras del cierre encima de las de hoy antes de `bloquesDeFila` (la misma regla que ya usaba `computeEstadosDeCuenta`). El desglose trae `congeladoCifras` (cartera, semanas y montos de activación del cierre).
+- **Activación** (`verificarLiquidacion.js`): en un mes congelado el cruce usa lo congelado («0 de 5 semanas con una cartera de 26 PDV → $0»), no la cartera de hoy (la de Carolina pasó a Erick).
+- El aviso «pago sin concepto» es real: el pago del 14-oct ($200, ref. 313704) no dice si fue fijo; se aplica al fijo, que es lo que fue.
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/verificarLiquidacion.test.mjs` (casos nuevos: congelado sin bloques con cifras distintas de hoy, y activación con la cartera traspasada).
+
 ### 3.13 — La CARTERA del vendedor manda sobre el carnet sin asignar (2026-10) ✅
 
 Pedido del dueño: *"así no se le asigne nombre de vendedor a la factura, si este cliente está asignado a su cartera debería entrar dentro de sus comisiones"*.

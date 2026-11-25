@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-25-liquidacion-mes-congelado",
+    fecha: "2026-11-25",
+    roles: ["master", "administrador"],
+    titulo: "Pagar un mes cerrado ya no se bloquea",
+    resumen: "En un mes cerrado y congelado, el detalle de bonos y comisiones sale de lo que qued\xF3 fijo al cerrarlo, as\xED que suma lo mismo que el total y se puede pagar. La activaci\xF3n de ese mes tampoco mira la cartera de hoy."
+  },
+  {
     id: "2026-11-23-zoho-reintentos",
     fecha: "2026-11-23",
     roles: ["master"],

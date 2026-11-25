@@ -572,6 +572,36 @@ const CAMPOS_CONGELADOS = [
 const r2m = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
 /**
+ * Las cifras de un cierre congelado encima de las de hoy: un mes congelado
+ * se paga con lo que se cerró, así que su desglose por bloque sale de ahí (si
+ * no, el comprobante sumaba bloques de hoy contra un total congelado y no
+ * cuadraba). Un cierre del modelo anterior sin desglose por origen deja la
+ * comisión % en null; los bonos en USD que no existían valen 0.
+ */
+export function conCongelado(fila, frozen) {
+    if (!frozen) return fila;
+    const out = { ...fila };
+    CAMPOS_CONGELADOS.forEach(k => { if (k !== 'bloques' && frozen[k] !== undefined && frozen[k] !== null) out[k] = frozen[k]; });
+    if (frozen.comisionNivelMonto == null) out.comisionNivelMonto = null;
+    ['bonoNivelMonto', 'bonoActivacionUSDMonto', 'bonoCrecimientoMonto', 'bonoNivelFoodMonto', 'bonoCrecimientoFoodMonto']
+        .forEach(k => { if (frozen[k] == null) out[k] = 0; });
+    if (frozen.actSemanasLogradas != null) out.semanasLogradas = frozen.actSemanasLogradas;
+    if (frozen.actSemanasTotales != null) out.semanasTotales = frozen.actSemanasTotales;
+    return out;
+}
+
+/** Lo que un cierre congelado dejó fijo de la activación y del total. */
+function cifrasCongeladas(f = {}) {
+    const n = (v) => (v == null ? null : Number(v));
+    return {
+        devengadoComision: n(f.devengadoComision), base: n(f.base),
+        carteraSize: n(f.carteraSize), actSemanasLogradas: n(f.actSemanasLogradas), actSemanasTotales: n(f.actSemanasTotales),
+        bonoActivacionMonto: n(f.bonoActivacionMonto) || 0, bonoActivacionUSDMonto: n(f.bonoActivacionUSDMonto) || 0,
+        congeladoEn: f.congeladoEn || null, congeladoPor: f.congeladoPor || null,
+    };
+}
+
+/**
  * Lo que gana el vendedor en un período, POR BLOQUE: el fijo y cada pieza de lo
  * variable. Lo leen el Estado de Cuenta, los comprobantes, Liquidaciones y el
  * vigilante; se guarda en el cierre congelado. Un bloque configurado aparece
@@ -867,7 +897,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         crecimiento: p.bonoCrecimiento, bonoCrecimientoMonto: mt.bonoCrecimientoMonto,
         bonoNivelFood: p.bonoNivelFood, bonoNivelFoodMonto: mt.bonoNivelFoodMonto,
         crecimientoFood: p.bonoCrecimientoFood, bonoCrecimientoFoodMonto: mt.bonoCrecimientoFoodMonto,
-        bloques: (congelado && Array.isArray(frozen.bloques)) ? frozen.bloques : bloquesDeFila({
+        bloques: (congelado && Array.isArray(frozen.bloques)) ? frozen.bloques : bloquesDeFila(conCongelado({
             base, comisionNivelMonto: mt.comisionNivelMonto, cobradoRegular: mt.cobradoRegular,
             bonoNivelMonto: mt.bonoNivelMonto, bonoNivelEscalon: p.bonoNivel?.escalon?.etiqueta || null, bonoNivelSiguiente: p.bonoNivel?.siguiente || null,
             bonoActivacionUSDMonto: mt.bonoActivacionUSDMonto, semanasLogradas: p.act.semanasLogradas, semanasTotales: p.act.semanasTotales,
@@ -878,7 +908,10 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             bonoActivacionMonto: mt.bonoActivacionMonto, bonoAnaquelMonto: mt.bonoAnaquelMonto,
             comisionFoodMonto: mt.comisionFoodMonto, tasaFood: mt.tasaFood,
             bonoRecupMonto: mt.bonoRecupMonto, tasaRecup: mt.tasaRecup,
-        }, p.cfg),
+        }, congelado ? frozen : null), p.cfg),
+        // Mes congelado: las cifras con que se cerró (lo que se paga), para
+        // que los cruces no comparen el pago contra el cálculo de hoy.
+        congeladoCifras: congelado ? cifrasCongeladas(frozen) : null,
         // Totales
         base, devengadoComision, devengadoTotal,
         pagado, saldo: devengadoTotal - pagado,
