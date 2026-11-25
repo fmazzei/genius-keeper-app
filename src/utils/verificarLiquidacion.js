@@ -205,7 +205,14 @@ export function verificarLiquidacion({ desglose: d, estado: e, facturas = [], pr
 
     // ── 7. Activación: semanas logradas ────────────────────────────────────
     const usdAct = num(d.bonoActivacionUSD);
-    if (usdAct > 0 || num(d.bonoActRate) > 0) {
+    const fz = d.congelado ? d.congeladoCifras : null;
+    if (fz && fz.actSemanasTotales != null && (usdAct > 0 || num(d.bonoActRate) > 0 || fz.bonoActivacionMonto + fz.bonoActivacionUSDMonto > 0)) {
+        // Mes congelado: la activación se pagó con la cartera y las semanas que
+        // había al cerrarlo. La cartera de HOY (traspasada, vacía) no cuenta.
+        const montoAct = num(fz.bonoActivacionMonto) + num(fz.bonoActivacionUSDMonto);
+        add('activacion', C, 'Bono de activación de cartera', 'ok',
+            `Mes congelado: ${num(fz.actSemanasLogradas)} de ${num(fz.actSemanasTotales)} semanas logradas${num(fz.carteraSize) > 0 ? ` con una cartera de ${num(fz.carteraSize)} PDV` : ''} → ${usd(montoAct)}. Es lo que quedó fijo al cerrar el mes; la cartera de hoy no lo cambia.`);
+    } else if (usdAct > 0 || num(d.bonoActRate) > 0) {
         const sem = d.semanas || [];
         if (!(num(d.carteraSize) > 0)) {
             add('activacion', C, 'Bono de activación de cartera', 'aviso',
@@ -254,8 +261,14 @@ export function verificarLiquidacion({ desglose: d, estado: e, facturas = [], pr
             `Fijo: ${usd(d.base)} − ${usd(d.pagadoFijo)} = ${usd(num(d.base) - num(d.pagadoFijo))}${okSalF ? '.' : `, pero el estado de cuenta dice ${usd(d.saldoFijo)}.`}`);
     }
     if (num(d.pagadoSinConcepto) > 0.005) {
-        add('sin_concepto', A, 'Pagos sin concepto', 'aviso',
-            `${usd(d.pagadoSinConcepto)} se registraron sin decir si eran fijo o comisiones: se aplicaron primero al fijo. Si no fue así, corrígelos en el histórico antes de pagar.`);
+        // Un pago viejo sin concepto se aplica primero al fijo. Si cupo entero en
+        // el fijo del mes, ya está donde corresponde: no hay nada que revisar.
+        const fijoDeclarado = pagos.filter(l => l.concepto === 'fijo').reduce((s, l) => s + num(l.monto), 0);
+        const cupoFijo = Math.max(0, num(d.base) - fijoDeclarado);
+        const cabe = num(d.pagadoSinConcepto) <= cupoFijo + 0.01;
+        add('sin_concepto', A, 'Pagos sin concepto', cabe ? 'ok' : 'aviso',
+            cabe ? `${usd(d.pagadoSinConcepto)} registrados sin concepto, aplicados al fijo del mes.`
+                : `${usd(d.pagadoSinConcepto)} se registraron sin decir si eran fijo o comisiones: lo que no cupo en el fijo se tomó como comisiones. Si no fue así, corrígelos en el histórico.`);
     }
 
     // ── 10. Estado del mes ─────────────────────────────────────────────────

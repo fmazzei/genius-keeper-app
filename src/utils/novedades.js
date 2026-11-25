@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-25-liquidacion-mes-congelado',
+        fecha: '2026-11-25',
+        roles: ['master', 'administrador'],
+        titulo: 'Pagar a un vendedor: un monto y listo',
+        resumen: 'En Liquidaciones se escribe lo que se transfirió y el sistema lo reparte entre los meses (descontando lo pagado de más), lo verifica y lo registra. Un mes cerrado ya no se bloquea por cifras de hoy.',
+    },
+    {
         id: '2026-11-23-zoho-reintentos',
         fecha: '2026-11-23',
         roles: ['master'],

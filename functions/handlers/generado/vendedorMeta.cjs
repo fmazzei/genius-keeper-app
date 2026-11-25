@@ -29,6 +29,7 @@ __export(vendedorMeta_exports, {
   computeDesglosePeriodo: () => computeDesglosePeriodo,
   computeEstadosDeCuenta: () => computeEstadosDeCuenta,
   computeMetaMensual: () => computeMetaMensual,
+  conCongelado: () => conCongelado,
   conceptoLiquidacion: () => conceptoLiquidacion,
   cuentaParaActivacion: () => cuentaParaActivacion,
   facturaDeLaCartera: () => facturaDeLaCartera,
@@ -743,6 +744,34 @@ var CAMPOS_CONGELADOS = [
   "bonoCrecimientoFoodMonto"
 ];
 var r2m = (v) => Math.round((Number(v) || 0) * 100) / 100;
+function conCongelado(fila, frozen) {
+  if (!frozen) return fila;
+  const out = { ...fila };
+  CAMPOS_CONGELADOS.forEach((k) => {
+    if (k !== "bloques" && frozen[k] !== void 0 && frozen[k] !== null) out[k] = frozen[k];
+  });
+  if (frozen.comisionNivelMonto == null) out.comisionNivelMonto = null;
+  ["bonoNivelMonto", "bonoActivacionUSDMonto", "bonoCrecimientoMonto", "bonoNivelFoodMonto", "bonoCrecimientoFoodMonto"].forEach((k) => {
+    if (frozen[k] == null) out[k] = 0;
+  });
+  if (frozen.actSemanasLogradas != null) out.semanasLogradas = frozen.actSemanasLogradas;
+  if (frozen.actSemanasTotales != null) out.semanasTotales = frozen.actSemanasTotales;
+  return out;
+}
+function cifrasCongeladas(f = {}) {
+  const n = (v) => v == null ? null : Number(v);
+  return {
+    devengadoComision: n(f.devengadoComision),
+    base: n(f.base),
+    carteraSize: n(f.carteraSize),
+    actSemanasLogradas: n(f.actSemanasLogradas),
+    actSemanasTotales: n(f.actSemanasTotales),
+    bonoActivacionMonto: n(f.bonoActivacionMonto) || 0,
+    bonoActivacionUSDMonto: n(f.bonoActivacionUSDMonto) || 0,
+    congeladoEn: f.congeladoEn || null,
+    congeladoPor: f.congeladoPor || null
+  };
+}
 function bloquesDeFila(r = {}, cfg = {}) {
   const out = [];
   const add = (id, nombre, monto, detalle, activo = false, cuenta = "comision") => {
@@ -1085,7 +1114,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
     bonoNivelFoodMonto: mt.bonoNivelFoodMonto,
     crecimientoFood: p.bonoCrecimientoFood,
     bonoCrecimientoFoodMonto: mt.bonoCrecimientoFoodMonto,
-    bloques: congelado && Array.isArray(frozen.bloques) ? frozen.bloques : bloquesDeFila({
+    bloques: congelado && Array.isArray(frozen.bloques) ? frozen.bloques : bloquesDeFila(conCongelado({
       base,
       comisionNivelMonto: mt.comisionNivelMonto,
       cobradoRegular: mt.cobradoRegular,
@@ -1111,7 +1140,10 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
       tasaFood: mt.tasaFood,
       bonoRecupMonto: mt.bonoRecupMonto,
       tasaRecup: mt.tasaRecup
-    }, p.cfg),
+    }, congelado ? frozen : null), p.cfg),
+    // Mes congelado: las cifras con que se cerró (lo que se paga), para
+    // que los cruces no comparen el pago contra el cálculo de hoy.
+    congeladoCifras: congelado ? cifrasCongeladas(frozen) : null,
     // Totales
     base,
     devengadoComision,
@@ -1136,6 +1168,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
   computeDesglosePeriodo,
   computeEstadosDeCuenta,
   computeMetaMensual,
+  conCongelado,
   conceptoLiquidacion,
   cuentaParaActivacion,
   facturaDeLaCartera,

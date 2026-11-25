@@ -107,6 +107,34 @@ console.log('— 3. Carolina: mes cerrado, 4,5 % fija + cobranza 1,5 % + fijo $4
     const { e: ec, d: dc } = caso(caro, fs, liqs, { ahora: new Date(2026, 11, 3), cerrados: { '2026-11-01': { ...e, modelo: 'cobro' } } });
     const vc = verificarLiquidacion({ desglose: dc, estado: ec, facturas: fs, vendedorId: 'C' });
     ok(nivel(vc).congelado === 'ok' && vc.errores.comision.length === 0, 'mes congelado: ok');
+
+    // Congelado por el robot SIN desglose por bloque y con cifras que ya no son
+    // las de hoy (caso real: Carolina, Mes 2): las partes salen de lo congelado
+    // y suman el total congelado; la activación no mira la cartera de hoy.
+    const { bloques: _sinBloques, ...sinBloques } = e;
+    const frozenViejo = {
+        ...sinBloques, modelo: 'cobro', congeladoPor: 'automatico',
+        comisionNivelMonto: e.comisionNivelMonto + 1.81, devengadoComision: e.devengadoComision + 1.81,
+        devengadoTotal: e.devengadoTotal + 1.81, carteraSize: 26, actSemanasLogradas: 0, actSemanasTotales: 5, bonoActivacionMonto: 0,
+    };
+    const r3 = caso(caro, fs, liqs, { ahora: new Date(2026, 11, 3), cerrados: { '2026-11-01': frozenViejo } });
+    const v3 = verificarLiquidacion({ desglose: r3.d, estado: r3.e, facturas: fs, vendedorId: 'C' });
+    const n3 = nivel(v3);
+    const sumaB = r3.d.bloques.filter(b => b.cuenta !== 'fijo').reduce((s, b) => s + b.monto, 0);
+    ok(Math.abs(sumaB - frozenViejo.devengadoComision) < 0.02, `los bloques salen de lo congelado (${sumaB.toFixed(2)} = ${frozenViejo.devengadoComision.toFixed(2)})`);
+    ok(n3.suma_bloques === 'ok' && v3.errores.comision.length === 0, 'congelado sin bloques: la suma cuadra y no hay error que impida pagar');
+    ok(puedePagar(v3, 'comision'), 'se puede pagar la comisión del mes congelado');
+    if (n3.activacion) ok(n3.activacion === 'ok' && /Mes congelado/.test(v3.cruces.find(c => c.id === 'activacion').detalle), 'la activación usa lo congelado, no la cartera de hoy');
+
+    // Con Bono Activación y la cartera ya traspasada (hoy vacía): sin aviso de "no tiene PDV".
+    const caroAct = { ...caro, commissionConfig: { ...caro.commissionConfig, bonusActivacion: 1 } };
+    const r4 = caso(caroAct, fs, liqs, { cartera: [], ahora: new Date(2026, 11, 3), cerrados: { '2026-11-01': frozenViejo } });
+    const v4 = verificarLiquidacion({ desglose: r4.d, estado: r4.e, facturas: fs, vendedorId: 'C' });
+    const a4 = v4.cruces.find(c => c.id === 'activacion');
+    ok(a4 && a4.nivel === 'ok' && /0 de 5 semanas/.test(a4.detalle) && /26 PDV/.test(a4.detalle), `activación de un mes congelado con la cartera traspasada: ok (${a4 && a4.detalle})`);
+    const r5 = caso(caroAct, fs, liqs, { cartera: [], ahora: new Date(2026, 11, 3) });
+    const a5 = verificarLiquidacion({ desglose: r5.d, estado: r5.e, facturas: fs, vendedorId: 'C' }).cruces.find(c => c.id === 'activacion');
+    ok(a5 && a5.nivel === 'aviso', 'sin congelar y sin cartera: sigue el aviso');
 }
 
 console.log(fallas ? `\n✗ ${fallas} fallas` : '\n✓ todo en verde');
