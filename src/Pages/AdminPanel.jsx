@@ -18,6 +18,7 @@ import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
 import InformeVerificacionDoc from '../Components/InformeVerificacionDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
 import CorregirPagoSheet from '../Components/CorregirPagoSheet.jsx';
+import PagoVendedorRapido from '../Components/PagoVendedorRapido.jsx';
 import CorreoEnUso, { cuentaCorreo } from '../Components/CorreoEnUso.jsx';
 import { describirCambio } from '../utils/liquidacionCorrecciones.js';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
@@ -3058,6 +3059,34 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
             setError(e.message || 'No se pudo registrar el pago.');
         } finally { setSaving(false); }
     };
+    // Un monto y el sistema lo reparte (PagoVendedorRapido): un pago por mes y
+    // concepto, en UNA escritura, cada uno con la foto de su cálculo. Los avisos
+    // de los cruces quedan anotados en la foto; un error impide pagar ese mes.
+    const registrarPagoRapido = async (plan, { fecha: f, nota: n, file }) => {
+        for (const l of plan.lineas) {
+            const ver = verifs[l.periodKey];
+            if (!ver || !puedePagar(ver.v, l.concepto)) throw new Error(`El Mes ${l.mes} no cuadra en sus cruces: revisa lo que está en rojo.`);
+        }
+        const dataUrl = file ? await comprimirImagen(file) : null;
+        if (dataUrl && dataUrl.length > 950000) throw new Error('La imagen del comprobante es muy grande. Toma la foto con menos resolución.');
+        const grupoPago = doc(collection(db, 'liquidaciones')).id;
+        const batch = writeBatch(db);
+        plan.lineas.forEach(l => {
+            const ver = verifs[l.periodKey];
+            const ref = doc(collection(db, 'liquidaciones'));
+            batch.set(ref, {
+                vendedorId, periodKey: l.periodKey, monto: l.monto, fecha: f, nota: n,
+                concepto: l.concepto, ...(l.concepto === 'fijo' ? { fijoTipo: l.fijoTipo } : {}),
+                grupoPago, pagoTotal: plan.total, reparto: plan.tipo,
+                registradoPor: auth.currentUser?.uid || null, registradoPorEmail: auth.currentUser?.email || null,
+                comprobanteAdjunto: !!dataUrl, createdAt: serverTimestamp(),
+                calculo: fotoDelCalculo(ver.d, ver.v, { concepto: l.concepto, monto: l.monto, avisosRevisados: avisosDe(ver.v, l.concepto).map(a => a.titulo) }),
+            });
+            if (dataUrl) batch.set(doc(db, 'liquidacion_comprobantes', ref.id), { dataUrl, vendedorId, grupoPago, subidoPor: auth.currentUser?.uid || null, subidoEn: serverTimestamp() });
+        });
+        await batch.commit();
+        await cargar(vendedorId);
+    };
     const cerrarWizard = () => { setPago(null); setPendingComp(null); setCompFileName(''); setPeriodKey(''); setMonto(''); setFecha(''); setNota(''); setConcepto(''); setFijoTipo(''); };
     // Fijo mensual de la ficha de comisiones del vendedor (sueldo + viáticos):
     // la quincena es como máximo la mitad; el mes completo, todo.
@@ -3188,10 +3217,15 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                         <StatCard label="Por pagar" value={money(totales.fijSal)} color={totales.fijSal > 0.5 ? 'text-amber-600' : 'text-emerald-600'} bg="bg-white" />
                     </div>
 
-                    {/* Ejecutar una liquidación — abre el asistente por pasos */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
-                        <p className="font-bold text-slate-800 mb-1">Ejecutar una liquidación</p>
-                        <p className="text-slate-500 text-xs mb-3">Elige el período y presiona <b>Registrar pago</b>. En el asistente eliges primero si pagas <b>fijo</b> (quincena o mes completo) o <b>comisiones</b>.</p>
+                    {/* Un monto y el sistema lo reparte entre los meses */}
+                    <PagoVendedorRapido estados={estados} verifs={verifs} baseMes={baseMesVendedor}
+                        nombre={(vendedores.find(v => v.id === vendedorId) || {}).name || ''}
+                        onRegistrar={registrarPagoRapido} />
+
+                    {/* Pagar un mes en particular — el asistente por pasos */}
+                    <details className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                        <summary className="font-bold text-slate-700 text-sm cursor-pointer">Pagar un mes en particular</summary>
+                        <p className="text-slate-500 text-xs mb-3 mt-2">Para un adelanto o un pago de un solo mes. Elige el período y presiona <b>Registrar pago</b>.</p>
                         <div className="flex flex-col sm:flex-row gap-2">
                             <select value={periodKey} onChange={e => setPeriodKey(e.target.value)} className={`${SELECT_CLS} sm:flex-1`} style={SELECT_STYLE}>
                                 <option value="">Selecciona el período…</option>
@@ -3199,7 +3233,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                             </select>
                             <button onClick={() => periodKey && iniciarPago(periodKey)} disabled={!periodKey} className="bg-brand-blue text-white font-bold text-sm px-5 py-2.5 rounded-xl disabled:opacity-50 shrink-0">Registrar pago →</button>
                         </div>
-                    </div>
+                    </details>
 
                     {/* Estado de cuenta por período */}
                     <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">

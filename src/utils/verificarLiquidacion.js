@@ -261,8 +261,14 @@ export function verificarLiquidacion({ desglose: d, estado: e, facturas = [], pr
             `Fijo: ${usd(d.base)} − ${usd(d.pagadoFijo)} = ${usd(num(d.base) - num(d.pagadoFijo))}${okSalF ? '.' : `, pero el estado de cuenta dice ${usd(d.saldoFijo)}.`}`);
     }
     if (num(d.pagadoSinConcepto) > 0.005) {
-        add('sin_concepto', A, 'Pagos sin concepto', 'aviso',
-            `${usd(d.pagadoSinConcepto)} se registraron sin decir si eran fijo o comisiones: se aplicaron primero al fijo. Si no fue así, corrígelos en el histórico antes de pagar.`);
+        // Un pago viejo sin concepto se aplica primero al fijo. Si cupo entero en
+        // el fijo del mes, ya está donde corresponde: no hay nada que revisar.
+        const fijoDeclarado = pagos.filter(l => l.concepto === 'fijo').reduce((s, l) => s + num(l.monto), 0);
+        const cupoFijo = Math.max(0, num(d.base) - fijoDeclarado);
+        const cabe = num(d.pagadoSinConcepto) <= cupoFijo + 0.01;
+        add('sin_concepto', A, 'Pagos sin concepto', cabe ? 'ok' : 'aviso',
+            cabe ? `${usd(d.pagadoSinConcepto)} registrados sin concepto, aplicados al fijo del mes.`
+                : `${usd(d.pagadoSinConcepto)} se registraron sin decir si eran fijo o comisiones: lo que no cupo en el fijo se tomó como comisiones. Si no fue así, corrígelos en el histórico.`);
     }
 
     // ── 10. Estado del mes ─────────────────────────────────────────────────
